@@ -2,7 +2,7 @@
 // Includes
 /*****************************************************************************/
 
-#include <iii_drone_core/behavior/trees/take_charging_position_tree.hpp>
+#include <iii_drone_mission/behavior/trees/take_charging_position_tree.hpp>
 
 using namespace iii_drone::behavior;
 using namespace iii_drone::configuration;

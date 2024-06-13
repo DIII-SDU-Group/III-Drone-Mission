@@ -5,44 +5,25 @@
 /*****************************************************************************/
 
 /*****************************************************************************/
-// Std:
-
-#include <memory>
-
-/*****************************************************************************/
-// ROS2:
-
-#include <rclcpp/rclcpp.hpp>
-
-#include <tf2_ros/buffer.h>
-#include <tf2/exceptions.h>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-
-#include <geometry_msgs/msg/quaternion_stamped.hpp>
-
-/*****************************************************************************/
-// III-Drone-Configuration:
+// III-Drone-Core:
 
 #include <iii_drone_configuration/parameter_bundle.hpp>
 
 /*****************************************************************************/
 // III-Drone-Core:
 
-#include <iii_drone_core/utils/types.hpp>
-#include <iii_drone_core/utils/math.hpp>
-
-#include <iii_drone_core/behavior/action_nodes/maneuver_action_node.hpp>
-
 #include <iii_drone_core/control/maneuver/maneuver_reference_client.hpp>
-#include <iii_drone_core/control/reference.hpp>
-
-#include <iii_drone_core/adapters/reference_adapter.hpp>
 
 /*****************************************************************************/
 // III-Drone-Interfaces:
 
-#include <iii_drone_interfaces/action/fly_to_object.hpp>
+#include <iii_drone_interfaces/action/cable_takeoff.hpp>
 #include <iii_drone_interfaces/msg/target.hpp>
+
+/*****************************************************************************/
+// III-Drone-Mission:
+
+#include <iii_drone_mission/behavior/action_nodes/maneuver_action_node.hpp>
 
 /*****************************************************************************/
 // BT.CPP:
@@ -58,9 +39,9 @@ namespace iii_drone {
 namespace behavior {
 
     /**
-     * @brief Fly to object maneuver action node.
+     * @brief Cable takeoff maneuver action node.
      */
-    class FlyToObjectManeuverActionNode : public ManeuverActionNode<iii_drone_interfaces::action::FlyToObject> {
+    class CableTakeoffManeuverActionNode : public ManeuverActionNode<iii_drone_interfaces::action::CableTakeoff> {
     public:
         /**
          * @brief Constructor.
@@ -70,15 +51,13 @@ namespace behavior {
          * @param params The ROS node parameters.
          * @param maneuver_reference_client The maneuver reference client.
          * @param parameter_bundle The parameter bundle.
-         * @param tf_buffer The TF buffer.
          */
-        FlyToObjectManeuverActionNode(
+        CableTakeoffManeuverActionNode(
             const std::string & name, 
             const BT::NodeConfig & conf,
             const BT::RosNodeParams & params,
             iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
-            iii_drone::configuration::ParameterBundle::SharedPtr parameter_bundle,
-            tf2_ros::Buffer::SharedPtr tf_buffer
+            iii_drone::configuration::ParameterBundle::SharedPtr parameter_bundle
         );
 
         bool setGoal(Goal & goal) override;
@@ -86,18 +65,10 @@ namespace behavior {
         static BT::PortsList providedPorts();
 
     private:
-        iii_drone::configuration::ParameterBundle::SharedPtr parameter_bundle_;
-
-        tf2_ros::Buffer::SharedPtr tf_buffer_;
-
         /**
-         * @brief Gets the final hover reference from the wrapped result.
-         * 
-         * @param wr The wrapped result.
-         * 
-         * @return The final hover reference.
+         * @brief The parameter bundle.
          */
-        iii_drone::control::Reference getFinalReference(const typename BT::RosActionNode<iii_drone_interfaces::action::FlyToObject>::WrappedResult & wr) const;
+        iii_drone::configuration::ParameterBundle::SharedPtr parameter_bundle_;
 
     };
 

@@ -30,24 +30,27 @@
 #include <iii_drone_core/utils/types.hpp>
 #include <iii_drone_core/utils/atomic.hpp>
 
-#include <iii_drone_core/behavior/action_nodes/hover_maneuver_action_node.hpp>
-#include <iii_drone_core/behavior/action_nodes/hover_on_cable_maneuver_action_node.hpp>
-#include <iii_drone_core/behavior/action_nodes/hover_by_object_maneuver_action_node.hpp>
-#include <iii_drone_core/behavior/action_nodes/fly_to_object_maneuver_action_node.hpp>
-#include <iii_drone_core/behavior/action_nodes/fly_to_position_maneuver_action_node.hpp>
-#include <iii_drone_core/behavior/action_nodes/cable_landing_maneuver_action_node.hpp>
-#include <iii_drone_core/behavior/action_nodes/cable_takeoff_maneuver_action_node.hpp>
-#include <iii_drone_core/behavior/action_nodes/pl_mapper_command_action_node.hpp>
-
-#include <iii_drone_core/behavior/condition_nodes/verify_powerline_detected_condition_node.hpp>
-#include <iii_drone_core/behavior/condition_nodes/select_target_line_condition_node.hpp>
-
-#include <iii_drone_core/behavior/port_types.hpp>
-
 #include <iii_drone_core/control/maneuver/maneuver_reference_client.hpp>
 
-#include <iii_drone_core/px4/mode_executors/generic_mode_executor.hpp>
-#include <iii_drone_core/px4/modes/maneuver_mode.hpp>
+/*****************************************************************************/
+// III-Drone-Mission:
+
+#include <iii_drone_mission/behavior/action_nodes/hover_maneuver_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/hover_on_cable_maneuver_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/hover_by_object_maneuver_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/fly_to_object_maneuver_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/fly_to_position_maneuver_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/cable_landing_maneuver_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/cable_takeoff_maneuver_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/pl_mapper_command_action_node.hpp>
+
+#include <iii_drone_mission/behavior/condition_nodes/verify_powerline_detected_condition_node.hpp>
+#include <iii_drone_mission/behavior/condition_nodes/select_target_line_condition_node.hpp>
+
+#include <iii_drone_mission/behavior/port_types.hpp>
+
+#include <iii_drone_mission/px4/mode_executors/generic_mode_executor.hpp>
+#include <iii_drone_mission/px4/modes/maneuver_mode.hpp>
 
 /*****************************************************************************/
 // BT.CPP:

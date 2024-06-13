@@ -31,8 +31,6 @@
 
 #include <iii_drone_core/utils/types.hpp>
 
-#include <iii_drone_core/behavior/port_types.hpp>
-
 #include <iii_drone_core/adapters/single_line_adapter.hpp>
 
 /*****************************************************************************/
@@ -40,6 +38,11 @@
 
 #include <iii_drone_interfaces/msg/powerline.hpp>
 #include <iii_drone_interfaces/msg/target.hpp>
+
+/*****************************************************************************/
+// III-Drone-Mission:
+
+#include <iii_drone_mission/behavior/port_types.hpp>
 
 /*****************************************************************************/
 // BT.CPP:

@@ -5,20 +5,25 @@
 /*****************************************************************************/
 
 /*****************************************************************************/
-// III-Drone-Core:
+// ROS2:
 
-#include <iii_drone_core/behavior/action_nodes/maneuver_action_node.hpp>
-#include <iii_drone_core/control/maneuver/maneuver_reference_client.hpp>
+#include <rclcpp/rclcpp.hpp>
+
+/*****************************************************************************/
+// III-Drone-Mission:
+
+#include <iii_drone_mission/behavior/port_types.hpp>
 
 /*****************************************************************************/
 // III-Drone-Interfaces:
 
-#include <iii_drone_interfaces/action/hover.hpp>
+#include <iii_drone_interfaces/msg/powerline.hpp>
 
 /*****************************************************************************/
 // BT.CPP:
 
-#include <behaviortree_ros2/bt_action_node.hpp>
+#include <behaviortree_ros2/bt_topic_sub_node.hpp>
+#include <behaviortree_ros2/plugins.hpp>
 
 /*****************************************************************************/
 // Class:
@@ -28,9 +33,10 @@ namespace iii_drone {
 namespace behavior {
 
     /**
-     * @brief Hover maneuver action node.
+     * @brief Powerline subscription condition node, subscribes to the powerline topic
+     * and verifies if a powerline has been detected.
      */
-    class HoverManeuverActionNode : public ManeuverActionNode<iii_drone_interfaces::action::Hover> {
+    class VerifyPowerlineDetectedConditionNode : public BT::RosTopicSubNode<iii_drone_interfaces::msg::Powerline> {
     public:
         /**
          * @brief Constructor.
@@ -38,18 +44,19 @@ namespace behavior {
          * @param name The name of the node.
          * @param conf The node configuration.
          * @param params The ROS node parameters.
-         * @param maneuver_reference_client The maneuver reference client.
          */
-        HoverManeuverActionNode(
+        VerifyPowerlineDetectedConditionNode(
             const std::string & name, 
             const BT::NodeConfig & conf,
-            const BT::RosNodeParams & params,
-            iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client
+            const BT::RosNodeParams & params
         );
 
-        bool setGoal(Goal & goal) override;
-
         static BT::PortsList providedPorts();
+
+        BT::NodeStatus onTick(const std::shared_ptr<iii_drone_interfaces::msg::Powerline> & last_msg) override;
+
+    private:
+        rclcpp::Node::SharedPtr node_ptr_;
 
     };
 

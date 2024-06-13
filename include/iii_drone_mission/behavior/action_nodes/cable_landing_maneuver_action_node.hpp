@@ -7,7 +7,6 @@
 /*****************************************************************************/
 // III-Drone-Core:
 
-#include <iii_drone_core/behavior/action_nodes/maneuver_action_node.hpp>
 #include <iii_drone_core/control/maneuver/maneuver_reference_client.hpp>
 
 /*****************************************************************************/
@@ -15,6 +14,11 @@
 
 #include <iii_drone_interfaces/action/cable_landing.hpp>
 #include <iii_drone_interfaces/msg/target.hpp>
+
+/*****************************************************************************/
+// III-Drone-Mission:
+
+#include <iii_drone_mission/behavior/action_nodes/maneuver_action_node.hpp>
 
 /*****************************************************************************/
 // BT.CPP:

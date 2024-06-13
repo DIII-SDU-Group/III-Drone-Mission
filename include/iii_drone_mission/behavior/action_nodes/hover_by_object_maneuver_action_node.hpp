@@ -7,19 +7,18 @@
 /*****************************************************************************/
 // III-Drone-Core:
 
-#include <iii_drone_configuration/parameter_bundle.hpp>
-
-/*****************************************************************************/
-// III-Drone-Core:
-
-#include <iii_drone_core/behavior/action_nodes/maneuver_action_node.hpp>
 #include <iii_drone_core/control/maneuver/maneuver_reference_client.hpp>
 
 /*****************************************************************************/
 // III-Drone-Interfaces:
 
-#include <iii_drone_interfaces/action/cable_takeoff.hpp>
+#include <iii_drone_interfaces/action/hover_by_object.hpp>
 #include <iii_drone_interfaces/msg/target.hpp>
+
+/*****************************************************************************/
+// III-Drone-Mission:
+
+#include <iii_drone_mission/behavior/action_nodes/maneuver_action_node.hpp>
 
 /*****************************************************************************/
 // BT.CPP:
@@ -35,9 +34,10 @@ namespace iii_drone {
 namespace behavior {
 
     /**
-     * @brief Cable takeoff maneuver action node.
+     * @brief Hover by object maneuver action node.
      */
-    class CableTakeoffManeuverActionNode : public ManeuverActionNode<iii_drone_interfaces::action::CableTakeoff> {
+    // class HoverByObjectManeuverActionNode : public BT::RosActionNode<iii_drone_interfaces::action::HoverByObject> {
+    class HoverByObjectManeuverActionNode : public ManeuverActionNode<iii_drone_interfaces::action::HoverByObject> {
     public:
         /**
          * @brief Constructor.
@@ -46,25 +46,21 @@ namespace behavior {
          * @param conf The node configuration.
          * @param params The ROS node parameters.
          * @param maneuver_reference_client The maneuver reference client.
-         * @param parameter_bundle The parameter bundle.
          */
-        CableTakeoffManeuverActionNode(
+        HoverByObjectManeuverActionNode(
             const std::string & name, 
             const BT::NodeConfig & conf,
             const BT::RosNodeParams & params,
-            iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
-            iii_drone::configuration::ParameterBundle::SharedPtr parameter_bundle
+            iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client
         );
 
         bool setGoal(Goal & goal) override;
 
+        // BT::NodeStatus onResultReceived(const WrappedResult & wr) override final { return BT::NodeStatus::SUCCESS; }
+        // BT::NodeStatus onFailure(BT::ActionNodeErrorCode error) override final { return BT::NodeStatus::FAILURE; }
+        // BT::NodeStatus onFeedback(const std::shared_ptr<const Feedback> feedback) override final { return BT::NodeStatus::RUNNING; }
+    
         static BT::PortsList providedPorts();
-
-    private:
-        /**
-         * @brief The parameter bundle.
-         */
-        iii_drone::configuration::ParameterBundle::SharedPtr parameter_bundle_;
 
     };
 

@@ -2,7 +2,7 @@
 // Includes
 /*****************************************************************************/
 
-#include <iii_drone_core/px4/modes/maneuver_mode.hpp>
+#include <iii_drone_mission/px4/modes/maneuver_mode.hpp>
 
 using namespace iii_drone::px4;
 using namespace iii_drone::control;

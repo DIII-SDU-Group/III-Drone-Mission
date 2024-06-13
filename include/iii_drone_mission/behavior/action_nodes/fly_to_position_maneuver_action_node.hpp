@@ -7,20 +7,32 @@
 /*****************************************************************************/
 // III-Drone-Core:
 
-#include <iii_drone_core/behavior/action_nodes/maneuver_action_node.hpp>
 #include <iii_drone_core/control/maneuver/maneuver_reference_client.hpp>
+#include <iii_drone_core/control/reference.hpp>
+
+#include <iii_drone_core/adapters/reference_adapter.hpp>
 
 /*****************************************************************************/
 // III-Drone-Interfaces:
 
-#include <iii_drone_interfaces/action/hover_by_object.hpp>
+#include <iii_drone_interfaces/action/fly_to_position.hpp>
 #include <iii_drone_interfaces/msg/target.hpp>
+
+/*****************************************************************************/
+// III-Drone-Mission:
+
+#include <iii_drone_mission/behavior/action_nodes/maneuver_action_node.hpp>
 
 /*****************************************************************************/
 // BT.CPP:
 
 #include <behaviortree_ros2/bt_action_node.hpp>
 #include <behaviortree_ros2/plugins.hpp>
+
+/*****************************************************************************/
+// ROS2:
+
+#include <geometry_msgs/msg/point.hpp>
 
 /*****************************************************************************/
 // Class:
@@ -30,10 +42,9 @@ namespace iii_drone {
 namespace behavior {
 
     /**
-     * @brief Hover by object maneuver action node.
+     * @brief Fly to position maneuver action node.
      */
-    // class HoverByObjectManeuverActionNode : public BT::RosActionNode<iii_drone_interfaces::action::HoverByObject> {
-    class HoverByObjectManeuverActionNode : public ManeuverActionNode<iii_drone_interfaces::action::HoverByObject> {
+    class FlyToPositionManeuverActionNode : public ManeuverActionNode<iii_drone_interfaces::action::FlyToPosition> {
     public:
         /**
          * @brief Constructor.
@@ -43,7 +54,7 @@ namespace behavior {
          * @param params The ROS node parameters.
          * @param maneuver_reference_client The maneuver reference client.
          */
-        HoverByObjectManeuverActionNode(
+        FlyToPositionManeuverActionNode(
             const std::string & name, 
             const BT::NodeConfig & conf,
             const BT::RosNodeParams & params,
@@ -52,11 +63,17 @@ namespace behavior {
 
         bool setGoal(Goal & goal) override;
 
-        // BT::NodeStatus onResultReceived(const WrappedResult & wr) override final { return BT::NodeStatus::SUCCESS; }
-        // BT::NodeStatus onFailure(BT::ActionNodeErrorCode error) override final { return BT::NodeStatus::FAILURE; }
-        // BT::NodeStatus onFeedback(const std::shared_ptr<const Feedback> feedback) override final { return BT::NodeStatus::RUNNING; }
-    
         static BT::PortsList providedPorts();
+
+    private:
+        /**
+         * @brief Gets the final hover reference from the wrapped result.
+         * 
+         * @param wr The wrapped result.
+         * 
+         * @return The final hover reference.
+         */
+        iii_drone::control::Reference getFinalReference(const typename BT::RosActionNode<iii_drone_interfaces::action::FlyToPosition>::WrappedResult & wr) const;
 
     };
 

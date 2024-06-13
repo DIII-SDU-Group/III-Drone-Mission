@@ -2,7 +2,7 @@
 // Includes
 /*****************************************************************************/
 
-#include <iii_drone_core/behavior/action_nodes/pl_mapper_command_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/pl_mapper_command_action_node.hpp>
 
 using namespace iii_drone::behavior;
 using namespace BT;

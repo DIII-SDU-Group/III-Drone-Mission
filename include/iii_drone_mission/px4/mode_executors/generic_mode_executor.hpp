@@ -26,7 +26,10 @@
 
 #include <iii_drone_core/control/reference.hpp>
 
-#include <iii_drone_core/px4/setpoints/trajectory_setpoint.hpp>
+/*****************************************************************************/
+// III-Drone-Mission:
+
+#include <iii_drone_mission/px4/setpoints/trajectory_setpoint.hpp>
 
 /*****************************************************************************/
 // PX4-ROS2:

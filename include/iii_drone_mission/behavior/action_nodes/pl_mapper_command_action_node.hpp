@@ -5,21 +5,25 @@
 /*****************************************************************************/
 
 /*****************************************************************************/
-// III-Drone-Core:
+// ROS2:
 
-#include <iii_drone_core/behavior/action_nodes/maneuver_action_node.hpp>
-#include <iii_drone_core/control/maneuver/maneuver_reference_client.hpp>
+#include <rclcpp/rclcpp.hpp>
+
+/*****************************************************************************/
+// III-Drone-Mission:
+
+#include <iii_drone_mission/behavior/port_types.hpp>
 
 /*****************************************************************************/
 // III-Drone-Interfaces:
 
-#include <iii_drone_interfaces/action/hover_on_cable.hpp>
-#include <iii_drone_interfaces/msg/target.hpp>
+#include <iii_drone_interfaces/srv/pl_mapper_command.hpp>
+#include <iii_drone_interfaces/msg/pl_mapper_command.hpp>
 
 /*****************************************************************************/
 // BT.CPP:
 
-#include <behaviortree_ros2/bt_action_node.hpp>
+#include <behaviortree_ros2/bt_service_node.hpp>
 #include <behaviortree_ros2/plugins.hpp>
 
 /*****************************************************************************/
@@ -30,9 +34,9 @@ namespace iii_drone {
 namespace behavior {
 
     /**
-     * @brief Hover on cable maneuver action node.
+     * @brief PL mapper command action node, sends a PL mapper command.
      */
-    class HoverOnCableManeuverActionNode : public ManeuverActionNode<iii_drone_interfaces::action::HoverOnCable> {
+    class PLMapperCommandActionNode : public BT::RosServiceNode<iii_drone_interfaces::srv::PLMapperCommand> {
     public:
         /**
          * @brief Constructor.
@@ -40,18 +44,21 @@ namespace behavior {
          * @param name The name of the node.
          * @param conf The node configuration.
          * @param params The ROS node parameters.
-         * @param maneuver_reference_client The maneuver reference client.
          */
-        HoverOnCableManeuverActionNode(
+        PLMapperCommandActionNode(
             const std::string & name, 
             const BT::NodeConfig & conf,
-            const BT::RosNodeParams & params,
-            iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client
+            const BT::RosNodeParams & params
         );
 
-        bool setGoal(Goal & goal) override;
-
         static BT::PortsList providedPorts();
+
+        bool setRequest(Request::SharedPtr & request) override;
+
+        BT::NodeStatus onResponseReceived(const Response::SharedPtr & response) override;
+
+    private:
+        rclcpp::Node::SharedPtr node_ptr_;
 
     };
 

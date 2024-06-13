@@ -2,7 +2,7 @@
 // Includes
 /*****************************************************************************/
 
-#include <iii_drone_core/behavior/action_nodes/maneuver_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/maneuver_action_node.hpp>
 
 #include <iii_drone_interfaces/action/fly_to_position.hpp>
 #include <iii_drone_interfaces/action/fly_to_object.hpp>

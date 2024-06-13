@@ -2,7 +2,7 @@
 // Includes
 /*****************************************************************************/
 
-#include <iii_drone_core/behavior/condition_nodes/select_target_line_condition_node.hpp>
+#include <iii_drone_mission/behavior/condition_nodes/select_target_line_condition_node.hpp>
 
 using namespace iii_drone::behavior;
 using namespace iii_drone::adapters;

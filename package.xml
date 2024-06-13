@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>iii_drone_core</name>
+  <name>iii_drone_mission</name>
   <version>2.2.0</version>
   <description>
-    The III-Drone core system. This package contains the main nodes for the III-Drone system. Includes namespace perception, motion, mission, hardware, and utilities.
+    The III-Drone mission system. This package contains the mission logic for the III-Drone system, including behavior management and PX4 interface.
   </description>
   <maintainer email="ffn@sdu.dk">ffn</maintainer>
   <license>Proprietary</license>
@@ -14,10 +14,10 @@
 
   <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>
-  <depend>builtin_interfaces</depend>
-  <depend>fastcdr</depend>
-  <depend>fastrtps</depend>
 
+  <depend>dynmsg</depend>
+
+  <depend>builtin_interfaces</depend>
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>std_msgs</depend>
@@ -27,26 +27,15 @@
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
 
-  <depend>pcl_ros</depend>
-  <depend>cv_bridge</depend>
-  <depend>image_transport</depend>
-
+  <depend>iii_drone_core</depend>
   <depend>iii_drone_interfaces</depend>
   <depend>iii_drone_configuration</depend>
 
   <depend>px4_msgs</depend>
-
   <depend>px4_ros2_cpp</depend>
 
   <depend>behaviortree_cpp</depend>
   <depend>behaviortree_ros2</depend>
-
-  <exec_depend>rclpy</exec_depend>
-  <exec_depend>iwr6843aop_pub</exec_depend>
-  <exec_depend>usb_cam</exec_depend>
-
-  <test_depend>ament_lint_auto</test_depend>
-  <test_depend>ament_lint_common</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

@@ -1,0 +1,32 @@
+<root BTCPP_format="4">
+     <BehaviorTree ID="test_tree">
+        <Sequence name="test_sequence">
+            <Action ID="ScheduleTakeChargingPositionMode" name="schedule_take_charging_position_mode"/>
+            <Action ID="PLMapperCommand" name="pl_mapper_command_stop" pl_mapper_command="1" reset="false"/>
+            <Decorator ID="Delay" name="delay" delay_msec="1000">
+                <Action ID="ScheduleHoverMode" name="schedule_hover_mode"/>
+            </Decorator>
+            <Action ID="PLMapperCommand" name="pl_mapper_command_start" pl_mapper_command="0" reset="true"/>
+            <Action ID="Hover" name="hover" duration_s="10." stop_maneuver_after_timeout_ms="10000"/>
+            <RetryUntilSuccessful name="retry_until_successful" num_attempts="9">
+                <Decorator ID="Delay" name="delay" delay_msec="1000">
+                    <Condition ID="VerifyPowerlineDetected" name="verify_powerline_detected" required_n_lines="2"/>
+                </Decorator>
+            </RetryUntilSuccessful>
+            <Condition ID="SelectTargetLine" name="select_target_line" target_cable_id="{target_cable_id}"/>
+            <Action ID="ScheduleTakeChargingPositionMode" name="schedule_take_charging_position_mode"/>
+            <Action ID="FlyToObject" name="fly_to_object" target_cable_id="{target_cable_id}"/>
+            <Action ID="CableLanding" name="cable_landing" target_cable_id="{target_cable_id}"/>
+            <Action ID="HoverOnCable" name="hover_on_cable" 
+                duration_s="10." 
+                stop_maneuver_after_timeout_ms="10000" 
+                target_z_velocity="1."
+                target_yaw_rate="0." 
+            />
+            <Decorator ID="Delay" name="delay" delay_msec="1000">
+                <Action ID="CableTakeoff" name="cable_takeoff" target_cable_id="{target_cable_id}" target_cable_distance="2."/>
+            </Decorator>
+            <Action ID="ScheduleHoverMode" name="schedule_hover_mode"/>
+        </Sequence>
+     </BehaviorTree>
+ </root>

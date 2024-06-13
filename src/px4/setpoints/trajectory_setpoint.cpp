@@ -2,7 +2,7 @@
 // Includes
 /*****************************************************************************/
 
-#include <iii_drone_core/px4/setpoints/trajectory_setpoint.hpp>
+#include <iii_drone_mission/px4/setpoints/trajectory_setpoint.hpp>
 
 using namespace iii_drone::px4;
 using namespace iii_drone::control;

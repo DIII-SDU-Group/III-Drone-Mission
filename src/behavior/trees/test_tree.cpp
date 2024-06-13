@@ -1,8 +1,8 @@
 #include <behaviortree_cpp/bt_factory.h>
 #include <behaviortree_ros2/ros_node_params.hpp>
-#include <iii_drone_core/behavior/action_nodes/hover_by_object_maneuver_action_node.hpp>
-#include <iii_drone_core/behavior/action_nodes/hover_maneuver_action_node.hpp>
-#include <iii_drone_core/control/maneuver/maneuver_reference_client.hpp>
+#include <iii_drone_mission/behavior/action_nodes/hover_by_object_maneuver_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/hover_maneuver_action_node.hpp>
+#include <iii_drone_mission/control/maneuver/maneuver_reference_client.hpp>
 #include <rclcpp/rclcpp.hpp>
 
 int main(int argc, char *argv[]) {
