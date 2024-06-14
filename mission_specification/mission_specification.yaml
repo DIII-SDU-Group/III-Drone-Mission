@@ -1,0 +1,12 @@
+entries:
+  - key: "land_on_cable"
+    mode_name: "Land On Cable"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/land_on_cable_tree.xml"
+    
+  # - key: "charge"
+  #   mode_name: "Charge"
+  #   behavior_tree_xml_file: "charge_tree.xml"
+    
+  # - key: "takeoff_from_cable"
+  #   mode_name: "Takeoff From Cable"
+  #   behavior_tree_xml_file: "takeoff_from_cable_tree.xml"

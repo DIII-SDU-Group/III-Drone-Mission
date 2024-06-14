@@ -19,7 +19,7 @@
 static constexpr char std_msgs_pkg[] = "std_msgs";
 static constexpr char std_msgs_header_name[] = "Header";
 
-class A : BT::SyncActionNode {
+class A : public BT::SyncActionNode {
 public:
     A(const std::string & name, const BT::NodeConfig & config) : BT::SyncActionNode(name, config) { }
 
@@ -47,7 +47,7 @@ public:
 
 };
 
-class B : BT::SyncActionNode {
+class B : public BT::SyncActionNode {
 public:
     B(const std::string & name, const BT::NodeConfig & config) : BT::SyncActionNode(name, config) { }
 
@@ -75,8 +75,8 @@ static const char * tree_xml = R"(
 <root BTCPP_format="4" >
     <BehaviorTree ID="MainTree">
        <Sequence name="root_sequence">
-           <A/>
-           <B/>
+           <B msg="{msg}"/>
+           <A msg="{msg}"/>
        </Sequence>
     </BehaviorTree>
 </root>
@@ -91,6 +91,8 @@ int main(int argc, char **argv) {
     factory.registerNodeType<B>("B");
 
     auto tree = factory.createTreeFromText(tree_xml);
+
+    tree.tickWhileRunning();
 
     return 0;
 }

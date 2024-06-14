@@ -17,7 +17,6 @@ HoverByObjectManeuverActionNode::HoverByObjectManeuverActionNode(
     const NodeConfig & conf,
     const RosNodeParams & params,
     ManeuverReferenceClient::SharedPtr maneuver_reference_client
-// ) : RosActionNode<iii_drone_interfaces::action::HoverByObject>(
 ) : ManeuverActionNode<iii_drone_interfaces::action::HoverByObject>(
         name, 
         conf, 

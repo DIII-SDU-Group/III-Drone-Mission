@@ -6,7 +6,9 @@
 
 using namespace iii_drone::px4;
 using namespace iii_drone::control;
+using namespace iii_drone::control::maneuver;
 using namespace iii_drone::utils;
+using namespace iii_drone::behavior;
 
 /*****************************************************************************/
 // Implementation
@@ -15,7 +17,8 @@ using namespace iii_drone::utils;
 ManeuverMode::ManeuverMode(
     rclcpp::Node & node,
     std::string mode_name,
-    iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
+    ManeuverReferenceClient::SharedPtr maneuver_reference_client,
+    TreeExecutor::SharedPtr tree_executor,
     float dt
 ) : px4_ros2::ModeBase(
         node, 
@@ -24,6 +27,7 @@ ManeuverMode::ManeuverMode(
             false
         )
 ),  maneuver_reference_client_(maneuver_reference_client),
+    tree_executor_(tree_executor),
     mode_name_(mode_name) { 
 
     // RCLCPP_DEBUG(node.get_logger(), "ManeuverMode::ManeuverMode(): Initializing mode %s", mode_name.c_str());
@@ -90,11 +94,15 @@ void ManeuverMode::onActivate() {
 
     setSetpointUpdateRate(1./dt_);
 
+    tree_executor_->StartExecution();
+
 }
 
 void ManeuverMode::onDeactivate() { 
 
     RCLCPP_INFO(node().get_logger(), "ManeuverMode::onDeactivate(): Deactivating mode %s", mode_name_.c_str());
+
+    tree_executor_->StopExecution();
 
 }
 
@@ -102,10 +110,19 @@ void ManeuverMode::updateSetpoint(float dt) {
 
     Reference reference = maneuver_reference_client_->GetReference(dt);
 
-    // RCLCPP_DEBUG(node().get_logger(), "ManeuverMode::updateSetpoint(): Updating setpoint with reference:");
-    // RCLCPP_DEBUG(node().get_logger(), "ManeuverMode::updateSetpoint(): position: [%f, %f, %f]", reference.position().x(), reference.position().y(), reference.position().z());
-    // RCLCPP_DEBUG(node().get_logger(), "ManeuverMode::updateSetpoint(): yaw: %f", reference.yaw());
-
     traj_setpoint_->update(reference);
 
+    if (tree_executor_->finished()) {
+
+        RCLCPP_INFO_ONCE(
+            node().get_logger(), 
+            "ManeuverMode::updateSetpoint(): Tree execution finished %s",
+            tree_executor_->success() ? "successfully" : "unsuccessfully"
+        );
+        
+        completed(
+            tree_executor_->success() ? px4_ros2::Result::Success : px4_ros2::Result::ModeFailureOther
+        );
+
+    }
 }

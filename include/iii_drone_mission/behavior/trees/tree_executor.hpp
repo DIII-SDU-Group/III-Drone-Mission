@@ -10,6 +10,7 @@
 #include <chrono>
 #include <memory>
 #include <thread>
+#include <wordexp.h>
 
 /*****************************************************************************/
 // ROS2:
@@ -49,9 +50,6 @@
 
 #include <iii_drone_mission/behavior/port_types.hpp>
 
-#include <iii_drone_mission/px4/mode_executors/generic_mode_executor.hpp>
-#include <iii_drone_mission/px4/modes/maneuver_mode.hpp>
-
 /*****************************************************************************/
 // BT.CPP:
 
@@ -66,41 +64,44 @@
 namespace iii_drone {
 namespace behavior {
 
-    class TakeChargingPositionTree {
+    class TreeExecutor {
     public:
-        TakeChargingPositionTree(
-            iii_drone::configuration::Configurator::SharedPtr configurator,
-            rclcpp::Node * node,
+        TreeExecutor(
+            const std::string & tree_name,
+            const std::string & tree_xml_file,
+            iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
             tf2_ros::Buffer::SharedPtr tf_buffer,
-            iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client
+            iii_drone::configuration::Configurator<rclcpp::Node>::SharedPtr configurator,
+            rclcpp::Node * node
         );
+
+        void FinalizeInitialization();
 
         void StartExecution();
 
         void StopExecution();
 
+        bool running() const;
+        bool finished() const;
+        bool success() const;
+
+        typedef std::shared_ptr<TreeExecutor> SharedPtr;
+
     private:
-        iii_drone::configuration::Configurator::SharedPtr configurator_;
+        std::string tree_name_;
+        std::string tree_xml_file_;
 
-        iii_drone::configuration::ParameterBundle::SharedPtr parameters_;
-
-        rclcpp::Node * node_;
+        iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client_;
 
         tf2_ros::Buffer::SharedPtr tf_buffer_;
 
-        iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client_;
+        iii_drone::configuration::Configurator<rclcpp::Node>::SharedPtr configurator_;
+
+        rclcpp::Node * node_;
 
         BT::BehaviorTreeFactory factory_;
 
         BT::Tree tree_;
-
-        iii_drone::px4::GenericModeExecutor::UniquePtr mode_executor_;
-
-        iii_drone::px4::ManeuverMode::UniquePtr take_charging_position_mode_;
-        iii_drone::px4::ManeuverMode::UniquePtr hover_on_cable_mode_;
-        iii_drone::px4::ManeuverMode::UniquePtr hover_mode_;
-
-        void initPX4();
 
         std::thread execute_thread_;
 
@@ -111,7 +112,6 @@ namespace behavior {
         void execute();
 
         void registerNodes();
-
 
 
     };

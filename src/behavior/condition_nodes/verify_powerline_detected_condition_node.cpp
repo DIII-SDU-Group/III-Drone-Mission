@@ -32,6 +32,12 @@ PortsList VerifyPowerlineDetectedConditionNode::providedPorts() {
 
 NodeStatus VerifyPowerlineDetectedConditionNode::onTick(const std::shared_ptr<iii_drone_interfaces::msg::Powerline> & last_msg) {
 
+    RCLCPP_DEBUG(
+        node_ptr_->get_logger(),
+        "VerifyPowerlineDetectedConditionNode::onTick(): %s: Checking powerline detection",
+        name().c_str()
+    );
+
     if (!last_msg) {
         setOutput("n_lines", 0);
         return NodeStatus::FAILURE;
@@ -54,6 +60,11 @@ NodeStatus VerifyPowerlineDetectedConditionNode::onTick(const std::shared_ptr<ii
         );
         return NodeStatus::SUCCESS;
     } else {
+        RCLCPP_DEBUG(
+            node_ptr_->get_logger(),
+            "VerifyPowerlineDetectedConditionNode::onTick(): %s: Powerline not detected",
+            name().c_str()
+        );
         return NodeStatus::FAILURE;
     }
 

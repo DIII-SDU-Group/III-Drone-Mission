@@ -28,6 +28,8 @@
 
 #include <iii_drone_mission/px4/setpoints/trajectory_setpoint.hpp>
 
+#include <iii_drone_mission/behavior/trees/tree_executor.hpp>
+
 /*****************************************************************************/
 // III-Drone-Interfaces:
 
@@ -52,6 +54,7 @@ namespace px4 {
             rclcpp::Node & node,
             std::string mode_name,
             iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
+            iii_drone::behavior::TreeExecutor::SharedPtr tree_executor,
             float dt
         );
 
@@ -69,6 +72,8 @@ namespace px4 {
     
     private:
         iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client_;
+
+        iii_drone::behavior::TreeExecutor::SharedPtr tree_executor_;
 
         std::shared_ptr<iii_drone::px4::TrajectorySetpoint> traj_setpoint_;
 

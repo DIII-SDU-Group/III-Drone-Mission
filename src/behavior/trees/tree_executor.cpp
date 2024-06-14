@@ -2,50 +2,66 @@
 // Includes
 /*****************************************************************************/
 
-#include <iii_drone_mission/behavior/trees/take_charging_position_tree.hpp>
+#include <iii_drone_mission/behavior/trees/tree_executor.hpp>
 
 using namespace iii_drone::behavior;
 using namespace iii_drone::configuration;
 using namespace iii_drone::types;
 using namespace iii_drone::control::maneuver;
-using namespace iii_drone::px4;
 
 /*****************************************************************************/
 // Implementation
 /*****************************************************************************/
 
-TakeChargingPositionTree::TakeChargingPositionTree(
-    Configurator::SharedPtr configurator,
-    rclcpp::Node * node,
+TreeExecutor::TreeExecutor(
+    const std::string & tree_name,
+    const std::string & tree_xml_file,
+    ManeuverReferenceClient::SharedPtr maneuver_reference_client,
     tf2_ros::Buffer::SharedPtr tf_buffer,
-    ManeuverReferenceClient::SharedPtr maneuver_reference_client
-) : configurator_(configurator),
-    parameters_(configurator->GetParameterBundle("take_charging_position_tree")),
-    node_(node),
+    Configurator<rclcpp::Node>::SharedPtr configurator,
+    rclcpp::Node * node
+) : tree_name_(tree_name),
+    tree_xml_file_(tree_xml_file),
+    maneuver_reference_client_(maneuver_reference_client),
     tf_buffer_(tf_buffer),
-    maneuver_reference_client_(maneuver_reference_client) {
+    configurator_(configurator),
+    node_(node)
+{
 
-    RCLCPP_INFO(node_->get_logger(), "TakeChargingPositionTree::TakeChargingPositionTree(): Initializing.");
+    wordexp_t wordexp_result;
+    wordexp(tree_xml_file_.c_str(), &wordexp_result, 0);
+    tree_xml_file_ = wordexp_result.we_wordv[0];
+    wordfree(&wordexp_result);
 
-    initPX4();
+    RCLCPP_DEBUG(node_->get_logger(), "TreeExecutor::TreeExecutor(): Initializing %s.", tree_name.c_str());
 
 }
 
-void TakeChargingPositionTree::StartExecution() {
+void TreeExecutor::FinalizeInitialization() {
+
+    RCLCPP_DEBUG(node_->get_logger(), "TreeExecutor::FinalizeInitialization(): Finalizing initialization for %s.", tree_name_.c_str());
 
     registerNodes();
 
-    tree_ = factory_.createTreeFromFile(parameters_->GetParameter("tree_xml_file").as_string());
+    RCLCPP_DEBUG(node_->get_logger(), "TreeExecutor::FinalizeInitialization(): Creating tree for %s.", tree_name_.c_str());
+
+    tree_ = factory_.createTreeFromFile(tree_xml_file_);
+
+}
+
+void TreeExecutor::StartExecution() {
+
+    RCLCPP_INFO(node_->get_logger(), "TreeExecutor::StartExecution(): Starting %s.", tree_name_.c_str());
 
     running_ = true;
     finished_ = false;
     success_ = false;
 
-    execute_thread_ = std::thread(&TakeChargingPositionTree::execute, this);
+    execute_thread_ = std::thread(&TreeExecutor::execute, this);
 
 }
 
-void TakeChargingPositionTree::StopExecution() {
+void TreeExecutor::StopExecution() {
 
     running_ = false;
 
@@ -55,75 +71,21 @@ void TakeChargingPositionTree::StopExecution() {
 
 }
 
-void TakeChargingPositionTree::initPX4() {
-
-    take_charging_position_mode_ = std::make_unique<ManeuverMode>(
-        *node_,
-        "Take Charging Position",
-        maneuver_reference_client_,
-        parameters_->GetParameter("dt").as_double()
-    );
-
-    hover_on_cable_mode_ = std::make_unique<ManeuverMode>(
-        *node_,
-        "Hover on Cable",
-        maneuver_reference_client_,
-        parameters_->GetParameter("dt").as_double()
-    );
-
-    hover_mode_ = std::make_unique<ManeuverMode>(
-        *node_,
-        "Hover",
-        maneuver_reference_client_,
-        parameters_->GetParameter("dt").as_double()
-    );
-
-    mode_executor_ = std::make_unique<GenericModeExecutor>(
-        *node_,
-        *take_charging_position_mode_,
-        "Take Charging Position Mode Executor",
-        std::bind(&TakeChargingPositionTree::StartExecution, this),
-        [this](GenericModeExecutor::DeactivateReason) -> void {
-            RCLCPP_INFO(node_->get_logger(), "Take Charging Position Mode Executor deactivated.");
-            StopExecution();
-        }
-    );
-
-    if(!mode_executor_->doRegister()) {
-
-        RCLCPP_FATAL(node_->get_logger(), "Failed to register mode executor.");
-
-        throw std::runtime_error("Failed to register mode executor.");
-
-    }
-
-    if (!hover_on_cable_mode_->doRegister()) {
-
-        RCLCPP_FATAL(node_->get_logger(), "Failed to register mode.");
-
-        throw std::runtime_error("Failed to register mode.");
-
-    }
-
-    if (!hover_mode_->doRegister()) {
-
-        RCLCPP_FATAL(node_->get_logger(), "Failed to register mode.");
-
-        throw std::runtime_error("Failed to register mode.");
-
-    }
-
-    take_charging_position_mode_->RegisterAsOffboardMode();
-
-    hover_on_cable_mode_->RegisterAsOffboardMode();
-
-    hover_mode_->RegisterAsOffboardMode();
-
+bool TreeExecutor::running() const {
+    return running_;
 }
 
-void TakeChargingPositionTree::execute() {
+bool TreeExecutor::finished() const {
+    return finished_;
+}
 
-    unsigned int tick_period_ms = parameters_->GetParameter("tick_period_ms").as_int();
+bool TreeExecutor::success() const {
+    return success_;
+}
+
+void TreeExecutor::execute() {
+
+    unsigned int tick_period_ms = configurator_->GetParameter("tick_period_ms").as_int();
 
     std::chrono::milliseconds tick_period(tick_period_ms);
 
@@ -147,10 +109,12 @@ void TakeChargingPositionTree::execute() {
 
 }
 
-void TakeChargingPositionTree::registerNodes() {
+void TreeExecutor::registerNodes() {
 
-    unsigned int server_timeout_ms = parameters_->GetParameter("server_timeout_ms").as_int();
-    unsigned int wait_for_server_timeout_ms = parameters_->GetParameter("wait_for_server_timeout_ms").as_int();
+    RCLCPP_DEBUG(node_->get_logger(), "TreeExecutor::registerNodes(): Registering nodes for %s.", tree_name_.c_str());
+
+    unsigned int server_timeout_ms = configurator_->GetParameter("server_timeout_ms").as_int();
+    unsigned int wait_for_server_timeout_ms = configurator_->GetParameter("wait_for_server_timeout_ms").as_int();
 
     std::chrono::milliseconds server_timeout(server_timeout_ms);
     std::chrono::milliseconds wait_for_server_timeout(wait_for_server_timeout_ms);
@@ -159,61 +123,8 @@ void TakeChargingPositionTree::registerNodes() {
 
     factory_ = BT::BehaviorTreeFactory();
 
-    factory_.registerSimpleAction(
-        "ScheduleTakeChargingPositionMode", 
-        [this](const BT::TreeNode &) {
-
-            mode_executor_->scheduleMode(
-                take_charging_position_mode_->id(),
-                [this](px4_ros2::Result) { }
-            );
-
-            while(!take_charging_position_mode_->isActive()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
-
-            return BT::NodeStatus::SUCCESS;
-
-        }
-    );
-
-    factory_.registerSimpleAction(
-        "ScheduleHoverOnCableMode", 
-        [this](const BT::TreeNode &) {
-
-            mode_executor_->scheduleMode(
-                hover_on_cable_mode_->id(),
-                [this](px4_ros2::Result) { }
-            );
-
-            while(!hover_on_cable_mode_->isActive()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
-
-            return BT::NodeStatus::SUCCESS;
-
-        }
-    );
-
-    factory_.registerSimpleAction(
-        "ScheduleHoverMode", 
-        [this](const BT::TreeNode & tree_node) {
-
-            mode_executor_->scheduleMode(
-                hover_mode_->id(),
-                [this](px4_ros2::Result) { }
-            );
-
-            while(!hover_mode_->isActive()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
-
-            return BT::NodeStatus::SUCCESS;
-
-        }
-    );
-
     {
+
         BT::RosNodeParams params;
 
         params.nh = node;

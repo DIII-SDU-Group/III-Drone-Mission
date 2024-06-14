@@ -102,22 +102,14 @@ namespace behavior {
 
     }
 
-    static constexpr char iii_drone_interfaces_pkg[] = "iii_interfaces";
-    static constexpr char iii_drone_interfaces_target_name[] = "Target";
-
 }
 }
 
 namespace BT {
 
-    template <> inline iii_drone_interfaces::msg::Target convertFromString(StringView str) {
+    static constexpr char iii_drone_interfaces_pkg[] = "iii_interfaces";
+    static constexpr char iii_drone_interfaces_target_name[] = "Target";
 
-        return iii_drone::behavior::yamlToMsg<
-            iii_drone_interfaces::msg::Target, 
-            iii_drone::behavior::iii_drone_interfaces_pkg, 
-            iii_drone::behavior::iii_drone_interfaces_target_name
-        >(str.data());
-
-    }
+    template <> inline iii_drone_interfaces::msg::Target convertFromString(StringView str);
 
 }

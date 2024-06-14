@@ -38,6 +38,8 @@ PortsList SelectTargetLineConditionNode::providedPorts() {
 
 NodeStatus SelectTargetLineConditionNode::onTick(const std::shared_ptr<iii_drone_interfaces::msg::Powerline> & last_msg) {
 
+    RCLCPP_DEBUG(node_->get_logger(), "SelectTargetLineConditionNode::onTick(): Ticking.");
+
     if (!last_msg) {
         RCLCPP_DEBUG(node_->get_logger(), "SelectTargetLineConditionNode::onTick(): No powerline message received.");
         return NodeStatus::FAILURE;

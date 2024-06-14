@@ -33,6 +33,11 @@ PortsList PLMapperCommandActionNode::providedPorts() {
 
 bool PLMapperCommandActionNode::setRequest(Request::SharedPtr & request) {
 
+    RCLCPP_DEBUG(
+        node_ptr_->get_logger(),
+        "PLMapperCommandActionNode::setRequest(): Setting request"
+    );
+
     pl_mapper_command_t pl_mapper_command;
     bool reset;
 
