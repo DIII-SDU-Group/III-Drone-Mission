@@ -53,6 +53,12 @@ namespace behavior {
         );
 
         /**
+         * @brief On goal accepted callback.
+         * Calls the StartManeuver() method with the maneuver reference client and sets the maneuver running flag to true.
+         */
+        void onGoalAccepted() override final;
+
+        /**
          * @brief On result received callback. Returns the node status based on the result code.
          * Calls the StopManeuver() method with the maneuver reference client and sets the maneuver running flag to false
          * if the maneuver is running.
@@ -74,16 +80,16 @@ namespace behavior {
          */
         BT::NodeStatus onFailure(BT::ActionNodeErrorCode error) override final;
 
-        /**
-         * @brief On feedback callback. Returns the node status based on the feedback.
-         * Calls the StartManuever() method with the maneuver reference client and sets the maneuver running flag to true
-         * if the maneuver is not already running.
-         * 
-         * @param feedback The feedback.
-         * 
-         * @return The node status.
-         */
-        BT::NodeStatus onFeedback(const typename std::shared_ptr<const typename BT::RosActionNode<ActionT>::Feedback> feedback) override final;
+        // /**
+        //  * @brief On feedback callback. Returns the node status based on the feedback.
+        //  * Calls the StartManeuver() method with the maneuver reference client and sets the maneuver running flag to true
+        //  * if the maneuver is not already running.
+        //  * 
+        //  * @param feedback The feedback.
+        //  * 
+        //  * @return The node status.
+        //  */
+        // BT::NodeStatus onFeedback(const typename std::shared_ptr<const typename BT::RosActionNode<ActionT>::Feedback> feedback) override final;
 
         /**
          * @brief On halt callback. Sets the maneuver to not running.
@@ -108,8 +114,10 @@ namespace behavior {
         /**
          * @brief Sets the maneuver running flag to true and calls the StartManeuver() method with the maneuver reference client
          * if the maneuver is not already running.
+         * 
+         * @return bool True if the maneuver is started.
          */
-        void setManueverRunning();
+        bool setManeuverRunning();
 
         /**
          * @brief Sets the maneuver running flag to false and calls the StopManeuver() method with the maneuver reference client
@@ -117,7 +125,7 @@ namespace behavior {
          * 
          * @param stop_maneuver_after_timeout_ms The timeout in milliseconds.
          */
-        void setManueverNotRunning(int stop_maneuver_after_timeout_ms = -1);
+        void setManeuverNotRunning(int stop_maneuver_after_timeout_ms = -1);
 
         /**
          * @brief Sets the maneuver running flag to false and calls the StopManeuver() method with the maneuver reference client
@@ -126,7 +134,7 @@ namespace behavior {
          * @param reference The reference.
          * @param stop_maneuver_after_timeout_ms The timeout in milliseconds.
          */
-        void setManueverNotRunning(
+        void setManeuverNotRunning(
             const iii_drone::control::Reference & reference,
             int stop_maneuver_after_timeout_ms = -1
         );

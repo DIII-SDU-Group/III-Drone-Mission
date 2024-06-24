@@ -26,10 +26,21 @@
 
 #include <iii_drone_core/control/reference.hpp>
 
+#include <iii_drone_core/utils/atomic.hpp>
+
 /*****************************************************************************/
 // III-Drone-Mission:
 
 #include <iii_drone_mission/px4/setpoints/trajectory_setpoint.hpp>
+
+#include <iii_drone_mission/mission/mission_specification.hpp>
+
+#include <iii_drone_mission/px4/modes/mode_provider.hpp>
+
+/*****************************************************************************/
+// PX4:
+
+#include <px4_msgs/msg/vehicle_status.hpp>
 
 /*****************************************************************************/
 // PX4-ROS2:
@@ -47,11 +58,10 @@ namespace px4 {
     class GenericModeExecutor : public px4_ros2::ModeExecutorBase {
     public:
         GenericModeExecutor(
-            rclcpp::Node & node, 
             px4_ros2::ModeBase & owned_mode,
             std::string mode_executor_name,
-            std::function<void()> on_activate_callback,
-            std::function<void(DeactivateReason)> on_deactivate_callback
+            iii_drone::mission::MissionSpecification::SharedPtr mission_specification,
+            ModeProvider::SharedPtr mode_provider
         ); 
         
         void onActivate() override;
@@ -67,9 +77,18 @@ namespace px4 {
 
         std::string mode_executor_name_;
 
-        std::function<void()> on_activate_callback_;
+        iii_drone::mission::MissionSpecification::SharedPtr mission_specification_;
 
-        std::function<void(DeactivateReason)> on_deactivate_callback_;
+        ModeProvider::SharedPtr mode_provider_;
+
+        ManeuverMode::SharedPtr current_mode_;
+        iii_drone::mission::mission_specification_entry_t current_mode_entry_;
+
+        void onModeCompleted(px4_ros2::Result result);
+
+        iii_drone::utils::Atomic<bool> wait_for_land_;
+        iii_drone::utils::Atomic<bool> wait_for_arm_;
+
 
     };
 

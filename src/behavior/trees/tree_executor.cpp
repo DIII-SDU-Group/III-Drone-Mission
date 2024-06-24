@@ -37,6 +37,14 @@ TreeExecutor::TreeExecutor(
 
 }
 
+TreeExecutor::~TreeExecutor() {
+
+    RCLCPP_DEBUG(node_->get_logger(), "TreeExecutor::~TreeExecutor(): Deinitializing %s.", tree_name_.c_str());
+
+    Deinitialize();
+
+}
+
 void TreeExecutor::FinalizeInitialization() {
 
     RCLCPP_DEBUG(node_->get_logger(), "TreeExecutor::FinalizeInitialization(): Finalizing initialization for %s.", tree_name_.c_str());
@@ -45,13 +53,23 @@ void TreeExecutor::FinalizeInitialization() {
 
     RCLCPP_DEBUG(node_->get_logger(), "TreeExecutor::FinalizeInitialization(): Creating tree for %s.", tree_name_.c_str());
 
-    tree_ = factory_.createTreeFromFile(tree_xml_file_);
+}
+
+void TreeExecutor::Deinitialize() {
+
+    RCLCPP_DEBUG(node_->get_logger(), "TreeExecutor::Deinitialize(): Deinitializing %s.", tree_name_.c_str());
+
+    StopExecution();
+
+    unregisterNodes();
 
 }
 
 void TreeExecutor::StartExecution() {
 
     RCLCPP_INFO(node_->get_logger(), "TreeExecutor::StartExecution(): Starting %s.", tree_name_.c_str());
+
+    tree_ = factory_.createTreeFromFile(tree_xml_file_);
 
     running_ = true;
     finished_ = false;
@@ -61,11 +79,11 @@ void TreeExecutor::StartExecution() {
 
 }
 
-void TreeExecutor::StopExecution() {
+void TreeExecutor::StopExecution(bool wait) {
 
     running_ = false;
 
-    if (execute_thread_.joinable()) {
+    if (wait && execute_thread_.joinable()) {
         execute_thread_.join();
     }
 
@@ -101,11 +119,15 @@ void TreeExecutor::execute() {
 
     }
 
+    tree_.haltTree();
+
     finished_ = true;
 
     success_ = status == BT::NodeStatus::SUCCESS && running_;
 
     running_ = false;
+
+    tree_ = BT::Tree();
 
 }
 
@@ -151,7 +173,8 @@ void TreeExecutor::registerNodes() {
         factory_.registerNodeType<HoverOnCableManeuverActionNode>(
             "HoverOnCable",
             params,
-            maneuver_reference_client_
+            maneuver_reference_client_,
+            configurator_->GetParameterBundle("hover_on_cable_maneuver_action_node")
         );
 
     }
@@ -160,7 +183,7 @@ void TreeExecutor::registerNodes() {
         BT::RosNodeParams params;
 
         params.nh = node;
-        params.default_port_value = "/control/maneuver_controller/hover_on_object";
+        params.default_port_value = "/control/maneuver_controller/hover_by_object";
         params.server_timeout = server_timeout;
         params.wait_for_server_timeout = wait_for_server_timeout;
 
@@ -183,7 +206,6 @@ void TreeExecutor::registerNodes() {
             "FlyToObject",
             params,
             maneuver_reference_client_,
-            configurator_->GetParameterBundle("fly_to_object_maneuver_action_node"),
             tf_buffer_
         );
 
@@ -238,6 +260,21 @@ void TreeExecutor::registerNodes() {
 
     }
 
+   {
+
+        BT::RosNodeParams params;
+
+        params.nh = node;
+        params.default_port_value = "/payload/charger_gripper/gripper_command";
+        params.server_timeout = server_timeout;
+        params.wait_for_server_timeout = wait_for_server_timeout;
+
+        factory_.registerNodeType<GripperCommandActionNode>(
+            "GripperCommand",
+            params
+        );
+
+    }
     {
 
         BT::RosNodeParams params;
@@ -281,5 +318,39 @@ void TreeExecutor::registerNodes() {
         );
 
     }
+
+    {
+        factory_.registerNodeType<TargetProvider>(
+            "TargetProvider",
+            node_,
+            tf_buffer_,
+            configurator_->GetParameterBundle("target_provider")
+        );
+
+
+    }
+
+    {
+        BT::RosNodeParams params;
+
+        params.nh = node;
+        params.default_port_value = "/fmu/out/vehicle_odometry";
+
+        factory_.registerNodeType<StoreCurrentStateConditionNode>(
+            "StoreCurrentState",
+            params
+        );
+
+    }
+
+}
+
+void TreeExecutor::unregisterNodes() {
+
+    RCLCPP_DEBUG(node_->get_logger(), "TreeExecutor::unregisterNodes(): Unregistering nodes for %s.", tree_name_.c_str());
+
+    factory_.clearRegisteredBehaviorTrees();
+    
+    factory_ = BT::BehaviorTreeFactory();
 
 }

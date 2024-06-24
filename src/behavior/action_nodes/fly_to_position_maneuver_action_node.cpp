@@ -7,6 +7,7 @@
 using namespace iii_drone::behavior;
 using namespace iii_drone::adapters;
 using namespace iii_drone::control;
+using namespace iii_drone::types;
 using namespace iii_drone::control::maneuver;
 using namespace BT;
 
@@ -40,23 +41,26 @@ PortsList FlyToPositionManeuverActionNode::providedPorts() {
 
     return providedManeuverActionNodePorts({
         InputPort<std::string>("frame_id"),
-        InputPort<geometry_msgs::msg::Point>("target_position"),
+        InputPort<point_t>("target_position"),
         InputPort<float>("target_yaw")
     });
 
 }
 
 bool FlyToPositionManeuverActionNode::setGoal(Goal & goal) {
-    
-    // getInput("frame_id", goal.frame_id);
-    // getInput("target_position", goal.target_position);
-    // getInput("target_yaw", goal.target_yaw);
 
-    goal.frame_id = "drone";
-    goal.target_position.x = 1.;
-    goal.target_position.y = 1.;
-    goal.target_position.z = 0.;
-    goal.target_yaw = 0.;
+    RCLCPP_INFO(
+        node_ptr_->get_logger(),
+        "FlyToPositionManeuverActionNode::setGoal()"
+    );
+    
+    point_t position;
+    
+    getInput("frame_id", goal.frame_id);
+    getInput("target_position", position);
+    getInput("target_yaw", goal.target_yaw);
+
+    goal.target_position = pointMsgFromPoint(position);
 
     return true;
 

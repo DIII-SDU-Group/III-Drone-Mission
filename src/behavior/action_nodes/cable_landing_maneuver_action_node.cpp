@@ -34,6 +34,11 @@ PortsList CableLandingManeuverActionNode::providedPorts() {
 }
 
 bool CableLandingManeuverActionNode::setGoal(Goal & goal) {
+
+    RCLCPP_INFO(
+        node_ptr_->get_logger(),
+        "CableLandingManeuverActionNode::setGoal(): Setting goal"
+    );
     
     getInput("target_cable_id", goal.target_cable_id);
 

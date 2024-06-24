@@ -8,6 +8,7 @@
 // ROS2:
 
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
 
 /*****************************************************************************/
 // III-Drone-Configuration:
@@ -54,16 +55,26 @@ namespace px4 {
     public:
         ModeProvider(
             iii_drone::behavior::TreeProvider::SharedPtr tree_provider,
-            iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
             iii_drone::mission::MissionSpecification::SharedPtr mission_specification,
-            iii_drone::configuration::ParameterBundle::SharedPtr parameters,
-            rclcpp::Node * node
+            rclcpp_lifecycle::LifecycleNode * node,
+            float dt
         );
+
+        void FinalizeInitialization(rclcpp::executors::MultiThreadedExecutor & executor);
+        void Configure(
+            iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
+            iii_drone::configuration::ParameterBundle::SharedPtr parameters
+        );
+        void Cleanup();
+        void Start();
+        void Stop();
 
         iii_drone::px4::ManeuverMode::SharedPtr GetMode(const std::string& name) const;
 
         ModeProviderIterator begin();
         ModeProviderIterator end();
+
+        rclcpp::Node::SharedPtr mode_node() const;
 
         typedef std::shared_ptr<ModeProvider> SharedPtr;
 
@@ -76,11 +87,15 @@ namespace px4 {
 
         iii_drone::configuration::ParameterBundle::SharedPtr parameters_;
 
-        rclcpp::Node * node_;
+        rclcpp_lifecycle::LifecycleNode * node_;
+        rclcpp::Node::SharedPtr mode_node_;
+
+        float dt_;
 
         std::map<std::string, iii_drone::px4::ManeuverMode::SharedPtr> modes_;
 
         void initializeModes();
+        void deinitializeModes();
 
     };
 

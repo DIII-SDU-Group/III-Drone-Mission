@@ -61,11 +61,14 @@ namespace behavior {
     public:
         TreeProvider(
             tf2_ros::Buffer::SharedPtr tf_buffer,
-            iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
             iii_drone::mission::MissionSpecification::SharedPtr mission_specification
         );
 
         void FinalizeInitialization(rclcpp::executors::MultiThreadedExecutor & executor);
+        void Configure(
+            iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client
+        );
+        void Cleanup();
 
         TreeExecutor::SharedPtr GetTreeExecutor(const std::string& name) const;
 

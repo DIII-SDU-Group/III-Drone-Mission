@@ -12,6 +12,8 @@
 
 #include <iii_drone_core/adapters/reference_adapter.hpp>
 
+#include <iii_drone_core/utils/types.hpp>
+
 /*****************************************************************************/
 // III-Drone-Interfaces:
 
@@ -20,6 +22,8 @@
 
 /*****************************************************************************/
 // III-Drone-Mission:
+
+#include <iii_drone_mission/behavior/port_types.hpp>
 
 #include <iii_drone_mission/behavior/action_nodes/maneuver_action_node.hpp>
 
@@ -32,7 +36,7 @@
 /*****************************************************************************/
 // ROS2:
 
-#include <geometry_msgs/msg/point.hpp>
+// #include <geometry_msgs/msg/point.hpp>
 
 /*****************************************************************************/
 // Class:

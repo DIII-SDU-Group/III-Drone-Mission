@@ -19,6 +19,8 @@ MissionSpecification::MissionSpecification(const std::string& mission_specificat
 
     YAML::Node mission_specification_node = YAML::LoadFile(expanded_mission_specification_file);
 
+    executor_owned_mode_ = mission_specification_node["executor_owned_mode"].as<std::string>();
+
     YAML::Node entries = mission_specification_node["entries"];
 
     for (YAML::const_iterator it = entries.begin(); it != entries.end(); ++it) {
@@ -35,6 +37,30 @@ MissionSpecification::MissionSpecification(const std::string& mission_specificat
 
             entry.behavior_tree_xml_file = std::string(getenv("HOME")) + entry.behavior_tree_xml_file.substr(1);
 
+        }
+
+        if ((*it).second["next_mode"]) {
+            entry.next_mode = (*it)["next_mode"].as<std::string>();
+        } else {
+            entry.next_mode = "";
+        }
+
+        if ((*it).second["allow_activate_when_disarmed"]) {
+            entry.allow_activate_when_disarmed = (*it)["allow_activate_when_disarmed"].as<bool>();
+        } else {
+            entry.allow_activate_when_disarmed = false;
+        }
+
+        if ((*it).second["land_when_finished"]) {
+            entry.land_when_finished = (*it)["land_when_finished"].as<bool>();
+        } else {
+            entry.land_when_finished = false;
+        }
+
+        if ((*it).second["arm_when_finished"]) {
+            entry.arm_when_finished = (*it)["arm_when_finished"].as<bool>();
+        } else {
+            entry.arm_when_finished = false;
         }
 
         mission_specification_entries_[entry.key] = entry;
@@ -68,6 +94,12 @@ MissionSpecificationIterator MissionSpecification::begin() {
 MissionSpecificationIterator MissionSpecification::end() {
 
     return MissionSpecificationIterator(mission_specification_entries_.end());
+
+}
+
+std::string MissionSpecification::executor_owned_mode() const {
+
+    return executor_owned_mode_;
 
 }
 

@@ -100,9 +100,13 @@ set(III_DRONE_MISSION_HDRS
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/cable_landing_maneuver_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/cable_takeoff_maneuver_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/pl_mapper_command_action_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/gripper_command_action_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/update_powerline_overview_action_node.hpp"
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/verify_powerline_detected_condition_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/select_target_line_condition_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/target_provider_condition_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/store_current_state_condition_node.hpp"
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/trees/tree_executor.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/trees/tree_provider.hpp"
@@ -133,9 +137,13 @@ set(III_DRONE_MISSION_SRCS
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/cable_landing_maneuver_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/cable_takeoff_maneuver_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/pl_mapper_command_action_node.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/gripper_command_action_node.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/update_powerline_overview_action_node.cpp"
 
   "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/verify_powerline_detected_condition_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/select_target_line_condition_node.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/target_provider_condition_node.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/store_current_state_condition_node.cpp"
 
   "${PROJECT_SOURCE_DIR}/src/behavior/trees/tree_executor.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/trees/tree_provider.cpp"
@@ -246,8 +254,18 @@ endfunction()
 #   "${PROJECT_SOURCE_DIR}/serialization_test.cpp"
 # )
 
-custom_cpp_target(system_test
-  "${PROJECT_SOURCE_DIR}/system_test.cpp"
+# custom_cpp_target(system_test
+#   "${PROJECT_SOURCE_DIR}/system_test.cpp"
+# )
+
+custom_cpp_target(mission_executor
+  "${PROJECT_SOURCE_DIR}/src/mission/mission_executor_node/mission_executor_node.cpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/mission_executor_node/mission_executor_node.hpp"
+)
+
+custom_cpp_target(powerline_overview_provider
+  "${PROJECT_SOURCE_DIR}/src/mission/powerline_overview_provider_node/powerline_overview_provider_node.cpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/powerline_overview_provider_node/powerline_overview_provider_node.hpp"
 )
 
 ############

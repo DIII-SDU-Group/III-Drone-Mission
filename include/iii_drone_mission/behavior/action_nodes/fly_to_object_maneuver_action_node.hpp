@@ -72,7 +72,6 @@ namespace behavior {
          * @param conf The node configuration.
          * @param params The ROS node parameters.
          * @param maneuver_reference_client The maneuver reference client.
-         * @param parameter_bundle The parameter bundle.
          * @param tf_buffer The TF buffer.
          */
         FlyToObjectManeuverActionNode(
@@ -80,7 +79,6 @@ namespace behavior {
             const BT::NodeConfig & conf,
             const BT::RosNodeParams & params,
             iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
-            iii_drone::configuration::ParameterBundle::SharedPtr parameter_bundle,
             tf2_ros::Buffer::SharedPtr tf_buffer
         );
 
@@ -89,8 +87,6 @@ namespace behavior {
         static BT::PortsList providedPorts();
 
     private:
-        iii_drone::configuration::ParameterBundle::SharedPtr parameter_bundle_;
-
         tf2_ros::Buffer::SharedPtr tf_buffer_;
 
         /**

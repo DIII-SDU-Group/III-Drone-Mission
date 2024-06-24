@@ -30,44 +30,6 @@ using namespace iii_drone::mission;
 // Main:
 /*****************************************************************************/
 
-// #include <px4_ros2/components/mode.hpp>
-// #include <px4_ros2/control/setpoint_types/experimental/trajectory.hpp>
-
-// class ModeTest : public px4_ros2::ModeBase {
-// public:
-//     ModeTest(
-//         rclcpp::Node & node,
-//         std::string mode_name
-//     ) : px4_ros2::ModeBase(
-//             node, 
-//             Settings(
-//                 mode_name,
-//                 true
-//             )
-//     ), mode_name_(mode_name) {
-//         RCLCPP_INFO(node.get_logger(), "ModeTest::ModeTest(): Initializing mode %s", mode_name.c_str());
-
-//         _trajectory_setpoint = std::make_shared<px4_ros2::TrajectorySetpointType>(*this);
-//     }
-
-//     void onActivate() {
-
-//         RCLCPP_INFO(node().get_logger(), "ModeTest::onActivate(): Activating mode %s", mode_name_.c_str());
-
-//     }
-
-//     void onDeactivate() {
-
-//         RCLCPP_INFO(node().get_logger(), "ModeTest::onDeactivate(): Deactivating mode %s", mode_name_.c_str());
-
-//     }
-
-//     private:
-//         std::string mode_name_;
-
-//         std::shared_ptr<px4_ros2::TrajectorySetpointType> _trajectory_setpoint;
-// };
-
 int main(int argc, char **argv) {
 
     rclcpp::init(argc, argv);

@@ -37,6 +37,35 @@ ManeuverActionNode<ActionT>::ManeuverActionNode(
     node_ptr_(params.nh) { }
 
 template <typename ActionT>
+void ManeuverActionNode<ActionT>::onGoalAccepted() {
+
+    RCLCPP_INFO(
+        node_ptr_->get_logger(),
+        "ManeuverActionNode::onGoalAccepted(): %s: Maneuver action goal accepted",
+        name_.c_str()
+    );
+
+    // // Check if ActionT is CableLanding:
+    // if constexpr (std::is_same<ActionT, iii_drone_interfaces::action::CableLanding>::value) {
+
+    //     maneuver_reference_client_->SetReferenceModeHover();
+    //     return NodeStatus::RUNNING;
+
+    // }
+
+    if (!setManeuverRunning()) {
+        RCLCPP_ERROR(
+            node_ptr_->get_logger(),
+            "ManeuverActionNode::onGoalAccepted(): %s: Failed to start maneuver, halting maneuver",
+            name_.c_str()
+        );
+
+        this->halt();
+    }
+
+}
+
+template <typename ActionT>
 BT::NodeStatus ManeuverActionNode<ActionT>::onResultReceived(const typename RosActionNode<ActionT>::WrappedResult & wr) {
 
     int stop_maneuver_after_timeout_ms;
@@ -54,7 +83,7 @@ BT::NodeStatus ManeuverActionNode<ActionT>::onResultReceived(const typename RosA
 
     if (wr.code == rclcpp_action::ResultCode::SUCCEEDED) {
 
-        RCLCPP_DEBUG(
+        RCLCPP_INFO(
             node_ptr_->get_logger(),
             "ManeuverActionNode::onResultReceived(): %s: Maneuver action succeeded",
             name_.c_str()
@@ -64,14 +93,16 @@ BT::NodeStatus ManeuverActionNode<ActionT>::onResultReceived(const typename RosA
 
             Reference ref = get_final_reference_callback_(wr);
 
-            setManueverNotRunning(
+            ref = ref.CopyWithNans();
+
+            setManeuverNotRunning(
                 ref,
                 stop_maneuver_after_timeout_ms
             );
 
         } else {
 
-            setManueverNotRunning(stop_maneuver_after_timeout_ms);
+            setManeuverNotRunning(stop_maneuver_after_timeout_ms);
 
         }
 
@@ -79,13 +110,13 @@ BT::NodeStatus ManeuverActionNode<ActionT>::onResultReceived(const typename RosA
 
     } else {
 
-        RCLCPP_DEBUG(
+        RCLCPP_INFO(
             node_ptr_->get_logger(),
             "ManeuverActionNode::onResultReceived(): %s: Maneuver action failed",
             name_.c_str()
         );
 
-        setManueverNotRunning();
+        setManeuverNotRunning();
     
         return NodeStatus::FAILURE;
     }
@@ -101,27 +132,27 @@ BT::NodeStatus ManeuverActionNode<ActionT>::onFailure(BT::ActionNodeErrorCode er
         name_.c_str()
     );
 
-    setManueverNotRunning();
+    setManeuverNotRunning();
 
     std::string error_msg;
     
     switch(error) {
         case ActionNodeErrorCode::ACTION_ABORTED:
-            RCLCPP_DEBUG(
+            RCLCPP_WARN(
                 node_ptr_->get_logger(), 
                 "ManeuverActionNode::onFailure(): %s: Maneuver action aborted",
                 name_.c_str()
             );
             break;
         case ActionNodeErrorCode::ACTION_CANCELLED:
-            RCLCPP_DEBUG(
+            RCLCPP_WARN(
                 node_ptr_->get_logger(),
                 "ManeuverActionNode::onFailure(): %s: Maneuver action cancelled",
                 name_.c_str()
             );
             break;
         case ActionNodeErrorCode::GOAL_REJECTED_BY_SERVER:
-            RCLCPP_DEBUG(
+            RCLCPP_WARN(
                 node_ptr_->get_logger(),
                 "ManeuverActionNode::onFailure(): %s: Maneuver goal rejected by server",
                 name_.c_str()
@@ -154,25 +185,33 @@ BT::NodeStatus ManeuverActionNode<ActionT>::onFailure(BT::ActionNodeErrorCode er
 
 }
 
-template <typename ActionT>
-BT::NodeStatus ManeuverActionNode<ActionT>::onFeedback(const typename std::shared_ptr<const typename RosActionNode<ActionT>::Feedback>) {
+// template <typename ActionT>
+// BT::NodeStatus ManeuverActionNode<ActionT>::onFeedback(const typename std::shared_ptr<const typename RosActionNode<ActionT>::Feedback>) {
 
-    setManueverRunning();
+//     // Check if ActionT is CableLanding:
+//     if constexpr (std::is_same<ActionT, iii_drone_interfaces::action::CableLanding>::value) {
 
-    return NodeStatus::RUNNING;
+//         maneuver_reference_client_->SetReferenceModeHover();
+//         return NodeStatus::RUNNING;
 
-}
+//     }
+
+//     setManeuverRunning();
+
+//     return NodeStatus::RUNNING;
+
+// }
 
 template <typename ActionT>
 void ManeuverActionNode<ActionT>::onHalt() {
 
-    RCLCPP_DEBUG(
+    RCLCPP_WARN(
         node_ptr_->get_logger(),
         "ManeuverActionNode::onHalt(): %s: Halting maneuver",
         name_.c_str()
     );
 
-    setManueverNotRunning();
+    setManeuverNotRunning();
 
 }
 
@@ -190,29 +229,61 @@ BT::PortsList ManeuverActionNode<ActionT>::providedManeuverActionNodePorts(BT::P
 }
 
 template <typename ActionT>
-void ManeuverActionNode<ActionT>::setManueverRunning() {
+bool ManeuverActionNode<ActionT>::setManeuverRunning() {
+
+    RCLCPP_DEBUG(
+        node_ptr_->get_logger(),
+        "ManeuverActionNode::setManeuverRunning(): %s",
+        name_.c_str()
+    );
+
     if (!maneuver_running_) {
 
         RCLCPP_DEBUG(
             node_ptr_->get_logger(),
-            "ManeuverActionNode::setManueverRunning(): %s: Starting maneuver",
+            "ManeuverActionNode::setManeuverRunning(): %s: Starting maneuver",
             name_.c_str()
         );
 
-        maneuver_reference_client_->StartManeuver();
+        if (!maneuver_reference_client_->StartManeuver()) {
+            RCLCPP_ERROR(
+                node_ptr_->get_logger(),
+                "ManeuverActionNode::setManeuverRunning(): %s: Failed to start maneuver",
+                name_.c_str()
+            );
+            return false;
+        }
         maneuver_running_ = true;
 
+    } else {
+
+        RCLCPP_ERROR(
+            node_ptr_->get_logger(),
+            "ManeuverActionNode::setManeuverRunning(): %s: Maneuver already running, returning",
+            name_.c_str()
+        );
+
+        return false;
+
     }
+
+    return true;
 }
 
 template <typename ActionT>
-void ManeuverActionNode<ActionT>::setManueverNotRunning(int stop_maneuver_after_timeout_ms) {
+void ManeuverActionNode<ActionT>::setManeuverNotRunning(int stop_maneuver_after_timeout_ms) {
+
+    RCLCPP_DEBUG(
+        node_ptr_->get_logger(),
+        "ManeuverActionNode::setManeuverNotRunning(stop_maneuver_after_timeout_ms): %s",
+        name_.c_str()
+    );
 
     if (maneuver_running_) {
         
         RCLCPP_DEBUG(
             node_ptr_->get_logger(),
-            "ManeuverActionNode::setManueverNotRunning(): %s: Stopping maneuver",
+            "ManeuverActionNode::setManeuverNotRunning(stop_maneuver_after_timeout_ms): %s: Stopping maneuver",
             name_.c_str()
         );
 
@@ -228,21 +299,35 @@ void ManeuverActionNode<ActionT>::setManueverNotRunning(int stop_maneuver_after_
 
         maneuver_running_ = false;
 
+    } else {
+
+        RCLCPP_DEBUG(
+            node_ptr_->get_logger(),
+            "ManeuverActionNode::setManeuverNotRunning(stop_maneuver_after_timeout_ms): %s: Maneuver not running, returning",
+            name_.c_str()
+        );
+
     }
 
 }
 
 template <typename ActionT>
-void ManeuverActionNode<ActionT>::setManueverNotRunning(
+void ManeuverActionNode<ActionT>::setManeuverNotRunning(
     const Reference & reference,
     int stop_maneuver_after_timeout_ms
 ) {
+
+    RCLCPP_DEBUG(
+        node_ptr_->get_logger(),
+        "ManeuverActionNode::setManeuverNotRunning(reference, stop_maneuver_after_timeout_ms): %s",
+        name_.c_str()
+    );
 
     if (maneuver_running_) {
         
         RCLCPP_DEBUG(
             node_ptr_->get_logger(),
-            "ManeuverActionNode::setManueverNotRunning(): %s: Stopping maneuver",
+            "ManeuverActionNode::setManeuverNotRunning(reference, stop_maneuver_after_timeout_ms): %s: Stopping maneuver",
             name_.c_str()
         );
 
@@ -260,6 +345,14 @@ void ManeuverActionNode<ActionT>::setManueverNotRunning(
         }
 
         maneuver_running_ = false;
+
+    } else {
+
+        RCLCPP_DEBUG(
+            node_ptr_->get_logger(),
+            "ManeuverActionNode::setManeuverNotRunning(reference, stop_maneuver_after_timeout_ms): %s: Maneuver not running, returning",
+            name_.c_str()
+        );
 
     }
 

@@ -15,21 +15,44 @@ using namespace iii_drone::control::maneuver;
 
 TreeProvider::TreeProvider(
     tf2_ros::Buffer::SharedPtr tf_buffer,
-    ManeuverReferenceClient::SharedPtr maneuver_reference_client,
     MissionSpecification::SharedPtr mission_specification
 ) : rclcpp::Node(
     "behavior_tree",
-    "/mission/behavior_tree"
+    "/mission/behavior_tree",
+    rclcpp::NodeOptions()
 ),  tf_buffer_(tf_buffer),
-    maneuver_reference_client_(maneuver_reference_client),
     mission_specification_(mission_specification)
 {
 
-    RCLCPP_INFO(get_logger(), "TreeProvider::TreeProvider(): Initializing.");
+    // RCLCPP_INFO(get_logger(), "TreeProvider::TreeProvider(): Initializing.");
 
-    configurator_ = std::make_shared<Configurator<rclcpp::Node>>(this);
+	std::string log_level = std::getenv("BEHAVIOR_TREE_LOG_LEVEL");
 
-    initializeTreeExecutors();
+	if (log_level != "") {
+
+		// Convert to upper case:
+		std::transform(
+			log_level.begin(), 
+			log_level.end(), 
+			log_level.begin(), 
+			[](unsigned char c){ return std::toupper(c); }
+		);
+
+		if (log_level == "DEBUG") {
+			rcutils_logging_set_logger_level(this->get_logger().get_name(), RCUTILS_LOG_SEVERITY_DEBUG);
+		} else if (log_level == "INFO") {
+			rcutils_logging_set_logger_level(this->get_logger().get_name(), RCUTILS_LOG_SEVERITY_INFO);
+		} else if (log_level == "WARN") {
+			rcutils_logging_set_logger_level(this->get_logger().get_name(), RCUTILS_LOG_SEVERITY_WARN);
+		} else if (log_level == "ERROR") {
+			rcutils_logging_set_logger_level(this->get_logger().get_name(), RCUTILS_LOG_SEVERITY_ERROR);
+		} else if (log_level == "FATAL") {
+			rcutils_logging_set_logger_level(this->get_logger().get_name(), RCUTILS_LOG_SEVERITY_FATAL);
+		}
+
+	}
+
+
 
     RCLCPP_INFO(get_logger(), "TreeProvider::TreeProvider(): Initialized.");
 
@@ -39,13 +62,40 @@ void TreeProvider::FinalizeInitialization(rclcpp::executors::MultiThreadedExecut
 
     RCLCPP_INFO(get_logger(), "TreeProvider::FinalizeInitialization(): Finalizing initialization.");
 
+    executor.add_node(get_node_base_interface());
+
+}
+
+void TreeProvider::Configure(
+    ManeuverReferenceClient::SharedPtr maneuver_reference_client
+) {
+
+    RCLCPP_INFO(get_logger(), "TreeProvider::Configure(): Configuring.");
+
+    maneuver_reference_client_ = maneuver_reference_client;
+
+    configurator_ = std::make_shared<Configurator<rclcpp::Node>>(this);
+
+    initializeTreeExecutors();
+
+}
+
+void TreeProvider::Cleanup() {
+
+    RCLCPP_INFO(get_logger(), "TreeProvider::Cleanup(): Cleaning up.");
+
     for (auto it = tree_executors_.begin(); it != tree_executors_.end(); ++it) {
 
-        it->second->FinalizeInitialization();
+        it->second->Deinitialize();
 
     }
 
-    executor.add_node(get_node_base_interface());
+    tree_executors_.clear();
+
+    configurator_.reset();
+    configurator_ = nullptr;
+
+    maneuver_reference_client_.reset();
 
 }
 
@@ -67,22 +117,25 @@ TreeExecutor::SharedPtr TreeProvider::GetTreeExecutor(const std::string& name) c
 
 }
 
-void TreeProvider::initializeTreeExecutors() {
+void TreeProvider::initializeTreeExecutors(
+) {
 
     RCLCPP_INFO(get_logger(), "TreeProvider::initializeTreeExecutors(): Initializing tree executors.");
 
     for (mission_specification_entry_t entry : *mission_specification_) {
     
-            TreeExecutor::SharedPtr tree_executor = std::make_shared<TreeExecutor>(
-                entry.key,
-                entry.behavior_tree_xml_file,
-                maneuver_reference_client_,
-                tf_buffer_,
-                configurator_,
-                this
-            );
-    
-            tree_executors_[entry.key] = tree_executor;
+        TreeExecutor::SharedPtr tree_executor = std::make_shared<TreeExecutor>(
+            entry.key,
+            entry.behavior_tree_xml_file,
+            maneuver_reference_client_,
+            tf_buffer_,
+            configurator_,
+            this
+        );
+
+        tree_executor->FinalizeInitialization();
+
+        tree_executors_[entry.key] = tree_executor;
 
     }
 

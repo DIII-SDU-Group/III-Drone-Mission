@@ -28,6 +28,11 @@ namespace mission {
         std::string key;
         std::string mode_name;
         std::string behavior_tree_xml_file;
+        std::string next_mode;
+
+        bool allow_activate_when_disarmed;
+        bool land_when_finished;
+        bool arm_when_finished;
 
     } mission_specification_entry_t;
 
@@ -65,10 +70,14 @@ namespace mission {
         MissionSpecificationIterator begin();
         MissionSpecificationIterator end();
 
+        std::string executor_owned_mode() const;
+
         typedef std::shared_ptr<MissionSpecification> SharedPtr;
 
     private:
         std::map<std::string, mission_specification_entry_t> mission_specification_entries_;
+
+        std::string executor_owned_mode_;
 
     };
 

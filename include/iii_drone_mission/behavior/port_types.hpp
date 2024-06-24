@@ -28,6 +28,11 @@
 #include <iii_drone_interfaces/msg/target.hpp>
 
 /*****************************************************************************/
+// III-Drone-Core:
+
+#include <iii_drone_core/utils/types.hpp>
+
+/*****************************************************************************/
 // Definitions
 /*****************************************************************************/
 
@@ -46,6 +51,23 @@ namespace behavior {
         PL_MAPPER_ACK_INVALID_COMMAND = 1,
         PL_MAPPER_ACK_UNKNOWN_ERROR = 2
     } pl_mapper_ack_t;
+
+    typedef enum {
+        TARGET_PROVIDER_MODE_FLY_TO_CABLE = 0,
+        TARGET_PROVIDER_MODE_HOVER_BY_CABLE = 1
+    } target_provider_mode_t;
+
+    typedef enum {
+        GRIPPER_COMMAND_OPEN = 0,
+        GRIPPER_COMMAND_CLOSE = 1
+    } gripper_command_t;
+
+    typedef enum {
+        GRIPPER_COMMAND_RESPONSE_SUCCESS = 0,
+        GRIPPER_COMMAND_RESPONSE_INVALID_COMMAND = 1,
+        GRIPPER_COMMAND_RESPONSE_ERROR = 2,
+        GRIPPER_COMMAND_RESPONSE_TIMEOUT = 3
+    } gripper_command_response_t;
 
 } // namespace behavior
 } // namespace iii_drone
@@ -110,6 +132,37 @@ namespace BT {
     static constexpr char iii_drone_interfaces_pkg[] = "iii_interfaces";
     static constexpr char iii_drone_interfaces_target_name[] = "Target";
 
-    template <> inline iii_drone_interfaces::msg::Target convertFromString(StringView str);
+    // template <> inline iii_drone_interfaces::msg::Target convertFromString(StringView str);
+    // template <> inline iii_drone::types::point_t convertFromString(StringView str);
+
+    template <> inline iii_drone_interfaces::msg::Target convertFromString(StringView str) {
+
+        return iii_drone::behavior::yamlToMsg<
+            iii_drone_interfaces::msg::Target, 
+            iii_drone_interfaces_pkg, 
+            iii_drone_interfaces_target_name
+        >(str.data());
+
+    }
+
+    template <> inline iii_drone::types::point_t convertFromString(StringView str) {
+
+        // Split string by comma, "x,y,z":
+        std::vector<std::string> tokens;
+        std::string token;
+        std::istringstream tokenStream(str.data());
+        while (std::getline(tokenStream, token, ',')) {
+            tokens.push_back(token);
+        }
+
+        // Convert tokens to float values:
+        iii_drone::types::point_t point;
+        point[0] = std::stof(tokens[0]);
+        point[1] = std::stof(tokens[1]);
+        point[2] = std::stof(tokens[2]);
+
+        return point;
+
+    }
 
 }

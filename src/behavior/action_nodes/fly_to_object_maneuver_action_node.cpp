@@ -22,15 +22,13 @@ FlyToObjectManeuverActionNode::FlyToObjectManeuverActionNode(
     const NodeConfig & conf,
     const RosNodeParams & params,
     ManeuverReferenceClient::SharedPtr maneuver_reference_client,
-    ParameterBundle::SharedPtr parameter_bundle,
     tf2_ros::Buffer::SharedPtr tf_buffer
 ) : ManeuverActionNode<iii_drone_interfaces::action::FlyToObject>(
         name, 
         conf, 
         params,
         maneuver_reference_client
-),  parameter_bundle_(parameter_bundle),
-    tf_buffer_(tf_buffer) {
+),  tf_buffer_(tf_buffer) {
 
     setGetFinalReferenceCallback(
         std::bind(
@@ -45,14 +43,69 @@ FlyToObjectManeuverActionNode::FlyToObjectManeuverActionNode(
 PortsList FlyToObjectManeuverActionNode::providedPorts() {
 
     return providedManeuverActionNodePorts({
-        InputPort<int>("target_cable_id")
+        InputPort<iii_drone_interfaces::msg::Target>("target")
     });
 
 }
 
 bool FlyToObjectManeuverActionNode::setGoal(Goal & goal) {
+
+    RCLCPP_INFO(
+        node_ptr_->get_logger(),
+        "FlyToObjectManeuverActionNode::setGoal(): Setting goal"
+    );
     
-    getInput("target_cable_id", goal.target.target_id);
+    // getInput("target_cable_id", goal.target.target_id);
+
+    // if (goal.target.target_id < 0) {
+    //     RCLCPP_DEBUG(
+    //         node_ptr_->get_logger(),
+    //         "FlyToObjectManeuverActionNode::setGoal(): %s: Invalid target ID",
+    //         name_.c_str()
+    //     );
+    //     return false;
+    // }
+
+    // goal.target.target_type = iii_drone_interfaces::msg::Target::TARGET_TYPE_CABLE;
+    // goal.target.reference_frame_id = parameter_bundle_->GetParameter("drone_frame_id").as_string();
+
+    // quaternion_t gripper_q_cable(1, 0, 0, 0);
+    // geometry_msgs::msg::QuaternionStamped gripper_q_cable_msg;
+    // gripper_q_cable_msg.header.frame_id = parameter_bundle_->GetParameter("gripper_frame_id").as_string();
+    // gripper_q_cable_msg.quaternion = quaternionMsgFromQuaternion(gripper_q_cable);
+
+    // geometry_msgs::msg::QuaternionStamped drone_q_cable_msg;
+
+    // try {
+
+    //     drone_q_cable_msg = tf_buffer_->transform(
+    //         gripper_q_cable_msg,
+    //         parameter_bundle_->GetParameter("drone_frame_id").as_string()
+    //     );
+
+    // } catch (tf2::TransformException & e) {
+
+    //     RCLCPP_ERROR(
+    //         node_ptr_->get_logger(),
+    //         "FlyToObjectManeuverActionNode::setGoal(): %s: Failed to transform gripper quaternion to drone frame: %s",
+    //         name_.c_str(),
+    //         e.what()
+    //     );
+
+    //     return false;
+
+    // }
+
+    // quaternion_t drone_q_cable = quaternionFromQuaternionMsg(drone_q_cable_msg.quaternion);
+
+    // vector_t drone_v_cable(0, 0, parameter_bundle_->GetParameter("target_cable_distance").as_double());
+
+    // goal.target.target_transform = transformMsgFromTransform(
+    //     drone_v_cable,
+    //     drone_q_cable
+    // );
+
+    getInput("target", goal.target);
 
     if (goal.target.target_id < 0) {
         RCLCPP_DEBUG(
@@ -63,44 +116,14 @@ bool FlyToObjectManeuverActionNode::setGoal(Goal & goal) {
         return false;
     }
 
-    goal.target.target_type = iii_drone_interfaces::msg::Target::TARGET_TYPE_CABLE;
-    goal.target.reference_frame_id = parameter_bundle_->GetParameter("drone_frame_id").as_string();
-
-    quaternion_t gripper_q_cable(1, 0, 0, 0);
-    geometry_msgs::msg::QuaternionStamped gripper_q_cable_msg;
-    gripper_q_cable_msg.header.frame_id = parameter_bundle_->GetParameter("gripper_frame_id").as_string();
-    gripper_q_cable_msg.quaternion = quaternionMsgFromQuaternion(gripper_q_cable);
-
-    geometry_msgs::msg::QuaternionStamped drone_q_cable_msg;
-
-    try {
-
-        drone_q_cable_msg = tf_buffer_->transform(
-            gripper_q_cable_msg,
-            parameter_bundle_->GetParameter("drone_frame_id").as_string()
-        );
-
-    } catch (tf2::TransformException & e) {
-
-        RCLCPP_ERROR(
+    if (goal.target.target_type == iii_drone_interfaces::msg::Target::TARGET_TYPE_NONE) {
+        RCLCPP_DEBUG(
             node_ptr_->get_logger(),
-            "FlyToObjectManeuverActionNode::setGoal(): %s: Failed to transform gripper quaternion to drone frame: %s",
-            name_.c_str(),
-            e.what()
+            "FlyToObjectManeuverActionNode::setGoal(): %s: Invalid target type",
+            name_.c_str()
         );
-
         return false;
-
     }
-
-    quaternion_t drone_q_cable = quaternionFromQuaternionMsg(drone_q_cable_msg.quaternion);
-
-    vector_t drone_v_cable(0, 0, parameter_bundle_->GetParameter("target_cable_distance").as_double());
-
-    goal.target.target_transform = transformMsgFromTransform(
-        drone_v_cable,
-        drone_q_cable
-    );
 
     return true;
 

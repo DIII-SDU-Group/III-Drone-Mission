@@ -44,9 +44,12 @@
 #include <iii_drone_mission/behavior/action_nodes/cable_landing_maneuver_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/cable_takeoff_maneuver_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/pl_mapper_command_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/gripper_command_action_node.hpp>
 
 #include <iii_drone_mission/behavior/condition_nodes/verify_powerline_detected_condition_node.hpp>
 #include <iii_drone_mission/behavior/condition_nodes/select_target_line_condition_node.hpp>
+#include <iii_drone_mission/behavior/condition_nodes/target_provider_condition_node.hpp>
+#include <iii_drone_mission/behavior/condition_nodes/store_current_state_condition_node.hpp>
 
 #include <iii_drone_mission/behavior/port_types.hpp>
 
@@ -75,11 +78,14 @@ namespace behavior {
             rclcpp::Node * node
         );
 
+        ~TreeExecutor();
+
         void FinalizeInitialization();
+        void Deinitialize();
 
         void StartExecution();
 
-        void StopExecution();
+        void StopExecution(bool wait = true);
 
         bool running() const;
         bool finished() const;
@@ -112,6 +118,7 @@ namespace behavior {
         void execute();
 
         void registerNodes();
+        void unregisterNodes();
 
 
     };

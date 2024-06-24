@@ -17,22 +17,115 @@ using namespace iii_drone::control::maneuver;
 
 ModeProvider::ModeProvider(
     TreeProvider::SharedPtr tree_provider,
-    ManeuverReferenceClient::SharedPtr maneuver_reference_client,
     MissionSpecification::SharedPtr mission_specification,
-    ParameterBundle::SharedPtr parameters,
-    rclcpp::Node * node
+    rclcpp_lifecycle::LifecycleNode * node,
+    float dt
 ) : tree_provider_(tree_provider),
-    maneuver_reference_client_(maneuver_reference_client),
     mission_specification_(mission_specification),
-    parameters_(parameters),
-    node_(node)
+    node_(node),
+    dt_(dt)
 {
 
     RCLCPP_INFO(node_->get_logger(), "ModeProvider::ModeProvider(): Initializing.");
 
-    initializeModes();
+    mode_node_ = std::make_shared<rclcpp::Node>(
+        "mode",
+        "/mission/px4_modes",
+        rclcpp::NodeOptions()
+    );
+
+	std::string log_level = std::getenv("PX4_MODE_LOG_LEVEL");
+
+	if (log_level != "") {
+
+		// Convert to upper case:
+		std::transform(
+			log_level.begin(), 
+			log_level.end(), 
+			log_level.begin(), 
+			[](unsigned char c){ return std::toupper(c); }
+		);
+
+		if (log_level == "DEBUG") {
+			rcutils_logging_set_logger_level(mode_node_->get_logger().get_name(), RCUTILS_LOG_SEVERITY_DEBUG);
+		} else if (log_level == "INFO") {
+			rcutils_logging_set_logger_level(mode_node_->get_logger().get_name(), RCUTILS_LOG_SEVERITY_INFO);
+		} else if (log_level == "WARN") {
+			rcutils_logging_set_logger_level(mode_node_->get_logger().get_name(), RCUTILS_LOG_SEVERITY_WARN);
+		} else if (log_level == "ERROR") {
+			rcutils_logging_set_logger_level(mode_node_->get_logger().get_name(), RCUTILS_LOG_SEVERITY_ERROR);
+		} else if (log_level == "FATAL") {
+			rcutils_logging_set_logger_level(mode_node_->get_logger().get_name(), RCUTILS_LOG_SEVERITY_FATAL);
+		}
+
+	}
+
 
     RCLCPP_INFO(node_->get_logger(), "ModeProvider::ModeProvider(): Initialized.");
+
+}
+
+void ModeProvider::FinalizeInitialization(rclcpp::executors::MultiThreadedExecutor & executor) {
+
+    RCLCPP_INFO(node_->get_logger(), "ModeProvider::FinalizeInitialization(): Finalizing initialization.");
+
+    initializeModes();
+
+    executor.add_node(mode_node_);
+
+    RCLCPP_INFO(node_->get_logger(), "ModeProvider::FinalizeInitialization(): Finalized initialization.");
+
+}
+
+void ModeProvider::Configure(
+    iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
+    iii_drone::configuration::ParameterBundle::SharedPtr parameters
+) {
+
+    maneuver_reference_client_ = maneuver_reference_client;
+    parameters_ = parameters;
+
+}
+
+void ModeProvider::Cleanup() {
+
+    maneuver_reference_client_.reset();
+    parameters_.reset();
+
+}
+
+void ModeProvider::Start() {
+
+    RCLCPP_INFO(node_->get_logger(), "ModeProvider::Start(): Starting.");
+
+    for (auto it = modes_.begin(); it != modes_.end(); ++it) {
+
+        auto mode = it->second;
+
+        mode->Register(
+            tree_provider_->GetTreeExecutor(it->first),
+            maneuver_reference_client_
+        );
+
+    }
+
+    RCLCPP_INFO(node_->get_logger(), "ModeProvider::Start(): Configured.");
+
+}
+
+void ModeProvider::Stop() {
+
+    RCLCPP_INFO(node_->get_logger(), "ModeProvider::Stop(): Stopping.");
+
+    for (auto it = modes_.begin(); it != modes_.end(); ++it) {
+
+        auto mode = it->second;
+
+        mode->Unregister();
+
+    }
+
+    RCLCPP_INFO(node_->get_logger(), "ModeProvider::Stop(): Stopped.");
 
 }
 
@@ -61,30 +154,27 @@ void ModeProvider::initializeModes() {
     for (mission_specification_entry_t entry : *mission_specification_) {
     
         ManeuverMode::SharedPtr mode = std::make_shared<ManeuverMode>(
-            *node_,
+            *mode_node_,
             entry.mode_name,
-            maneuver_reference_client_,
-            tree_provider_->GetTreeExecutor(entry.key),
-            parameters_->GetParameter("maneuver_setpoint_dt").as_double()
+            dt_,
+            entry.allow_activate_when_disarmed
         );
-
-        if (!mode->doRegister()) {
-
-            std::string fatal_msg = "ModeProvider::initializeModes(): Registration failed: " + entry.mode_name;
-
-            RCLCPP_FATAL(node_->get_logger(), fatal_msg.c_str());
-
-            throw std::runtime_error(fatal_msg);
-
-        }
-
-        mode->RegisterAsOffboardMode();
 
         modes_[entry.key] = mode;
 
     }
 
     RCLCPP_INFO(node_->get_logger(), "ModeProvider::initializeModes(): Initialized modes.");
+
+}
+
+void ModeProvider::deinitializeModes() {
+
+    RCLCPP_INFO(node_->get_logger(), "ModeProvider::deinitializeModes(): Deinitializing modes.");
+
+    modes_.clear();
+
+    RCLCPP_INFO(node_->get_logger(), "ModeProvider::deinitializeModes(): Deinitialized modes.");
 
 }
 
@@ -97,6 +187,12 @@ ModeProviderIterator ModeProvider::begin() {
 ModeProviderIterator ModeProvider::end() {
 
     return ModeProviderIterator(modes_.end());
+
+}
+
+rclcpp::Node::SharedPtr ModeProvider::mode_node() const {
+
+    return mode_node_;
 
 }
 
