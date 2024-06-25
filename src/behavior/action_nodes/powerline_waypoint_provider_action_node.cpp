@@ -2,7 +2,7 @@
 // Includes
 /*****************************************************************************/
 
-#include <iii_drone_mission/behavior/action_nodes/find_powerline_waypoint_provider_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/powerline_waypoint_provider_action_node.hpp>
 
 using namespace iii_drone::behavior;
 using namespace iii_drone::adapters;
@@ -14,13 +14,13 @@ using namespace BT;
 // Implementation
 /*****************************************************************************/
 
-FindPowerlineWaypointProviderActionNode::FindPowerlineWaypointProviderActionNode(
+PowerlineWaypointProviderActionNode::PowerlineWaypointProviderActionNode(
     const std::string & name, 
     const NodeConfiguration & conf,
     tf2_ros::Buffer::SharedPtr tf_buffer
 ) : SyncActionNode(name, conf), tf_buffer_(tf_buffer) { }
 
-PortsList FindPowerlineWaypointProviderActionNode::providedPorts() {
+PortsList PowerlineWaypointProviderActionNode::providedPorts() {
 
     return {
         InputPort<iii_drone_interfaces::msg::Powerline>("stored_powerline"),
@@ -30,7 +30,7 @@ PortsList FindPowerlineWaypointProviderActionNode::providedPorts() {
 
 }
 
-NodeStatus FindPowerlineWaypointProviderActionNode::tick() {
+NodeStatus PowerlineWaypointProviderActionNode::tick() {
 
     // Get the stored powerline.
     iii_drone_interfaces::msg::Powerline stored_powerline;
@@ -151,8 +151,16 @@ NodeStatus FindPowerlineWaypointProviderActionNode::tick() {
 
     bool positive_direction_is_higher = positive_direction_lowest_point[2] > negative_direction_lowest_point[2];
 
-    // Find if the start state is on the positive or negative side of the powerline.
-    bool start_state_is_on_positive_side = start_state.position().dot(powerline_normal) > 0;
+    // Find if the start state is further away along the powerline normal than the furthest point in each direction:
+    point_t start_state_position = start_state.position();
+    start_state_position[2] = 0;
+
+    double start_state_position_dot_prod_plane_normal = start_state_position.dot(powerline_normal);
+    double positive_direction_furthest_point_dot_prod_plane_normal = positive_direction_furthest_point.dot(powerline_normal);
+    double negative_direction_furthest_point_dot_prod_plane_normal = negative_direction_furthest_point.dot(powerline_normal);
+
+    bool start_state_is_on_positive_side = start_state_position_dot_prod_plane_normal > positive_direction_furthest_point_dot_prod_plane_normal;
+    bool start_state_is_on_negative_side = start_state_position_dot_prod_plane_normal < negative_direction_furthest_point_dot_prod_plane_normal;
 
     // Create a queue of waypoints.
     auto shared_queue = std::make_shared<std::deque<point_t>>();
@@ -171,13 +179,29 @@ NodeStatus FindPowerlineWaypointProviderActionNode::tick() {
 
     // Create waypoints
     if (positive_direction_is_higher) {
-        if (!start_state_is_on_positive_side) {
+        if (start_state_is_on_negative_side) {
             shared_queue->push_back(negative_top_waypoint);
+            shared_queue->push_back(positive_top_waypoint);
+        } else if (!start_state_is_on_positive_side) {
+            // Drone is in the middle of the powerline.
+            // First waypoint is the current state xy, z same as negative_top_waypoint.
+            point_t waypoint = start_state_position;
+            waypoint[2] = negative_top_waypoint[2];
+            shared_queue->push_back(waypoint);
+
             shared_queue->push_back(positive_top_waypoint);
         }
     } else {
         if (start_state_is_on_positive_side) {
             shared_queue->push_back(positive_top_waypoint);
+            shared_queue->push_back(negative_top_waypoint);
+        } else if (!start_state_is_on_negative_side) {
+            // Drone is in the middle of the powerline.
+            // First waypoint is the current state xy, z same as positive_top_waypoint.
+            point_t waypoint = start_state_position;
+            waypoint[2] = positive_top_waypoint[2];
+            shared_queue->push_back(waypoint);
+
             shared_queue->push_back(negative_top_waypoint);
         }
     }

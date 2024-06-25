@@ -53,7 +53,7 @@ namespace behavior {
     /**
      * @brief Powerline waypoint provider action node.
      */
-    class FindPowerlineWaypointProviderActionNode : public BT::SyncActionNode {
+    class PowerlineWaypointProviderActionNode : public BT::SyncActionNode {
     public:
         /**
          * @brief Constructor.
@@ -62,7 +62,7 @@ namespace behavior {
          * @param conf The node configuration.
          * @param tf_buffer The tf buffer.
          */
-        FindPowerlineWaypointProviderActionNode(
+        PowerlineWaypointProviderActionNode(
             const std::string & name, 
             const BT::NodeConfiguration & conf,
             tf2_ros::Buffer::SharedPtr tf_buffer

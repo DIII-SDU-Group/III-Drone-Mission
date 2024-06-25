@@ -18,6 +18,10 @@
 #include <rclcpp/qos.hpp>
 #include <rclcpp/callback_group.hpp>
 
+#include <tf2_ros/transform_listener.h>
+#include <tf2_ros/buffer.h>
+#include <tf2/exceptions.h>
+
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <rclcpp_lifecycle/lifecycle_publisher.hpp>
 
@@ -35,6 +39,8 @@
 // III-Drone-Core:
 
 #include <iii_drone_core/utils/atomic.hpp>
+
+#include <iii_drone_core/adapters/powerline_adapter.hpp>
 
 /*****************************************************************************/
 // Class
@@ -87,6 +93,9 @@ namespace powerline_overview_provider_node {
 
         utils::Atomic<iii_drone_interfaces::msg::Powerline> latest_powerline_;
         utils::Atomic<iii_drone_interfaces::msg::Powerline> stored_powerline_;
+
+        tf2_ros::Buffer::SharedPtr tf_buffer_;
+        std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
         
         rclcpp::Service<iii_drone_interfaces::srv::UpdatePowerlineOverview>::SharedPtr update_powerline_overview_srv_;
         rclcpp::Service<iii_drone_interfaces::srv::GetPowerlineOverview>::SharedPtr get_powerline_overview_srv_;

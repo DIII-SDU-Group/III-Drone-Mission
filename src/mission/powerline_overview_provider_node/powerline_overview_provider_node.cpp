@@ -39,6 +39,9 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Powerl
         return ret;
     }
 
+    tf_buffer_ = std::make_shared<tf2_ros::Buffer>(get_clock());
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
@@ -54,6 +57,9 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Powerl
     {
         return ret;
     }
+
+    tf_buffer_.reset();
+    tf_listener_.reset();
 
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
@@ -198,11 +204,11 @@ void PowerlineOverviewProviderNode::updatePowerlineOverviewCallback(
 
         if (latest_pl.lines.size() >= 4) {
 
-            for (auto & line : latest_pl.lines) {
-                geometry_msgs::msg::PointStamped project_position
-            }
+            adapters::PowerlineAdapter powerline_adapter(latest_pl);
+
+            powerline_adapter.Transform("world", tf_buffer_);
                 
-            stored_powerline_.Store(latest_pl);
+            stored_powerline_.Store(powerline_adapter.ToMsg());
 
             response->success = true;
 
