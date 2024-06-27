@@ -18,6 +18,7 @@ ManeuverMode::ManeuverMode(
     rclcpp::Node & node,
     std::string mode_name,
     float dt,
+    bool is_owned_mode,
     bool allow_activate_when_disarmed
 ) : px4_ros2::ModeBase(
         node, 
@@ -25,7 +26,8 @@ ManeuverMode::ManeuverMode(
             mode_name,
             allow_activate_when_disarmed
         )
-),  mode_name_(mode_name) { 
+),  mode_name_(mode_name),
+    is_owned_mode_(is_owned_mode) { 
 
     // RCLCPP_DEBUG(node.get_logger(), "ManeuverMode::ManeuverMode(): Initializing mode %s", mode_name.c_str());
 
@@ -61,9 +63,11 @@ void ManeuverMode::Register(
 
     tree_executor_ = tree_executor;
 
-    if (!doRegister()) {
-        RCLCPP_FATAL(node().get_logger(), "ManeuverMode::Register(): Failed to register mode %s with PX4", mode_name_.c_str());
-        throw std::runtime_error("ManeuverMode::Register(): Failed to register mode with PX4");
+    if (!is_owned_mode_) {
+        if (!doRegister()) {
+            RCLCPP_FATAL(node().get_logger(), "ManeuverMode::Register(): Failed to register mode %s with PX4", mode_name_.c_str());
+            throw std::runtime_error("ManeuverMode::Register(): Failed to register mode with PX4");
+        }
     }
 
     sendRegisterOffboardModeRequest(false);
@@ -147,6 +151,7 @@ void ManeuverMode::onActivate() {
     RCLCPP_INFO(node().get_logger(), "ManeuverMode::onActivate(): Activating mode %s", mode_name_.c_str());
 
     maneuver_reference_client_->SetReferenceModeHover();
+
 
     setSetpointUpdateRate(1./dt_);
 

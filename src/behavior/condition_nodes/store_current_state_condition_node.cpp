@@ -39,6 +39,8 @@ BT::NodeStatus StoreCurrentStateConditionNode::onTick(const std::shared_ptr<px4_
         return BT::NodeStatus::FAILURE;
     }
 
+    RCLCPP_INFO(node_->get_logger(), "StoreCurrentStateConditionNode::onTick(): Received message");
+
     VehicleOdometryAdapter adapter(*msg);
 
     State current_state = adapter.ToState();

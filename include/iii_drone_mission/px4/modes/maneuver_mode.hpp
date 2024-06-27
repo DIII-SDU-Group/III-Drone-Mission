@@ -54,6 +54,7 @@ namespace px4 {
             rclcpp::Node & node,
             std::string mode_name,
             float dt,
+            bool is_owned_mode,
             bool allow_activate_when_disarmed
         );
 
@@ -85,6 +86,8 @@ namespace px4 {
         std::string mode_name_;
 
         float dt_;
+
+        bool is_owned_mode_;
 
         bool is_registered_ = false;
 

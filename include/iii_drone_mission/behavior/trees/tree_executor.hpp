@@ -45,11 +45,16 @@
 #include <iii_drone_mission/behavior/action_nodes/cable_takeoff_maneuver_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/pl_mapper_command_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/gripper_command_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/update_powerline_overview_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/get_powerline_overview_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/powerline_waypoint_provider_action_node.hpp>
 
 #include <iii_drone_mission/behavior/condition_nodes/verify_powerline_detected_condition_node.hpp>
 #include <iii_drone_mission/behavior/condition_nodes/select_target_line_condition_node.hpp>
 #include <iii_drone_mission/behavior/condition_nodes/target_provider_condition_node.hpp>
 #include <iii_drone_mission/behavior/condition_nodes/store_current_state_condition_node.hpp>
+#include <iii_drone_mission/behavior/condition_nodes/publish_powerline_waypoints_condition_node.hpp>
+#include <iii_drone_mission/behavior/condition_nodes/verify_gripper_closed_condition_node.hpp>
 
 #include <iii_drone_mission/behavior/port_types.hpp>
 
@@ -57,6 +62,9 @@
 // BT.CPP:
 
 #include <behaviortree_cpp/bt_factory.h>
+#include <behaviortree_cpp/blackboard.h>
+
+#include "behaviortree_cpp/decorators/loop_node.h"
 
 #include <behaviortree_ros2/ros_node_params.hpp>
 
@@ -75,7 +83,8 @@ namespace behavior {
             iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
             tf2_ros::Buffer::SharedPtr tf_buffer,
             iii_drone::configuration::Configurator<rclcpp::Node>::SharedPtr configurator,
-            rclcpp::Node * node
+            rclcpp::Node * node,
+            BT::Blackboard::Ptr global_blackboard
         );
 
         ~TreeExecutor();
@@ -109,6 +118,9 @@ namespace behavior {
 
         BT::Tree tree_;
 
+        BT::Blackboard::Ptr global_blackboard_;
+        BT::Blackboard::Ptr local_blackboard_;
+
         std::thread execute_thread_;
 
         iii_drone::utils::Atomic<bool> running_ = false;
@@ -119,7 +131,6 @@ namespace behavior {
 
         void registerNodes();
         void unregisterNodes();
-
 
     };
 

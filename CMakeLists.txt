@@ -102,11 +102,15 @@ set(III_DRONE_MISSION_HDRS
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/pl_mapper_command_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/gripper_command_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/update_powerline_overview_action_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/get_powerline_overview_action_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/powerline_waypoint_provider_action_node.hpp"
 
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/verify_gripper_closed_condition_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/verify_powerline_detected_condition_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/select_target_line_condition_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/target_provider_condition_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/store_current_state_condition_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/publish_powerline_waypoints_condition_node.hpp"
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/trees/tree_executor.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/trees/tree_provider.hpp"
@@ -139,11 +143,15 @@ set(III_DRONE_MISSION_SRCS
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/pl_mapper_command_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/gripper_command_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/update_powerline_overview_action_node.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/get_powerline_overview_action_node.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/powerline_waypoint_provider_action_node.cpp"
 
+  "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/verify_gripper_closed_condition_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/verify_powerline_detected_condition_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/select_target_line_condition_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/target_provider_condition_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/store_current_state_condition_node.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/publish_powerline_waypoints_condition_node.cpp"
 
   "${PROJECT_SOURCE_DIR}/src/behavior/trees/tree_executor.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/trees/tree_provider.cpp"
@@ -267,6 +275,11 @@ custom_cpp_target(powerline_overview_provider
   "${PROJECT_SOURCE_DIR}/src/mission/powerline_overview_provider_node/powerline_overview_provider_node.cpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/powerline_overview_provider_node/powerline_overview_provider_node.hpp"
 )
+
+# custom_cpp_target(state_storer
+#   "${PROJECT_SOURCE_DIR}/src/mission/state_storer_node/state_storer_node.cpp"
+#   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/state_storer_node/state_storer_node.hpp"
+# )
 
 ############
 # Install ##

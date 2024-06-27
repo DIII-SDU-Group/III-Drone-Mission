@@ -25,6 +25,9 @@
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <rclcpp_lifecycle/lifecycle_publisher.hpp>
 
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+
 /*****************************************************************************/
 // III-Drone-Interfaces:
 
@@ -39,8 +42,11 @@
 // III-Drone-Core:
 
 #include <iii_drone_core/utils/atomic.hpp>
+#include <iii_drone_core/utils/types.hpp>
+#include <iii_drone_core/utils/math.hpp>
 
 #include <iii_drone_core/adapters/powerline_adapter.hpp>
+#include <iii_drone_core/adapters/point_cloud_adapter.hpp>
 
 /*****************************************************************************/
 // Class
@@ -53,8 +59,8 @@ namespace powerline_overview_provider_node {
     class PowerlineOverviewProviderNode : public rclcpp_lifecycle::LifecycleNode {
     public:
         PowerlineOverviewProviderNode(
-            std::string node_name = "powerline_overview_provider_node",
-            std::string node_namespace = "/mission/powerline_overview_provider_node",
+            std::string node_name = "powerline_overview_provider",
+            std::string node_namespace = "/mission/powerline_overview_provider",
             const rclcpp::NodeOptions & options = rclcpp::NodeOptions()
         );
 
@@ -93,6 +99,13 @@ namespace powerline_overview_provider_node {
 
         utils::Atomic<iii_drone_interfaces::msg::Powerline> latest_powerline_;
         utils::Atomic<iii_drone_interfaces::msg::Powerline> stored_powerline_;
+        utils::Atomic<iii_drone::adapters::PowerlineAdapter> stored_powerline_adapter_;
+
+        utils::Atomic<bool> has_stored_powerline_ = false;
+
+        rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::PointCloud2>::SharedPtr stored_powerline_points_pub_;
+        rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr stored_powerline_pose_pub_;
+        rclcpp::TimerBase::SharedPtr stored_powerline_points_timer_;
 
         tf2_ros::Buffer::SharedPtr tf_buffer_;
         std::shared_ptr<tf2_ros::TransformListener> tf_listener_;

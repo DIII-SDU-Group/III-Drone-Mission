@@ -19,13 +19,15 @@ TreeExecutor::TreeExecutor(
     ManeuverReferenceClient::SharedPtr maneuver_reference_client,
     tf2_ros::Buffer::SharedPtr tf_buffer,
     Configurator<rclcpp::Node>::SharedPtr configurator,
-    rclcpp::Node * node
+    rclcpp::Node * node,
+    BT::Blackboard::Ptr global_blackboard
 ) : tree_name_(tree_name),
     tree_xml_file_(tree_xml_file),
     maneuver_reference_client_(maneuver_reference_client),
     tf_buffer_(tf_buffer),
     configurator_(configurator),
-    node_(node)
+    node_(node),
+    global_blackboard_(global_blackboard)
 {
 
     wordexp_t wordexp_result;
@@ -51,7 +53,7 @@ void TreeExecutor::FinalizeInitialization() {
 
     registerNodes();
 
-    RCLCPP_DEBUG(node_->get_logger(), "TreeExecutor::FinalizeInitialization(): Creating tree for %s.", tree_name_.c_str());
+    local_blackboard_ = BT::Blackboard::create(global_blackboard_);
 
 }
 
@@ -61,19 +63,23 @@ void TreeExecutor::Deinitialize() {
 
     StopExecution();
 
+    local_blackboard_.reset();
+
     unregisterNodes();
 
 }
 
 void TreeExecutor::StartExecution() {
 
-    RCLCPP_INFO(node_->get_logger(), "TreeExecutor::StartExecution(): Starting %s.", tree_name_.c_str());
+    RCLCPP_DEBUG(node_->get_logger(), "TreeExecutor::FinalizeInitialization(): Creating tree for %s.", tree_name_.c_str());
 
-    tree_ = factory_.createTreeFromFile(tree_xml_file_);
+    tree_ = factory_.createTreeFromFile(tree_xml_file_, local_blackboard_);
 
     running_ = true;
     finished_ = false;
     success_ = false;
+
+    RCLCPP_INFO(node_->get_logger(), "TreeExecutor::StartExecution(): Starting execution of %s.", tree_name_.c_str());
 
     execute_thread_ = std::thread(&TreeExecutor::execute, this);
 
@@ -146,7 +152,6 @@ void TreeExecutor::registerNodes() {
     factory_ = BT::BehaviorTreeFactory();
 
     {
-
         BT::RosNodeParams params;
 
         params.nh = node;
@@ -159,7 +164,6 @@ void TreeExecutor::registerNodes() {
             params,
             maneuver_reference_client_
         );
-
     }
 
     {
@@ -176,7 +180,6 @@ void TreeExecutor::registerNodes() {
             maneuver_reference_client_,
             configurator_->GetParameterBundle("hover_on_cable_maneuver_action_node")
         );
-
     }
 
     {
@@ -208,7 +211,6 @@ void TreeExecutor::registerNodes() {
             maneuver_reference_client_,
             tf_buffer_
         );
-
     }
 
     {
@@ -224,7 +226,6 @@ void TreeExecutor::registerNodes() {
             params,
             maneuver_reference_client_
         );
-
     }
 
     {
@@ -240,7 +241,6 @@ void TreeExecutor::registerNodes() {
             params,
             maneuver_reference_client_
         );
-
     }
 
     {
@@ -257,11 +257,9 @@ void TreeExecutor::registerNodes() {
             maneuver_reference_client_,
             configurator_->GetParameterBundle("cable_takeoff_maneuver_action_node")
         );
-
     }
 
    {
-
         BT::RosNodeParams params;
 
         params.nh = node;
@@ -273,10 +271,8 @@ void TreeExecutor::registerNodes() {
             "GripperCommand",
             params
         );
-
     }
     {
-
         BT::RosNodeParams params;
 
         params.nh = node;
@@ -288,7 +284,6 @@ void TreeExecutor::registerNodes() {
             "PLMapperCommand",
             params
         );
-
     }
 
     {
@@ -301,7 +296,6 @@ void TreeExecutor::registerNodes() {
             "VerifyPowerlineDetected",
             params
         );
-
     }
 
     {
@@ -316,7 +310,6 @@ void TreeExecutor::registerNodes() {
             tf_buffer_,
             configurator_->GetParameterBundle("select_target_line_condition_node")
         );
-
     }
 
     {
@@ -326,8 +319,6 @@ void TreeExecutor::registerNodes() {
             tf_buffer_,
             configurator_->GetParameterBundle("target_provider")
         );
-
-
     }
 
     {
@@ -340,8 +331,75 @@ void TreeExecutor::registerNodes() {
             "StoreCurrentState",
             params
         );
-
     }
+
+    {
+        BT::RosNodeParams params;
+
+        params.nh = node;
+        params.default_port_value = "/mission/powerline_overview_provider_node/update_powerline_overview";
+        params.server_timeout = server_timeout;
+        params.wait_for_server_timeout = wait_for_server_timeout;
+
+        factory_.registerNodeType<UpdatePowerlineOverviewActionNode>(
+            "UpdatePowerlineOverview",
+            params
+        );
+    }
+
+    {
+        BT::RosNodeParams params;
+
+        params.nh = node;
+        params.default_port_value = "/mission/powerline_overview_provider_node/get_powerline_overview";
+        params.server_timeout = server_timeout;
+        params.wait_for_server_timeout = wait_for_server_timeout;
+
+        factory_.registerNodeType<GetPowerlineOverviewActionNode>(
+            "GetPowerlineOverview",
+            params
+        );
+    }
+
+    {
+        factory_.registerNodeType<PowerlineWaypointProviderActionNode>(
+            "PowerlineWaypointProvider",
+            tf_buffer_,
+            node_,
+            configurator_->GetParameterBundle("powerline_waypoint_provider_action_node")
+        );
+    }
+
+    {
+        factory_.registerNodeType<BT::LoopNode<iii_drone::types::point_t>>(
+            "LoopPoint"
+        );
+    }
+
+    {
+        BT::RosNodeParams params;
+
+        params.nh = node;
+        params.default_port_value = "powerline_waypoints";
+
+        factory_.registerNodeType<PublishPowerlineWaypointsConditionNode>(
+            "PublishPowerlineWaypoints",
+            params
+        );
+    }
+
+    {
+        BT::RosNodeParams params;
+
+        params.nh = node;
+        params.default_port_value = "/payload/charger_gripper/gripper_status";
+
+        factory_.registerNodeType<VerifyGripperClosedConditionNode>(
+            "VerifyGripperClosed",
+            params
+        );
+    }
+
 
 }
 

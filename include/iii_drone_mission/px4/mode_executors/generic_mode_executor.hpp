@@ -17,7 +17,7 @@
 /*****************************************************************************/
 // III-Drone-Configuration:
 
-#include <iii_drone_configuration/configurator.hpp>
+#include <iii_drone_configuration/parameter_bundle.hpp>
 
 /*****************************************************************************/
 // III-Drone-Core:
@@ -41,6 +41,7 @@
 // PX4:
 
 #include <px4_msgs/msg/vehicle_status.hpp>
+#include <px4_msgs/msg/manual_control_setpoint.hpp>
 
 /*****************************************************************************/
 // PX4-ROS2:
@@ -61,7 +62,8 @@ namespace px4 {
             px4_ros2::ModeBase & owned_mode,
             std::string mode_executor_name,
             iii_drone::mission::MissionSpecification::SharedPtr mission_specification,
-            ModeProvider::SharedPtr mode_provider
+            ModeProvider::SharedPtr mode_provider,
+            iii_drone::configuration::ParameterBundle::SharedPtr parameters
         ); 
         
         void onActivate() override;
@@ -79,7 +81,12 @@ namespace px4 {
 
         iii_drone::mission::MissionSpecification::SharedPtr mission_specification_;
 
+        iii_drone::configuration::ParameterBundle::SharedPtr parameters_;
+
         ModeProvider::SharedPtr mode_provider_;
+
+        utils::Atomic<bool> is_active_ = false;
+        utils::Atomic<bool> triggered_position_control_ = false;
 
         ManeuverMode::SharedPtr current_mode_;
         iii_drone::mission::mission_specification_entry_t current_mode_entry_;
@@ -88,6 +95,9 @@ namespace px4 {
 
         iii_drone::utils::Atomic<bool> wait_for_land_;
         iii_drone::utils::Atomic<bool> wait_for_arm_;
+
+        rclcpp::Subscription<px4_msgs::msg::ManualControlSetpoint>::SharedPtr manual_control_setpoint_sub_;
+        void manualControlSetpointCallback(const px4_msgs::msg::ManualControlSetpoint::SharedPtr msg);
 
 
     };

@@ -22,8 +22,6 @@ MissionExecutorNode::MissionExecutorNode(
     options
 ),  executor_handle_(executor_handle) {
 
-    RCLCPP_INFO(get_logger(), "MissionExecutorNode::MissionExecutorNode()");
-
 	std::string log_level = std::getenv("MISSION_EXECUTOR_LOG_LEVEL");
 
 	if (log_level != "") {
@@ -49,6 +47,8 @@ MissionExecutorNode::MissionExecutorNode(
 		}
 
 	}
+
+    RCLCPP_INFO(get_logger(), "MissionExecutorNode::MissionExecutorNode()");
 
 }
 

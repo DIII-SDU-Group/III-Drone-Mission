@@ -36,6 +36,11 @@
 #include <iii_drone_mission/mission/mission_specification.hpp>
 
 /*****************************************************************************/
+// BT.CPP:
+
+#include <behaviortree_cpp/blackboard.h>
+
+/*****************************************************************************/
 // Class:
 /*****************************************************************************/
 
@@ -85,6 +90,8 @@ namespace behavior {
         iii_drone::mission::MissionSpecification::SharedPtr mission_specification_;
 
         iii_drone::configuration::Configurator<rclcpp::Node>::SharedPtr configurator_;
+
+        BT::Blackboard::Ptr global_blackboard_;
 
         std::map<std::string, iii_drone::behavior::TreeExecutor::SharedPtr> tree_executors_;
 

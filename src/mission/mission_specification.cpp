@@ -10,7 +10,15 @@ using namespace iii_drone::mission;
 // Implementation
 /*****************************************************************************/
 
-MissionSpecification::MissionSpecification(const std::string& mission_specification_file) {
+MissionSpecification::MissionSpecification(
+    const std::string& mission_specification_file,
+    rclcpp_lifecycle::LifecycleNode * node
+) : node_(node) {
+
+    RCLCPP_DEBUG(
+        node_->get_logger(),
+        "MissionSpecification::MissionSpecification(): Initializing."
+    );
 
     wordexp_t wordexp_result;
     wordexp(mission_specification_file.c_str(), &wordexp_result, 0);
@@ -39,31 +47,43 @@ MissionSpecification::MissionSpecification(const std::string& mission_specificat
 
         }
 
-        if ((*it).second["next_mode"]) {
+        try {
             entry.next_mode = (*it)["next_mode"].as<std::string>();
-        } else {
+        } catch (YAML::Exception& e){
             entry.next_mode = "";
         }
 
-        if ((*it).second["allow_activate_when_disarmed"]) {
+        try {
             entry.allow_activate_when_disarmed = (*it)["allow_activate_when_disarmed"].as<bool>();
-        } else {
+        } catch (YAML::Exception& e){
             entry.allow_activate_when_disarmed = false;
         }
 
-        if ((*it).second["land_when_finished"]) {
+        try {
             entry.land_when_finished = (*it)["land_when_finished"].as<bool>();
-        } else {
+        } catch (YAML::Exception& e){
             entry.land_when_finished = false;
         }
 
-        if ((*it).second["arm_when_finished"]) {
+        try {
             entry.arm_when_finished = (*it)["arm_when_finished"].as<bool>();
-        } else {
+        } catch (YAML::Exception& e){
             entry.arm_when_finished = false;
         }
 
         mission_specification_entries_[entry.key] = entry;
+
+        RCLCPP_DEBUG(
+            node_->get_logger(),
+            "MissionSpecification::MissionSpecification(): Added mission specification entry:\nkey: %s\nmode_name: %s\nbehavior_tree_xml_file: %s\nnext_mode: %s\nallow_activate_when_disarmed: %d\nland_when_finished: %d\narm_when_finished: %d",
+            entry.key.c_str(),
+            entry.mode_name.c_str(),
+            entry.behavior_tree_xml_file.c_str(),
+            entry.next_mode.c_str(),
+            entry.allow_activate_when_disarmed,
+            entry.land_when_finished,
+            entry.arm_when_finished
+        );
 
     }
 

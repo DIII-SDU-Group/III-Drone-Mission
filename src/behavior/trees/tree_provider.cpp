@@ -76,6 +76,8 @@ void TreeProvider::Configure(
 
     configurator_ = std::make_shared<Configurator<rclcpp::Node>>(this);
 
+    global_blackboard_ = BT::Blackboard::create();
+
     initializeTreeExecutors();
 
 }
@@ -91,6 +93,8 @@ void TreeProvider::Cleanup() {
     }
 
     tree_executors_.clear();
+
+    global_blackboard_.reset();
 
     configurator_.reset();
     configurator_ = nullptr;
@@ -130,7 +134,8 @@ void TreeProvider::initializeTreeExecutors(
             maneuver_reference_client_,
             tf_buffer_,
             configurator_,
-            this
+            this,
+            global_blackboard_
         );
 
         tree_executor->FinalizeInitialization();
@@ -176,4 +181,3 @@ bool TreeProviderIterator::operator!=(const TreeProviderIterator& other) const {
     return it_ != other.it_;
 
 }
-

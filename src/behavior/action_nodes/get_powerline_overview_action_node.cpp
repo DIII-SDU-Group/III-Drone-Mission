@@ -42,6 +42,23 @@ bool GetPowerlineOverviewActionNode::setRequest(Request::SharedPtr & request) {
 
 NodeStatus GetPowerlineOverviewActionNode::onResponseReceived(const Response::SharedPtr & response) {
 
+    if (!response->success) {
+
+        RCLCPP_WARN(
+            node_ptr_->get_logger(),
+            "GetPowerlineOverviewActionNode::onResponseReceived(): Failed to get powerline overview"
+        );
+
+        return NodeStatus::FAILURE;
+    }
+
+    RCLCPP_INFO(
+        node_ptr_->get_logger(),
+        "GetPowerlineOverviewActionNode::onResponseReceived(): Powerline overview received"
+    );
+
     setOutput("stored_powerline", response->stored_powerline);
+
+    return NodeStatus::SUCCESS;
 
 }

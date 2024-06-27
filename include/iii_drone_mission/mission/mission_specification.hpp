@@ -12,6 +12,12 @@
 #include <wordexp.h>
 
 /*****************************************************************************/
+// ROS2:
+
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
+
+/*****************************************************************************/
 // Yaml-CPP:
 
 #include <yaml-cpp/yaml.h>
@@ -63,7 +69,10 @@ namespace mission {
 
     class MissionSpecification {
     public:
-        MissionSpecification(const std::string& mission_specification_file);
+        MissionSpecification(
+            const std::string& mission_specification_file,
+            rclcpp_lifecycle::LifecycleNode * node
+        );
 
         mission_specification_entry_t GetMissionSpecificationEntry(const std::string& key) const;
 
@@ -78,6 +87,8 @@ namespace mission {
         std::map<std::string, mission_specification_entry_t> mission_specification_entries_;
 
         std::string executor_owned_mode_;
+
+        rclcpp_lifecycle::LifecycleNode * node_;
 
     };
 

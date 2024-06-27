@@ -5,6 +5,9 @@
 #include <iii_drone_mission/mission/powerline_overview_provider_node/powerline_overview_provider_node.hpp>
 
 using namespace iii_drone::mission::powerline_overview_provider_node;
+using namespace iii_drone::adapters;
+using namespace iii_drone::types;
+using namespace iii_drone::math;
 
 /*****************************************************************************/
 // Implementation
@@ -17,7 +20,43 @@ PowerlineOverviewProviderNode::PowerlineOverviewProviderNode(
 ) : rclcpp_lifecycle::LifecycleNode(node_name, node_namespace, options)
 {
 
+	std::string log_level = std::getenv("POWERLINE_OVERVIEW_PROVIDER_LOG_LEVEL");
+
+	if (log_level != "") {
+
+		// Convert to upper case:
+		std::transform(
+			log_level.begin(), 
+			log_level.end(), 
+			log_level.begin(), 
+			[](unsigned char c){ return std::toupper(c); }
+		);
+
+		if (log_level == "DEBUG") {
+			rcutils_logging_set_logger_level(this->get_logger().get_name(), RCUTILS_LOG_SEVERITY_DEBUG);
+		} else if (log_level == "INFO") {
+			rcutils_logging_set_logger_level(this->get_logger().get_name(), RCUTILS_LOG_SEVERITY_INFO);
+		} else if (log_level == "WARN") {
+			rcutils_logging_set_logger_level(this->get_logger().get_name(), RCUTILS_LOG_SEVERITY_WARN);
+		} else if (log_level == "ERROR") {
+			rcutils_logging_set_logger_level(this->get_logger().get_name(), RCUTILS_LOG_SEVERITY_ERROR);
+		} else if (log_level == "FATAL") {
+			rcutils_logging_set_logger_level(this->get_logger().get_name(), RCUTILS_LOG_SEVERITY_FATAL);
+		}
+
+	}
+
     cb_group_1_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+
+    stored_powerline_points_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
+        "stored_powerline_points",
+        10
+    );
+
+    stored_powerline_pose_pub_ = create_publisher<geometry_msgs::msg::PoseStamped>(
+        "stored_powerline_pose",
+        10
+    );
 
 }
 
@@ -106,6 +145,48 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Powerl
         std::bind(&PowerlineOverviewProviderNode::getPowerlineOverviewCallback, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)
     );
 
+    stored_powerline_points_timer_ = create_wall_timer(
+        std::chrono::seconds(1),
+        [this]() -> void {
+
+            if (!has_stored_powerline_) {
+                return;
+            }
+
+            PowerlineAdapter stored_pl_adapter = stored_powerline_adapter_.Load();
+
+            PointCloudAdapter pc_adapter(
+                rclcpp::Clock().now(),
+                "world",
+                stored_pl_adapter.GetPoints()
+            );
+
+            sensor_msgs::msg::PointCloud2 stored_pl_points_msg = pc_adapter.ToMsg();
+
+            stored_powerline_points_pub_->publish(stored_pl_points_msg);
+
+            plane_t proj_plane = stored_pl_adapter.projection_plane();
+            vector_t pl_dir = proj_plane.normal;
+
+            // Find yaw angle between pl_dir (xy) and 0,0:
+            double yaw = atan2(pl_dir.y(), pl_dir.x());
+
+            euler_angles_t euler_angles(0.0, 0.0, yaw);
+            quaternion_t quaternion = eulToQuat(euler_angles);
+            pose_t pl_pose;
+            pl_pose.orientation = quaternion;
+            pl_pose.position = proj_plane.p;
+
+            geometry_msgs::msg::PoseStamped pl_pose_msg;
+            pl_pose_msg.header.stamp = rclcpp::Clock().now();
+            pl_pose_msg.header.frame_id = "world";
+            pl_pose_msg.pose = poseMsgFromPose(pl_pose);
+
+            stored_powerline_pose_pub_->publish(pl_pose_msg);
+
+        }
+    );
+
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
@@ -126,6 +207,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Powerl
     powerline_sub_.reset();
     update_powerline_overview_srv_.reset();
     get_powerline_overview_srv_.reset();
+    stored_powerline_points_timer_->cancel();
+    stored_powerline_points_timer_.reset();
 
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
@@ -182,7 +265,7 @@ void PowerlineOverviewProviderNode::updatePowerlineOverviewCallback(
     auto plm_cmd_req = std::make_shared<iii_drone_interfaces::srv::PLMapperCommand::Request>();
 
     plm_cmd_req->pl_mapper_cmd.command = plm_cmd_req->pl_mapper_cmd.PL_MAPPER_CMD_START;
-    plm_cmd_req->pl_mapper_cmd.reset = true;
+    plm_cmd_req->pl_mapper_cmd.reset = false;
 
     auto future = pl_mapper_command_client_->async_send_request(plm_cmd_req);
 
@@ -192,13 +275,13 @@ void PowerlineOverviewProviderNode::updatePowerlineOverviewCallback(
         return;
     }
 
-    rclcpp::Time start_time = now();
+    rclcpp::Time start_time = rclcpp::Clock().now();
 
     rclcpp::Rate rate(1);
 
     RCLCPP_INFO(get_logger(), "PowerlineOverviewProviderNode::updatePowerlineOverviewCallback() - Waiting for powerline data...");
 
-    while((now() - start_time).seconds() < 10) {
+    while((rclcpp::Clock().now() - start_time).seconds() < 20 && rclcpp::ok()) {
 
         iii_drone_interfaces::msg::Powerline latest_pl = latest_powerline_.Load();
 
@@ -208,7 +291,9 @@ void PowerlineOverviewProviderNode::updatePowerlineOverviewCallback(
 
             powerline_adapter.Transform("world", tf_buffer_);
                 
-            stored_powerline_.Store(powerline_adapter.ToMsg());
+            stored_powerline_ = powerline_adapter.ToMsg();
+            stored_powerline_adapter_ = powerline_adapter;
+            has_stored_powerline_ = true;
 
             response->success = true;
 
@@ -218,11 +303,15 @@ void PowerlineOverviewProviderNode::updatePowerlineOverviewCallback(
 
         }
 
+        RCLCPP_DEBUG(get_logger(), "PowerlineOverviewProviderNode::updatePowerlineOverviewCallback() - Not enough powerline registered, waiting for more...");
+
+        rate.sleep();
+
     }
 
     response->success = false;
 
-    RCLCPP_ERROR(get_logger(), "PowerlineOverviewProviderNode::updatePowerlineOverviewCallback() - Powerline data not received");
+    RCLCPP_WARN(get_logger(), "PowerlineOverviewProviderNode::updatePowerlineOverviewCallback() - Powerline data not received");
 
 }
 
@@ -234,9 +323,18 @@ void PowerlineOverviewProviderNode::getPowerlineOverviewCallback(
 {
     RCLCPP_INFO(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback()");
 
+    if (!has_stored_powerline_) {
+        RCLCPP_WARN(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback() - No stored powerline available");
+        response->success = false;
+        return;
+    }
+
     iii_drone_interfaces::msg::Powerline stored_pl = stored_powerline_.Load();
 
     response->stored_powerline = stored_pl;
+    response->success = true;
+
+    RCLCPP_INFO(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback() - Stored powerline sent");
 
 }
 

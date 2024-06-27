@@ -24,7 +24,10 @@ MissionExecutor::MissionExecutor(
 
     RCLCPP_INFO(node->get_logger(), "MissionExecutor::MissionExecutor(): Initializing.");
 
-    mission_specification_ = std::make_shared<MissionSpecification>(mission_specification_file);
+    mission_specification_ = std::make_shared<MissionSpecification>(
+        mission_specification_file,
+        node
+    );
 
     // Subscription
     vehicle_odometry_adapter_history_ = std::make_shared<History<VehicleOdometryAdapter>>();
@@ -95,7 +98,8 @@ void MissionExecutor::Configure(
         *mode_provider_->GetMode(mission_specification_->executor_owned_mode()),
         "mode_executor",
         mission_specification_,
-        mode_provider_
+        mode_provider_,
+        configurator->GetParameterBundle("mode_executor")
     );
 
 
@@ -111,6 +115,7 @@ void MissionExecutor::Cleanup() {
 
 void MissionExecutor::Start() {
 
+    generic_mode_executor_->doRegister();
     mode_provider_->Start();
 
 }

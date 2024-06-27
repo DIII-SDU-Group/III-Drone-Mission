@@ -157,6 +157,7 @@ void ModeProvider::initializeModes() {
             *mode_node_,
             entry.mode_name,
             dt_,
+            mission_specification_->executor_owned_mode() == entry.key,
             entry.allow_activate_when_disarmed
         );
 
