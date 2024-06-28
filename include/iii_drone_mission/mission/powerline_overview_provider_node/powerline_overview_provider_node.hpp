@@ -34,6 +34,7 @@
 #include <iii_drone_interfaces/srv/pl_mapper_command.hpp>
 
 #include <iii_drone_interfaces/msg/powerline.hpp>
+#include <iii_drone_interfaces/msg/string_stamped.hpp>
 
 #include <iii_drone_interfaces/srv/update_powerline_overview.hpp>
 #include <iii_drone_interfaces/srv/get_powerline_overview.hpp>
@@ -102,6 +103,9 @@ namespace powerline_overview_provider_node {
         utils::Atomic<iii_drone::adapters::PowerlineAdapter> stored_powerline_adapter_;
 
         utils::Atomic<bool> has_stored_powerline_ = false;
+
+        rclcpp_lifecycle::LifecyclePublisher<iii_drone_interfaces::msg::StringStamped>::SharedPtr stored_powerline_status_pub_;
+        rclcpp::TimerBase::SharedPtr stored_powerline_status_timer_;
 
         rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::PointCloud2>::SharedPtr stored_powerline_points_pub_;
         rclcpp_lifecycle::LifecyclePublisher<geometry_msgs::msg::PoseStamped>::SharedPtr stored_powerline_pose_pub_;

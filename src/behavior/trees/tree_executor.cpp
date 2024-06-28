@@ -337,7 +337,7 @@ void TreeExecutor::registerNodes() {
         BT::RosNodeParams params;
 
         params.nh = node;
-        params.default_port_value = "/mission/powerline_overview_provider_node/update_powerline_overview";
+        params.default_port_value = "/mission/powerline_overview_provider/update_powerline_overview";
         params.server_timeout = server_timeout;
         params.wait_for_server_timeout = wait_for_server_timeout;
 
@@ -351,7 +351,7 @@ void TreeExecutor::registerNodes() {
         BT::RosNodeParams params;
 
         params.nh = node;
-        params.default_port_value = "/mission/powerline_overview_provider_node/get_powerline_overview";
+        params.default_port_value = "/mission/powerline_overview_provider/get_powerline_overview";
         params.server_timeout = server_timeout;
         params.wait_for_server_timeout = wait_for_server_timeout;
 

@@ -58,6 +58,24 @@ PowerlineOverviewProviderNode::PowerlineOverviewProviderNode(
         10
     );
 
+    stored_powerline_status_pub_ = create_publisher<iii_drone_interfaces::msg::StringStamped>(
+        "stored_powerline_status",
+        10
+    );
+
+    stored_powerline_status_timer_ = create_wall_timer(
+        std::chrono::seconds(1),
+        [this]() -> void {
+
+            iii_drone_interfaces::msg::StringStamped status_msg;
+            status_msg.stamp = rclcpp::Clock().now();
+            status_msg.data = has_stored_powerline_ ? "Powerline stored" : "No powerline stored";
+
+            stored_powerline_status_pub_->publish(status_msg);
+
+        }
+    );
+
 }
 
 PowerlineOverviewProviderNode::~PowerlineOverviewProviderNode()
@@ -136,12 +154,12 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Powerl
     );
 
     update_powerline_overview_srv_ = create_service<iii_drone_interfaces::srv::UpdatePowerlineOverview>(
-        "/mission/powerline_overview_provider_node/update_powerline_overview",
+        "update_powerline_overview",
         std::bind(&PowerlineOverviewProviderNode::updatePowerlineOverviewCallback, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)
     );
 
     get_powerline_overview_srv_ = create_service<iii_drone_interfaces::srv::GetPowerlineOverview>(
-        "/mission/powerline_overview_provider_node/get_powerline_overview",
+        "get_powerline_overview",
         std::bind(&PowerlineOverviewProviderNode::getPowerlineOverviewCallback, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)
     );
 
@@ -269,7 +287,7 @@ void PowerlineOverviewProviderNode::updatePowerlineOverviewCallback(
 
     auto future = pl_mapper_command_client_->async_send_request(plm_cmd_req);
 
-    if (future.wait_for(std::chrono::seconds(1)) != std::future_status::ready)
+    if (future.wait_for(std::chrono::seconds(1)) != std::future_status::ready) 
     {
         RCLCPP_ERROR(get_logger(), "PowerlineOverviewProviderNode::updatePowerlineOverviewCallback() - Service call failed");
         return;
@@ -277,11 +295,13 @@ void PowerlineOverviewProviderNode::updatePowerlineOverviewCallback(
 
     rclcpp::Time start_time = rclcpp::Clock().now();
 
+    int timeout_s = request->timeout_s;
+
     rclcpp::Rate rate(1);
 
     RCLCPP_INFO(get_logger(), "PowerlineOverviewProviderNode::updatePowerlineOverviewCallback() - Waiting for powerline data...");
 
-    while((rclcpp::Clock().now() - start_time).seconds() < 20 && rclcpp::ok()) {
+    while((rclcpp::Clock().now() - start_time).seconds() < timeout_s && rclcpp::ok()) {
 
         iii_drone_interfaces::msg::Powerline latest_pl = latest_powerline_.Load();
 
