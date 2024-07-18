@@ -142,37 +142,46 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
         "PowerlineWaypointProviderActionNode::tick(): Finding middle line point."
     );
     point_t middle_line_point;
-    double lowest_point_normal_dot_product = std::numeric_limits<double>::max();
+    // double lowest_point_normal_dot_product = std::numeric_limits<double>::max();
 
-    vector_t normal_no_z = powerline_normal;
-    normal_no_z[2] = 0;
-    normal_no_z /= normal_no_z.norm();
+    // vector_t normal_no_z = powerline_normal;
+    // normal_no_z[2] = 0;
+    // normal_no_z /= normal_no_z.norm();
 
-    for (auto & point : powerline_points) {
-        point_t p_no_z = point;
-        p_no_z[2] = 0;
-        double normal_dot_product = abs(p_no_z.dot(normal_no_z));
+    // for (auto & point : powerline_points) {
+    //     point_t p_no_z = point;
+    //     p_no_z[2] = 0;
+    //     double normal_dot_product = abs(p_no_z.dot(normal_no_z));
 
-        if (normal_dot_product < lowest_point_normal_dot_product) {
-            lowest_point_normal_dot_product = normal_dot_product;
-            middle_line_point = point;
-        }
-    }
+    //     if (normal_dot_product < lowest_point_normal_dot_product) {
+    //         lowest_point_normal_dot_product = normal_dot_product;
+    //         middle_line_point = point;
+    //     }
+    // }
 
-    // Verify that the found middle point is the one with highest z value:
+    // // Verify that the found middle point is the one with highest z value:
+    // double highest_z = std::numeric_limits<double>::min();
+    // for (auto & point : powerline_points) {
+    //     if (point[2] > highest_z) {
+    //         highest_z = point[2];
+    //     }
+    // }
+
+    // if (middle_line_point[2] != highest_z) {
+    //     RCLCPP_WARN(
+    //         node_->get_logger(),
+    //         "PowerlineWaypointProviderActionNode::tick(): Middle line point is not the one with the highest z value"
+    //     );
+    //     return NodeStatus::FAILURE;
+    // }
+
     double highest_z = std::numeric_limits<double>::min();
+
     for (auto & point : powerline_points) {
         if (point[2] > highest_z) {
             highest_z = point[2];
+            middle_line_point = point;
         }
-    }
-
-    if (middle_line_point[2] != highest_z) {
-        RCLCPP_WARN(
-            node_->get_logger(),
-            "PowerlineWaypointProviderActionNode::tick(): Middle line point is not the one with the highest z value"
-        );
-        return NodeStatus::FAILURE;
     }
 
     RCLCPP_DEBUG(
@@ -189,12 +198,26 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
     std::vector<point_t> positive_direction_line_points;
     std::vector<point_t> negative_direction_line_points;
 
+    vector_t powerline_normal_no_z = powerline_normal;
+    powerline_normal_no_z[2] = 0;
+    powerline_normal_no_z /= powerline_normal_no_z.norm();
+
     for (auto & point : powerline_points) {
         // Check if the point is the middle point, continue
         if (point == middle_line_point) {
             continue;
         }
-        if (point.dot(powerline_normal) > 0) {
+        // if (point.dot(powerline_normal) > 0) {
+        //     positive_direction_line_points.push_back(point);
+        // } else {
+        //     negative_direction_line_points.push_back(point);
+        // }
+
+        vector_t middle_point_to_point = point - middle_line_point;
+        vector_t middle_point_to_point_no_z = middle_point_to_point;
+        middle_point_to_point_no_z[2] = 0;
+
+        if (middle_point_to_point_no_z.dot(powerline_normal_no_z) > 0) {
             positive_direction_line_points.push_back(point);
         } else {
             negative_direction_line_points.push_back(point);
@@ -321,9 +344,19 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
     point_t start_state_pos_no_z = start_state_position;
     start_state_pos_no_z[2] = 0;
 
-    double start_state_position_dot_prod_plane_normal = start_state_pos_no_z.dot(powerline_normal);
-    double positive_direction_furthest_point_dot_prod_plane_normal = positive_direction_furthest_point.dot(powerline_normal);
-    double negative_direction_furthest_point_dot_prod_plane_normal = negative_direction_furthest_point.dot(powerline_normal);
+    vector_t middle_line_point_xy_to_start_state_pos_no_z = start_state_pos_no_z - middle_line_point_xy;
+
+    double start_state_position_dot_prod_plane_normal = middle_line_point_xy_to_start_state_pos_no_z.dot(powerline_normal_no_z);
+
+    point_t positive_direction_furthest_point_no_z = positive_direction_furthest_point;
+    positive_direction_furthest_point_no_z[2] = 0;
+    vector_t middle_point_to_positive_direction_furthest_point = positive_direction_furthest_point_no_z - middle_line_point_xy;
+    double positive_direction_furthest_point_dot_prod_plane_normal = middle_point_to_positive_direction_furthest_point.dot(powerline_normal_no_z);
+
+    point_t negative_direction_furthest_point_no_z = negative_direction_furthest_point;
+    negative_direction_furthest_point_no_z[2] = 0;
+    vector_t middle_point_to_negative_direction_furthest_point = negative_direction_furthest_point_no_z - middle_line_point_xy;
+    double negative_direction_furthest_point_dot_prod_plane_normal = middle_point_to_negative_direction_furthest_point.dot(powerline_normal_no_z);
 
     bool start_state_is_on_positive_side = start_state_position_dot_prod_plane_normal > positive_direction_furthest_point_dot_prod_plane_normal;
     bool start_state_is_on_negative_side = start_state_position_dot_prod_plane_normal < negative_direction_furthest_point_dot_prod_plane_normal;
@@ -360,9 +393,10 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
     vector_t powerline_direction_no_z = powerline_direction;
     powerline_direction_no_z[2] = 0;
     powerline_direction_no_z /= powerline_direction_no_z.norm();
-    double start_state_position_dot_prod_plane_direction = start_state_pos_no_z.dot(powerline_direction_no_z);
-    double middle_line_point_dot_prod_plane_direction = middle_line_point_xy.dot(powerline_direction_no_z);
-    double distance_to_middle_line_point = abs(start_state_position_dot_prod_plane_direction - middle_line_point_dot_prod_plane_direction);
+    // double start_state_position_dot_prod_plane_direction = start_state_pos_no_z.dot(powerline_direction_no_z);
+    // double middle_line_point_dot_prod_plane_direction = middle_line_point_xy.dot(powerline_direction_no_z);
+    // double distance_to_middle_line_point = abs(start_state_position_dot_prod_plane_direction - middle_line_point_dot_prod_plane_direction);
+    double distance_to_middle_line_point = middle_line_point_xy_to_start_state_pos_no_z.norm();
 
     if (!start_state_is_on_positive_side && !start_state_is_on_negative_side && distance_to_middle_line_point < parameters_->GetParameter("inside_powerline_xy_distance_threshold_m").as_double()) {
         // Drone is inside the powerline, no need to go around it.
@@ -446,7 +480,8 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
     shared_queue->push_back(waypoint);
 
     point_t waypoint_cp = waypoint;
-    waypoint = middle_line_point;
+    // waypoint = middle_line_point;
+    waypoint = positive_direction_is_higher ? positive_direction_furthest_point : negative_direction_furthest_point;
     waypoint[2] = waypoint_cp[2];
 
     shared_queue->push_back(waypoint);
