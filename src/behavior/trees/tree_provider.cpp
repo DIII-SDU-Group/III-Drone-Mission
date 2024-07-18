@@ -74,7 +74,7 @@ void TreeProvider::Configure(
 
     maneuver_reference_client_ = maneuver_reference_client;
 
-    configurator_ = std::make_shared<Configurator<rclcpp::Node>>(this);
+    configurator_ = std::make_shared<Configurator<rclcpp::Node>>(this, "behavior_tree");
 
     global_blackboard_ = BT::Blackboard::create();
 

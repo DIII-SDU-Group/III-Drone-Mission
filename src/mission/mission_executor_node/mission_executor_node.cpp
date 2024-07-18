@@ -78,7 +78,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     );
 
     configurator_ = std::make_shared<Configurator<rclcpp_lifecycle::LifecycleNode>>(
-        this
+        this,
+        "mission_executor"
     );
 
     // TF Buffer
