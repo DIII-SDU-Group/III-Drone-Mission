@@ -1,0 +1,15 @@
+<root BTCPP_format="4" main_tree_to_execute="LandOnCable">
+     <BehaviorTree ID="LandOnCable">
+        <Sequence name="land_on_cable_top_sequence">
+
+                <Action 
+                    ID="Hover" 
+                    name="hover" 
+                    duration_s="10." 
+                    stop_maneuver_after_timeout_ms="9900"
+                />
+
+        </Sequence>
+     </BehaviorTree>
+
+ </root>
