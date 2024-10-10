@@ -8,7 +8,7 @@ entries:
       #main_behavior_tree: "LandOnCable"
       #next_mode: "charge"
 
-    land_when_finished: true
+    #land_when_finished: true
     
       #- key: "charge"
       #  mode_name: "Charge"
