@@ -111,6 +111,7 @@ set(III_DRONE_MISSION_HDRS
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/target_provider_condition_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/store_current_state_condition_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/publish_powerline_waypoints_condition_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/get_gripper_alignment_yaw_condition_node.hpp"
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/trees/tree_executor.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/trees/tree_provider.hpp"
@@ -152,6 +153,7 @@ set(III_DRONE_MISSION_SRCS
   "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/target_provider_condition_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/store_current_state_condition_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/publish_powerline_waypoints_condition_node.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/get_gripper_alignment_yaw_condition_node.cpp"
 
   "${PROJECT_SOURCE_DIR}/src/behavior/trees/tree_executor.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/trees/tree_provider.cpp"
