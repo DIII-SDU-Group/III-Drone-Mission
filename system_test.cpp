@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
 
     // mode_test.doRegister();
 
-    Configurator<rclcpp::Node>::SharedPtr configurator = std::make_shared<Configurator<rclcpp::Node>>(node.get());
+    Configurator<rclcpp::Node>::SharedPtr configurator = std::make_shared<Configurator<rclcpp::Node>>(node.get(), node->get_name());
 
     tf2_ros::Buffer::SharedPtr tf_buffer = std::make_shared<tf2_ros::Buffer>(node->get_clock());
     tf2_ros::TransformListener tf_listener(*tf_buffer);
