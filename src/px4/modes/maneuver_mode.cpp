@@ -29,8 +29,6 @@ ManeuverMode::ManeuverMode(
 ),  mode_name_(mode_name),
     is_owned_mode_(is_owned_mode) { 
 
-    // RCLCPP_DEBUG(node.get_logger(), "ManeuverMode::ManeuverMode(): Initializing mode %s", mode_name.c_str());
-
     traj_setpoint_ = std::make_shared<iii_drone::px4::TrajectorySetpoint>(*this);
 
     dt_ = dt;
@@ -118,32 +116,19 @@ void ManeuverMode::sendRegisterOffboardModeRequest(bool deregister) {
         RCLCPP_DEBUG(node().get_logger(), "ManeuverMode::sendRegisterOffboardModeRequest(): Service not available, waiting again...");
     }
 
-    Atomic<bool> done = false;
-
-    auto result = register_offboard_mode_client_->async_send_request(
-        request,
-        [&done](rclcpp::Client<iii_drone_interfaces::srv::RegisterOffboardMode>::SharedFuture) {
-            done = true;
-        }
+    auto future = register_offboard_mode_client_->async_send_request(
+        request
     );
 
-    rclcpp::Time start_time = node().now();
-
-    auto rate = rclcpp::Rate(0.1);
-
-    while (!done) {
-
-        if (node().now() - start_time > rclcpp::Duration::from_seconds(5)) {
-
-            RCLCPP_FATAL(node().get_logger(), "ManeuverMode::sendRegisterOffboardModeRequest(): Failed to register mode %s as offboard mode", mode_name_.c_str());
-            
-            throw std::runtime_error("ManeuverMode::sendRegisterOffboardModeRequest(): Failed to register mode as offboard mode");
-
-        }
-
-        rate.sleep();
-
+    if (rclcpp::spin_until_future_complete(
+        node().get_node_base_interface(),
+        future,
+        std::chrono::seconds(5)
+    ) != rclcpp::FutureReturnCode::SUCCESS) {
+        RCLCPP_FATAL(node().get_logger(), "ManeuverMode::sendRegisterOffboardModeRequest(): Failed to register mode %s as offboard mode", mode_name_.c_str());
+        throw std::runtime_error("ManeuverMode::sendRegisterOffboardModeRequest(): Failed to register mode as offboard mode");
     }
+
 }
 
 void ManeuverMode::onActivate() {

@@ -27,9 +27,9 @@
 /*****************************************************************************/
 // III-Drone-Mission:
 
-#include <iii_drone_mission/mission/mission_executor_node/mission_executor_node.hpp>
-
 #include <iii_drone_mission/mission/mission_executor.hpp>
+
+#include <iii_drone_mission/px4/modes/maneuver_mode.hpp>
 
 /*****************************************************************************/
 // Class:
@@ -84,6 +84,11 @@ namespace mission {
         rclcpp::executors::MultiThreadedExecutor & executor_handle_;
 
         void cleanup();
+
+
+        rclcpp::Node::SharedPtr test_mode_node_;
+        iii_drone::px4::ManeuverMode::SharedPtr test_mode_;
+
 
     };
 

@@ -95,16 +95,12 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
             this, 
             tf_buffer_,
             configurator_->GetParameter("mission_specification_file").as_string(),
-            configurator_->GetParameter("dt").as_double()
+            executor_handle_
         );
-
-        mission_executor_->FinalizeInitialization(executor_handle_);
 
     }
 
-    mission_executor_->Configure(
-        configurator_
-    );
+    mission_executor_->Configure(configurator_);
 
     RCLCPP_INFO(get_logger(), "MissionExecutorNode::on_configure(): Configured");
 
@@ -160,7 +156,12 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     }
 
     // Mission Executor
-    mission_executor_->Start();
+    RCLCPP_INFO(
+        get_logger(), 
+        "MissionExecutorNode::on_activate(): Starting mission executor"
+    );
+
+    mission_executor_->Start(configurator_);
 
     RCLCPP_INFO(
         get_logger(), 

@@ -257,7 +257,7 @@ endfunction()
 # )
 
 # custom_cpp_target(px4_mode_test
-#   "${PROJECT_SOURCE_DIR}/src/px4/px4_mode_test.cpp"
+#   "${PROJECT_SOURCE_DIR}/src/px4_mode_test.cpp"
 # )
 
 # custom_cpp_target(serialization_test

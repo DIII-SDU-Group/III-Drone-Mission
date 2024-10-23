@@ -16,22 +16,20 @@ using namespace iii_drone::control::maneuver;
 /*****************************************************************************/
 
 ModeProvider::ModeProvider(
-    TreeProvider::SharedPtr tree_provider,
-    MissionSpecification::SharedPtr mission_specification,
+    iii_drone::behavior::TreeProvider::SharedPtr tree_provider,
+    iii_drone::mission::MissionSpecification::SharedPtr mission_specification,
     rclcpp_lifecycle::LifecycleNode * node,
-    float dt
+    iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
+    iii_drone::configuration::ParameterBundle::SharedPtr parameters
 ) : tree_provider_(tree_provider),
     mission_specification_(mission_specification),
-    node_(node),
-    dt_(dt)
+    node_(node)
 {
 
     RCLCPP_INFO(node_->get_logger(), "ModeProvider::ModeProvider(): Initializing.");
 
     mode_node_ = std::make_shared<rclcpp::Node>(
-        "mode",
-        "/mission/px4_modes",
-        rclcpp::NodeOptions()
+        "px4_mode"
     );
 
 	std::string log_level = std::getenv("PX4_MODE_LOG_LEVEL");
@@ -60,43 +58,20 @@ ModeProvider::ModeProvider(
 
 	}
 
+    maneuver_reference_client_ = maneuver_reference_client;
+    parameters_ = parameters;
+
+    RCLCPP_INFO(node_->get_logger(), "ModeProvider::ModeProvider(): Initializing modes.");
+
+    initializeModes();
 
     RCLCPP_INFO(node_->get_logger(), "ModeProvider::ModeProvider(): Initialized.");
 
 }
 
-void ModeProvider::FinalizeInitialization(rclcpp::executors::MultiThreadedExecutor & executor) {
+void ModeProvider::Register() {
 
-    RCLCPP_INFO(node_->get_logger(), "ModeProvider::FinalizeInitialization(): Finalizing initialization.");
-
-    initializeModes();
-
-    executor.add_node(mode_node_);
-
-    RCLCPP_INFO(node_->get_logger(), "ModeProvider::FinalizeInitialization(): Finalized initialization.");
-
-}
-
-void ModeProvider::Configure(
-    iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
-    iii_drone::configuration::ParameterBundle::SharedPtr parameters
-) {
-
-    maneuver_reference_client_ = maneuver_reference_client;
-    parameters_ = parameters;
-
-}
-
-void ModeProvider::Cleanup() {
-
-    maneuver_reference_client_.reset();
-    parameters_.reset();
-
-}
-
-void ModeProvider::Start() {
-
-    RCLCPP_INFO(node_->get_logger(), "ModeProvider::Start(): Starting.");
+    RCLCPP_INFO(node_->get_logger(), "ModeProvider::ModeProvider(): Registering modes.");
 
     for (auto it = modes_.begin(); it != modes_.end(); ++it) {
 
@@ -109,7 +84,12 @@ void ModeProvider::Start() {
 
     }
 
-    RCLCPP_INFO(node_->get_logger(), "ModeProvider::Start(): Configured.");
+}
+
+void ModeProvider::Cleanup() {
+
+    maneuver_reference_client_.reset();
+    parameters_.reset();
 
 }
 
@@ -149,6 +129,10 @@ ManeuverMode::SharedPtr ModeProvider::GetMode(const std::string& name) const {
 
 void ModeProvider::initializeModes() {
 
+    RCLCPP_INFO(node_->get_logger(), "ModeProvider::initializeModes(): Getting dt");
+
+    float dt = parameters_->GetParameter("maneuver_setpoint_dt").as_double();
+
     RCLCPP_INFO(node_->get_logger(), "ModeProvider::initializeModes(): Initializing modes.");
 
     for (mission_specification_entry_t entry : *mission_specification_) {
@@ -156,7 +140,7 @@ void ModeProvider::initializeModes() {
         ManeuverMode::SharedPtr mode = std::make_shared<ManeuverMode>(
             *mode_node_,
             entry.mode_name,
-            dt_,
+            dt,
             mission_specification_->executor_owned_mode() == entry.key,
             entry.allow_activate_when_disarmed
         );
