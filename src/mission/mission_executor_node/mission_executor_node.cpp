@@ -48,6 +48,11 @@ MissionExecutorNode::MissionExecutorNode(
 
 	}
 
+    write_behavior_tree_model_xml_service_ = create_service<iii_drone_interfaces::srv::WriteBehaviorTreeModelXML>(
+        "write_behavior_tree_model_xml",
+        std::bind(&MissionExecutorNode::writeBehaviorTreeModelXmlService, this, std::placeholders::_1, std::placeholders::_2)
+    );
+
     RCLCPP_INFO(get_logger(), "MissionExecutorNode::MissionExecutorNode()");
 
 }
@@ -244,6 +249,25 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     throw std::runtime_error("An error occurred.");
 
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+
+}
+
+void MissionExecutorNode::writeBehaviorTreeModelXmlService(
+    const std::shared_ptr<iii_drone_interfaces::srv::WriteBehaviorTreeModelXML::Request> request,
+    std::shared_ptr<iii_drone_interfaces::srv::WriteBehaviorTreeModelXML::Response> response
+) {
+
+    const BT::BehaviorTreeFactory & factory = mission_executor_->factory();
+
+    std::string models_xml = BT::writeTreeNodesModelXML(factory);
+
+    std::string destination = request->destination_file;
+
+    std::ofstream file(destination);
+
+    file << models_xml;
+
+    file.close();
 
 }
 

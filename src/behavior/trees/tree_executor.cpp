@@ -107,6 +107,10 @@ bool TreeExecutor::success() const {
     return success_;
 }
 
+const BT::BehaviorTreeFactory & TreeExecutor::factory() const {
+    return factory_;
+}
+
 void TreeExecutor::execute() {
 
     unsigned int tick_period_ms = configurator_->GetParameter("tick_period_ms").as_int();

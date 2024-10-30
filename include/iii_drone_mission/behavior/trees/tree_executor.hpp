@@ -100,6 +100,8 @@ namespace behavior {
         bool finished() const;
         bool success() const;
 
+        const BT::BehaviorTreeFactory & factory() const;
+
         typedef std::shared_ptr<TreeExecutor> SharedPtr;
 
     private:

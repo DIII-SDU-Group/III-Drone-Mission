@@ -5,10 +5,11 @@
 /*****************************************************************************/
 
 /*****************************************************************************/
-// Mission:
+// Std:
 
 #include <memory>
 #include <thread>
+#include <fstream>
 
 /*****************************************************************************/
 // ROS2:
@@ -18,6 +19,11 @@
 
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
+
+/*****************************************************************************/
+// III-Drone-Interfaces:
+
+#include <iii_drone_interfaces/srv/write_behavior_tree_model_xml.hpp>
 
 /*****************************************************************************/
 // III-Drone-Configuration:
@@ -30,6 +36,11 @@
 #include <iii_drone_mission/mission/mission_executor_node/mission_executor_node.hpp>
 
 #include <iii_drone_mission/mission/mission_executor.hpp>
+
+/*****************************************************************************/
+// BehaviorTree.CPP:
+
+#include <behaviortree_cpp/xml_parsing.h>
 
 /*****************************************************************************/
 // Class:
@@ -77,6 +88,13 @@ namespace mission {
         iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator_;
 
         MissionExecutor::SharedPtr mission_executor_;
+
+        rclcpp::Service<iii_drone_interfaces::srv::WriteBehaviorTreeModelXML>::SharedPtr write_behavior_tree_model_xml_service_;
+
+        void writeBehaviorTreeModelXmlService(
+            const std::shared_ptr<iii_drone_interfaces::srv::WriteBehaviorTreeModelXML::Request> request,
+            std::shared_ptr<iii_drone_interfaces::srv::WriteBehaviorTreeModelXML::Response> response
+        );
 
         tf2_ros::Buffer::SharedPtr tf_buffer_;
         std::unique_ptr<tf2_ros::TransformListener> tf_listener_;

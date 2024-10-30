@@ -76,6 +76,10 @@ namespace mission {
         void Start();
         void Stop();
 
+        const BT::BehaviorTreeFactory & factory() const {
+            return tree_provider_->factory();
+        }
+
         typedef std::shared_ptr<MissionExecutor> SharedPtr;
 
     private:

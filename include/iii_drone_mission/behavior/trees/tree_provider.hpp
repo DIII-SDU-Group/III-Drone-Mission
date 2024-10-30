@@ -77,6 +77,10 @@ namespace behavior {
 
         TreeExecutor::SharedPtr GetTreeExecutor(const std::string& name) const;
 
+        const BT::BehaviorTreeFactory & factory() const {
+            return tree_executors_.begin()->second->factory();
+        }
+
         TreeProviderIterator begin();
         TreeProviderIterator end();
 
