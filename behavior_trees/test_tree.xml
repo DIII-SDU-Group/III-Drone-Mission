@@ -26,6 +26,46 @@
                 start_yaw="{start_yaw}"
             />
 
+		            <Action ID="HoverOnCable" name="hover_on_cable"
+                  target_cable_id="{@target_cable_id}"
+                  duration_s="5."
+                  sustain_action="true"
+            />
+
+            <Action ID="HoverOnCable" name="hover_on_cable" 
+                  target_cable_id="{@target_cable_id}"
+                  duration_s="5." 
+                  sustain_action="true"
+            />
+
+            <Action 
+                  ID="GripperCommand" 
+                  name="gripper_command_open" 
+                  gripper_command="0" 
+            />
+
+            <Action 
+                ID="PLMapperCommand" 
+                name="pl_mapper_command_pause" 
+                pl_mapper_command="2" 
+                reset="false"
+            />
+
+            <Action
+               ID="CableTakeoff"
+               name="cable_takeoff"
+               target_cable_id="{@target_cable_id}"
+            />
+
+            <Decorator ID="Delay" name="delay_fly_to_init_position" delay_msec="1000">
+                <SubTree 
+                    ID="FlyToInitPosition"
+                    initial_state="{@initial_state}"
+                    initial_yaw="{@initial_yaw}"
+                />
+            </Decorator>
+
+
         </Sequence>
      </BehaviorTree>
 
@@ -147,8 +187,96 @@
                     target="{hover_by_cable_target}"
                 />
 
+		<Action
+                    ID="GripperCommand"
+                    name="gripper_command_close"
+                    gripper_command="1"
+                />
+
+		<RetryUntilSuccessful name="landing_maneuver_retry_until_successful" num_attempts="3">
+                    <Fallback name="landing_maneuver_fallback">
+                        <Action
+                            ID="CableLanding"
+                            name="cable_landing"
+                            target_cable_id="{@target_cable_id}"
+                        />
+
+                        <Decorator ID="ForceFailure" name="fly_back_down_under_cable_force_failure">
+                            <Decorator ID="Delay" name="delay_fly_back_down_under_cable" delay_msec="1000">
+                                <Action
+                                    ID="FlyToObject"
+                                    name="fly_back_down_under_cable"
+                                    target="{fly_to_cable_target}"
+                                />
+                            </Decorator>
+                        </Decorator>
+                    </Fallback>
+
+                </RetryUntilSuccessful>
+
+		    <Delay name="delay_hover_on_cable" delay_msec="1000">
+			<Action ID="HoverOnCable" name="hover_on_cable"
+			    target_cable_id="{@target_cable_id}"
+			    duration_s="10."
+			    stop_maneuver_after_timeout_ms="9900"
+			/>
+                    </Delay>
+
+                <RetryUntilSuccessful name="gripper_closed_retry" num_attempts="5">
+                    <Delay name="delay_gripper_closed" delay_msec="1000">
+                        <Condition
+                            ID="VerifyGripperClosed"
+                            name="verify_gripper_closed"
+                        />
+                    </Delay>
+                </RetryUntilSuccessful>
+
+                <Action
+                    ID="PLMapperCommand"
+                    name="pl_mapper_command_freeze"
+                    pl_mapper_command="3"
+                    reset="false"
+                />
+
             </Sequence>
         </Sequence>
 
-    </BehaviorTree>
+</BehaviorTree>
+
+     <BehaviorTree ID="FlyToInitPosition">
+        <Sequence name="fly_to_init_position_sequence">
+            <Action
+                ID="GetPowerlineOverview"
+                name="get_powerline_overview"
+                stored_powerline="{stored_powerline}"
+            />
+
+            <Action
+                ID="PowerlineWaypointProvider"
+                name="fly_to_powerline_waypoint_provider"
+                stored_powerline="{stored_powerline}"
+                start_state="{initial_state}"
+                waypoints_return="{waypoints}"
+            />
+
+            <Action
+                ID="PublishPowerlineWaypoints"
+                name="publish_powerline_waypoints"
+                waypoints="{waypoints}"
+                target_yaw="{initial_yaw}"
+            />
+
+            <LoopPoint queue="{waypoints}" value="{waypoint}">
+                <Action
+                    ID="FlyToPosition"
+                    name="fly_to_position"
+                    target_position="{waypoint}"
+                    target_yaw="{initial_yaw}"
+                    frame_id="world"
+                />
+            </LoopPoint>
+        </Sequence>
+     </BehaviorTree>
+
  </root>
+

@@ -1,0 +1,76 @@
+<root BTCPP_format="4" main_tree_to_execute="Charge">
+     <BehaviorTree ID="Charge">
+        <Sequence name="charge_top_sequence">
+
+            <Action ID="HoverOnCable" name="hover_on_cable" 
+                  target_cable_id="{@target_cable_id}"
+                  duration_s="5." 
+                  sustain_action="true"
+            />
+
+            <Action 
+                  ID="GripperCommand" 
+                  name="gripper_command_open" 
+                  gripper_command="0" 
+            />
+
+            <Action 
+                ID="PLMapperCommand" 
+                name="pl_mapper_command_pause" 
+                pl_mapper_command="2" 
+                reset="false"
+            />
+
+            <Action
+               ID="CableTakeoff"
+               name="cable_takeoff"
+               target_cable_id="{@target_cable_id}"
+            />
+
+            <Decorator ID="Delay" name="delay_fly_to_init_position" delay_msec="1000">
+                <SubTree 
+                    ID="FlyToInitPosition"
+                    initial_state="{@initial_state}"
+                    initial_yaw="{@initial_yaw}"
+                />
+            </Decorator>
+            
+        </Sequence>
+     </BehaviorTree>
+
+     <BehaviorTree ID="FlyToInitPosition">
+        <Sequence name="fly_to_init_position_sequence">
+            <Action
+                ID="GetPowerlineOverview"
+                name="get_powerline_overview"
+                stored_powerline="{stored_powerline}"
+            />
+
+            <Action
+                ID="PowerlineWaypointProvider"
+                name="fly_to_powerline_waypoint_provider"
+                stored_powerline="{stored_powerline}"
+                start_state="{initial_state}"
+                waypoints_return="{waypoints}"
+            />
+
+            <Action
+                ID="PublishPowerlineWaypoints"
+                name="publish_powerline_waypoints"
+                waypoints="{waypoints}"
+                target_yaw="{initial_yaw}"
+            />
+
+            <LoopPoint queue="{waypoints}" value="{waypoint}">
+                <Action
+                    ID="FlyToPosition"
+                    name="fly_to_position"
+                    target_position="{waypoint}"
+                    target_yaw="{initial_yaw}"
+                    frame_id="world"
+                />
+            </LoopPoint>
+        </Sequence>
+     </BehaviorTree>
+
+ </root>
