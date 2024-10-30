@@ -17,9 +17,10 @@ MissionExecutor::MissionExecutor(
     rclcpp_lifecycle::LifecycleNode * node,
     tf2_ros::Buffer::SharedPtr tf_buffer,
     std::string mission_specification_file,
-    float dt
+    rclcpp::executors::MultiThreadedExecutor & executor
 ) : node_(node),
-    tf_buffer_(tf_buffer)
+    tf_buffer_(tf_buffer),
+    executor_(executor)
 {
 
     RCLCPP_INFO(node->get_logger(), "MissionExecutor::MissionExecutor(): Initializing.");
@@ -56,28 +57,17 @@ MissionExecutor::MissionExecutor(
         mission_specification_
     );
 
-    // Modes provider
-    mode_provider_ = std::make_shared<iii_drone::px4::ModeProvider>(
-        tree_provider_,
-        mission_specification_,
-        node_,
-        dt
-    );
+    tree_provider_->FinalizeInitialization(executor_);
 
     RCLCPP_INFO(node->get_logger(), "MissionExecutor::MissionExecutor(): Initialized.");
-
-}
-
-void MissionExecutor::FinalizeInitialization(rclcpp::executors::MultiThreadedExecutor & executor) {
-
-    tree_provider_->FinalizeInitialization(executor);
-    mode_provider_->FinalizeInitialization(executor);
 
 }
 
 void MissionExecutor::Configure(
     iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator
 ) {
+
+    RCLCPP_DEBUG(node_->get_logger(), "MissionExecutor::Configure()");
 
     // Maneuver reference client
     maneuver_reference_client_ = std::make_shared<ManeuverReferenceClient>(
@@ -89,10 +79,30 @@ void MissionExecutor::Configure(
     tree_provider_->Configure(
         maneuver_reference_client_
     );
-    mode_provider_->Configure(
-        maneuver_reference_client_, 
+
+}
+
+void MissionExecutor::Cleanup() {
+
+    tree_provider_->Cleanup();
+
+}
+
+void MissionExecutor::Start(
+    iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator
+) {
+
+
+    // Modes provider
+    mode_provider_ = std::make_shared<iii_drone::px4::ModeProvider>(
+        tree_provider_,
+        mission_specification_,
+        node_,
+        maneuver_reference_client_,
         configurator->GetParameterBundle("mode_provider")
     );
+
+    RCLCPP_DEBUG(node_->get_logger(), "MissionExecutor::Start(): Initializing mode executor.");
 
     generic_mode_executor_ = std::make_shared<iii_drone::px4::GenericModeExecutor>(
         *mode_provider_->GetMode(mission_specification_->executor_owned_mode()),
@@ -102,26 +112,27 @@ void MissionExecutor::Configure(
         configurator->GetParameterBundle("mode_executor")
     );
 
+    RCLCPP_DEBUG(node_->get_logger(), "MissionExecutor::Start(): Registering mode executor.");
 
-}
+    if (!generic_mode_executor_->doRegister()) {
+        RCLCPP_FATAL(node_->get_logger(), "MissionExecutor::Start(): Mode executor registration failed.");
+        throw std::runtime_error("MissionExecutor::Start(): Mode executor registration failed.");
+    }
 
-void MissionExecutor::Cleanup() {
+    RCLCPP_DEBUG(node_->get_logger(), "MissionExecutor::Start(): Registering modes.");
 
-    generic_mode_executor_.reset();
-    tree_provider_->Cleanup();
-    mode_provider_->Cleanup();
+    mode_provider_->Register();
 
-}
+    RCLCPP_INFO(node_->get_logger(), "ModeProvider::ModeProvider(): Adding node to executor.");
 
-void MissionExecutor::Start() {
-
-    generic_mode_executor_->doRegister();
-    mode_provider_->Start();
+    executor_.add_node(mode_provider_->mode_node());
 
 }
 
 void MissionExecutor::Stop() {
 
     mode_provider_->Stop();
+    mode_provider_->Cleanup();
+    mode_provider_.reset();
 
 }

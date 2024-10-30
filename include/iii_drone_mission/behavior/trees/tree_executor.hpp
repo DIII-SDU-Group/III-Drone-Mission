@@ -55,6 +55,7 @@
 #include <iii_drone_mission/behavior/condition_nodes/store_current_state_condition_node.hpp>
 #include <iii_drone_mission/behavior/condition_nodes/publish_powerline_waypoints_condition_node.hpp>
 #include <iii_drone_mission/behavior/condition_nodes/verify_gripper_closed_condition_node.hpp>
+#include <iii_drone_mission/behavior/condition_nodes/get_gripper_alignment_yaw_condition_node.hpp>
 
 #include <iii_drone_mission/behavior/port_types.hpp>
 

@@ -52,6 +52,8 @@
 #include <px4_ros2/components/mode_executor.hpp>
 #include <px4_ros2/components/mode.hpp>
 
+#include <iii_drone_mission/px4/modes/maneuver_mode.hpp>
+
 /*****************************************************************************/
 // Class:
 /*****************************************************************************/
@@ -65,15 +67,16 @@ namespace mission {
             rclcpp_lifecycle::LifecycleNode * node,
             tf2_ros::Buffer::SharedPtr tf_buffer,
             std::string mission_specification_file,
-            float dt
+            rclcpp::executors::MultiThreadedExecutor & executor
         );
 
-        void FinalizeInitialization(rclcpp::executors::MultiThreadedExecutor & executor);
         void Configure(
             iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator
         );
         void Cleanup();
-        void Start();
+        void Start(
+            iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator
+        );
         void Stop();
 
         const BT::BehaviorTreeFactory & factory() const {
@@ -81,6 +84,14 @@ namespace mission {
         }
 
         typedef std::shared_ptr<MissionExecutor> SharedPtr;
+
+        MissionSpecification::SharedPtr mission_specification() const {
+            return mission_specification_;
+        }
+
+        iii_drone::px4::ModeProvider::SharedPtr mode_provider() const {
+            return mode_provider_;
+        }
 
     private:
         rclcpp_lifecycle::LifecycleNode * node_;
@@ -102,6 +113,8 @@ namespace mission {
         iii_drone::px4::ModeProvider::SharedPtr mode_provider_;
 
         iii_drone::px4::GenericModeExecutor::SharedPtr generic_mode_executor_;
+
+        rclcpp::executors::MultiThreadedExecutor & executor_;
 
     };
 

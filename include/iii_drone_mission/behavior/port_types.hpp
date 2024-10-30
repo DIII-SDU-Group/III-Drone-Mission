@@ -157,9 +157,13 @@ namespace BT {
 
         // Convert tokens to float values:
         iii_drone::types::point_t point;
-        point[0] = std::stof(tokens[0]);
-        point[1] = std::stof(tokens[1]);
-        point[2] = std::stof(tokens[2]);
+        for (int i = 0; i < 3; i++) {
+            if (tokens[i][0] == '-') {
+                point[i] = -std::stof(tokens[i].substr(1));
+            } else {
+                point[i] = std::stof(tokens[i]);
+            }
+        }
 
         return point;
 

@@ -93,6 +93,35 @@ void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
         px4_ros2::resultToString(result)
     );
 
+    static int mission_done_select_mode_id = -1;
+
+    if (mission_done_select_mode_id == -1) {
+
+        std::string mission_done_select_mode = parameters_->GetParameter("mission_done_select_mode").as_string();
+
+        if (mission_done_select_mode == "hold") {
+            
+            mission_done_select_mode_id = px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_AUTO_LOITER;
+
+        } else if (mission_done_select_mode == "land") {
+
+            mission_done_select_mode_id = px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_AUTO_LAND;
+
+        } else if (mission_done_select_mode == "position") {
+
+            mission_done_select_mode_id = px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_POSCTL;
+
+        } else {
+
+            RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): Invalid mission_done_select_mode parameter value %s, deactivating mode executor %s", mission_done_select_mode.c_str(), mode_executor_name_.c_str());
+            is_active_ = false;
+            return;
+
+        }
+
+    }
+
+
     if (triggered_position_control_) {
         triggered_position_control_ = false;
 
@@ -112,7 +141,7 @@ void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
         RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): Mode %s failed, deactivating mode executor %s", current_mode_->mode_name().c_str(), mode_executor_name_.c_str());
         is_active_ = false;
         scheduleMode(
-            px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_AUTO_LOITER,
+            mission_done_select_mode_id,
             [this](px4_ros2::Result result) {
             }
         );
@@ -162,7 +191,7 @@ void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
     if (next_mode_key.empty()) {
         RCLCPP_INFO(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): No next mode specified, deactivating mode executor %s", mode_executor_name_.c_str());
         scheduleMode(
-            px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_AUTO_LOITER,
+            mission_done_select_mode_id,
             [this](px4_ros2::Result result) {
             }
         );

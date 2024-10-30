@@ -20,9 +20,51 @@
                 initial_yaw="{@initial_yaw}"
             />
 
-            <SubTree
-                ID="RetryLandOnCable"
+            <SubTree 
+                ID="LandOnCableCoreTree"
+                start_position="{start_position}"
+                start_yaw="{start_yaw}"
             />
+
+		            <Action ID="HoverOnCable" name="hover_on_cable"
+                  target_cable_id="{@target_cable_id}"
+                  duration_s="5."
+                  sustain_action="true"
+            />
+
+            <Action ID="HoverOnCable" name="hover_on_cable" 
+                  target_cable_id="{@target_cable_id}"
+                  duration_s="5." 
+                  sustain_action="true"
+            />
+
+            <Action 
+                  ID="GripperCommand" 
+                  name="gripper_command_open" 
+                  gripper_command="0" 
+            />
+
+            <Action 
+                ID="PLMapperCommand" 
+                name="pl_mapper_command_pause" 
+                pl_mapper_command="2" 
+                reset="false"
+            />
+
+            <Action
+               ID="CableTakeoff"
+               name="cable_takeoff"
+               target_cable_id="{@target_cable_id}"
+            />
+
+            <Decorator ID="Delay" name="delay_fly_to_init_position" delay_msec="1000">
+                <SubTree 
+                    ID="FlyToInitPosition"
+                    initial_state="{@initial_state}"
+                    initial_yaw="{@initial_yaw}"
+                />
+            </Decorator>
+
 
         </Sequence>
      </BehaviorTree>
@@ -64,60 +106,15 @@
         </Sequence>
      </BehaviorTree>
 
-     <BehaviorTree ID="RetryLandOnCable">
-        <Sequence name="retry_land_on_cable_sequence">
-
-            <Condition 
-                ID="StoreCurrentState"
-                name="store_start_state"
-                current_position="{start_position}"
-                current_yaw="{start_yaw}"
-                current_state="{start_state}"
-            />
-
-            <RetryUntilSuccessful name="full_sequence_retry_until_successful" num_attempts="3">
-
-                <Fallback name="land_on_cable_or_fly_back_to_init_fallback">
-
-                    <SubTree 
-                        ID="LandOnCableCoreTree"
-                        start_position="{start_position}"
-                        start_yaw="{start_yaw}"
-                    />
-
-                    <Sequence name="fly_back_to_init_sequence">
-                        <Action 
-                            ID="PLMapperCommand" 
-                            name="pl_mapper_command_stop" 
-                            pl_mapper_command="1" 
-                            reset="true"
-                        />
-
-                        <Action 
-                            ID="GripperCommand" 
-                            name="gripper_command_open" 
-                            gripper_command="0" 
-                        />
-
-                        <Decorator ID="ForceFailure" name="fly_back_to_start_force_failure">
-                            <Action
-                                ID="FlyToPosition"
-                                name="fly_to_position"
-                                target_position="{start_position}"
-                                target_yaw="{start_yaw}"
-                                frame_id="world"
-                            />
-                        </Decorator>
-                    </Sequence>
-                </Fallback>
-            </RetryUntilSuccessful>
-        </Sequence>
-    </BehaviorTree>
-
-
      <BehaviorTree ID="LandOnCableCoreTree">
         <Sequence name="land_on_cable_core_tree_sequence">
             <Sequence name="land_on_cable_core_sequence">
+
+                <Condition 
+                    ID="StoreCurrentState"
+                    name="store_init_state"
+                    current_position="{init_position}"
+                />
 
                 <Action 
                     ID="PLMapperCommand" 
@@ -149,6 +146,20 @@
                 />
 
                 <Condition 
+                    ID="GetGripperAlignmentYaw" 
+                    name="get_gripper_alignment_yaw" 
+                    target_yaw="{target_alignment_yaw}"
+                />
+
+                <Action
+                    ID="FlyToPosition"
+                    name="fly_to_position"
+                    target_position="{init_position}"
+                    target_yaw="{target_alignment_yaw}"
+                    frame_id="world"
+                />
+
+                <Condition 
                     ID="TargetProvider"
                     name="fly_to_cable_target_provider"
                     mode="0"
@@ -176,9 +187,96 @@
                     target="{hover_by_cable_target}"
                 />
 
-            </Sequence>
+		<Action
+                    ID="GripperCommand"
+                    name="gripper_command_close"
+                    gripper_command="1"
+                />
 
+		<RetryUntilSuccessful name="landing_maneuver_retry_until_successful" num_attempts="3">
+                    <Fallback name="landing_maneuver_fallback">
+                        <Action
+                            ID="CableLanding"
+                            name="cable_landing"
+                            target_cable_id="{@target_cable_id}"
+                        />
+
+                        <Decorator ID="ForceFailure" name="fly_back_down_under_cable_force_failure">
+                            <Decorator ID="Delay" name="delay_fly_back_down_under_cable" delay_msec="1000">
+                                <Action
+                                    ID="FlyToObject"
+                                    name="fly_back_down_under_cable"
+                                    target="{fly_to_cable_target}"
+                                />
+                            </Decorator>
+                        </Decorator>
+                    </Fallback>
+
+                </RetryUntilSuccessful>
+
+		    <Delay name="delay_hover_on_cable" delay_msec="1000">
+			<Action ID="HoverOnCable" name="hover_on_cable"
+			    target_cable_id="{@target_cable_id}"
+			    duration_s="10."
+			    stop_maneuver_after_timeout_ms="9900"
+			/>
+                    </Delay>
+
+                <RetryUntilSuccessful name="gripper_closed_retry" num_attempts="5">
+                    <Delay name="delay_gripper_closed" delay_msec="1000">
+                        <Condition
+                            ID="VerifyGripperClosed"
+                            name="verify_gripper_closed"
+                        />
+                    </Delay>
+                </RetryUntilSuccessful>
+
+                <Action
+                    ID="PLMapperCommand"
+                    name="pl_mapper_command_freeze"
+                    pl_mapper_command="3"
+                    reset="false"
+                />
+
+            </Sequence>
         </Sequence>
 
-    </BehaviorTree>
+</BehaviorTree>
+
+     <BehaviorTree ID="FlyToInitPosition">
+        <Sequence name="fly_to_init_position_sequence">
+            <Action
+                ID="GetPowerlineOverview"
+                name="get_powerline_overview"
+                stored_powerline="{stored_powerline}"
+            />
+
+            <Action
+                ID="PowerlineWaypointProvider"
+                name="fly_to_powerline_waypoint_provider"
+                stored_powerline="{stored_powerline}"
+                start_state="{initial_state}"
+                waypoints_return="{waypoints}"
+            />
+
+            <Action
+                ID="PublishPowerlineWaypoints"
+                name="publish_powerline_waypoints"
+                waypoints="{waypoints}"
+                target_yaw="{initial_yaw}"
+            />
+
+            <LoopPoint queue="{waypoints}" value="{waypoint}">
+                <Action
+                    ID="FlyToPosition"
+                    name="fly_to_position"
+                    target_position="{waypoint}"
+                    target_yaw="{initial_yaw}"
+                    frame_id="world"
+                />
+            </LoopPoint>
+        </Sequence>
+     </BehaviorTree>
+
  </root>
+

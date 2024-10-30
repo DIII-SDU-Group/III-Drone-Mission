@@ -57,16 +57,13 @@ namespace px4 {
             iii_drone::behavior::TreeProvider::SharedPtr tree_provider,
             iii_drone::mission::MissionSpecification::SharedPtr mission_specification,
             rclcpp_lifecycle::LifecycleNode * node,
-            float dt
-        );
-
-        void FinalizeInitialization(rclcpp::executors::MultiThreadedExecutor & executor);
-        void Configure(
             iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
             iii_drone::configuration::ParameterBundle::SharedPtr parameters
         );
+
+        void Register();
+
         void Cleanup();
-        void Start();
         void Stop();
 
         iii_drone::px4::ManeuverMode::SharedPtr GetMode(const std::string& name) const;
@@ -89,8 +86,6 @@ namespace px4 {
 
         rclcpp_lifecycle::LifecycleNode * node_;
         rclcpp::Node::SharedPtr mode_node_;
-
-        float dt_;
 
         std::map<std::string, iii_drone::px4::ManeuverMode::SharedPtr> modes_;
 

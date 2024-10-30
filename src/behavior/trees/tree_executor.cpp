@@ -404,6 +404,18 @@ void TreeExecutor::registerNodes() {
         );
     }
 
+    {
+        BT::RosNodeParams params;
+
+        params.nh = node;
+        params.default_port_value = "/perception/pl_mapper/powerline";
+
+        factory_.registerNodeType<GetGripperAlignmentYawConditionNode>(
+            "GetGripperAlignmentYaw",
+            params,
+            tf_buffer_
+        );
+    }
 
 }
 
