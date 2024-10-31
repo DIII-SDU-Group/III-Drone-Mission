@@ -131,6 +131,8 @@ void MissionExecutor::Start(
 
 void MissionExecutor::Stop() {
 
+    executor_.remove_node(mode_provider_->mode_node());
+
     mode_provider_->Stop();
     mode_provider_->Cleanup();
     mode_provider_.reset();
