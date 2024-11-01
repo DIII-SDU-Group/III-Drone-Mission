@@ -1,5 +1,5 @@
-<root BTCPP_format="4" main_tree_to_execute="Charge">
-     <BehaviorTree ID="Charge">
+<root BTCPP_format="4" main_tree_to_execute="LeaveCable">
+     <BehaviorTree ID="LeaveCable">
         <Sequence name="charge_top_sequence">
 
             <Action ID="HoverOnCable" name="hover_on_cable" 
@@ -32,6 +32,7 @@
                     ID="FlyToInitPosition"
                     initial_state="{@initial_state}"
                     initial_yaw="{@initial_yaw}"
+                    waypoints="{@waypoints_return}"
                 />
             </Decorator>
             
@@ -40,20 +41,6 @@
 
      <BehaviorTree ID="FlyToInitPosition">
         <Sequence name="fly_to_init_position_sequence">
-            <Action
-                ID="GetPowerlineOverview"
-                name="get_powerline_overview"
-                stored_powerline="{stored_powerline}"
-            />
-
-            <Action
-                ID="PowerlineWaypointProvider"
-                name="fly_to_powerline_waypoint_provider"
-                stored_powerline="{stored_powerline}"
-                start_state="{initial_state}"
-                waypoints_return="{waypoints}"
-            />
-
             <Action
                 ID="PublishPowerlineWaypoints"
                 name="publish_powerline_waypoints"

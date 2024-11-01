@@ -1,5 +1,5 @@
-<root BTCPP_format="4" main_tree_to_execute="TakeoffFromCable">
-     <BehaviorTree ID="TakeoffFromCable">
+<root BTCPP_format="4" main_tree_to_execute="HoverOnCable">
+     <BehaviorTree ID="HoverOnCable">
         <Sequence name="takeoff_from_cable_top_sequence">
 
             <Action ID="HoverOnCable" name="hover_on_cable" 

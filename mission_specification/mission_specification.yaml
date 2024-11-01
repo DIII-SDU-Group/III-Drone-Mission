@@ -1,23 +1,20 @@
-executor_owned_mode: "land_on_cable"
+executor_owned_mode: "reach_cable"
 
 entries:
-  - key: "land_on_cable"
-    mode_name: "Land On Cable"
-      #behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/opti_track_test_tree.xml"
-      #behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/land_on_cable_tree.xml"
-    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/test_tree.xml"
-      #next_mode: "charge"
-      #land_when_finished: true
+  - key: "reach_cable"
+    mode_name: "Reach Cable"
+    # behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/opti_track_test_tree.xml"
+    # behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/land_on_cable_tree.xml"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/reach_cable_tree.xml"
+    next_mode: "hover_on_cable"
     
-      #- key: "charge"
-      #  mode_name: "Charge"
-      #      #behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/opti_track_test_tree.xml"
-      #  behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/charge_tree.xml"
-      #  next_mode: "takeoff_from_cable"
-
-      #    #allow_activate_when_disarmed: true
-      #    #arm_when_finished: true
-      #    #  
-      #- key: "takeoff_from_cable"
-      #  mode_name: "Takeoff From Cable"
-      #  behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/takeoff_from_cable_tree_test.xml"
+  - key: "hover_on_cable"
+    mode_name: "Hover on Cable"
+    # behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/opti_track_test_tree.xml"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/hover_on_cable_tree.xml"
+    next_mode: "leave_cable"
+    allow_activate_when_disarmed: true
+    
+  - key: "leave_cable"
+    mode_name: "Leave Cable"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/leave_cable_tree.xml"
