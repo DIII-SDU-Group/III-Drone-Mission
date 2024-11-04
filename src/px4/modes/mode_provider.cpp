@@ -136,12 +136,16 @@ void ModeProvider::initializeModes() {
     RCLCPP_INFO(node_->get_logger(), "ModeProvider::initializeModes(): Initializing modes.");
 
     for (mission_specification_entry_t entry : *mission_specification_) {
+
+        bool is_owned_mode = mission_specification_->executor_owned_mode() == entry.key;
+
+        RCLCPP_INFO(node_->get_logger(), "ModeProvider::initializeModes(): Initializing mode %s, owned mode: %d", entry.mode_name.c_str(), is_owned_mode);
     
         ManeuverMode::SharedPtr mode = std::make_shared<ManeuverMode>(
             *mode_node_,
             entry.mode_name,
             dt,
-            mission_specification_->executor_owned_mode() == entry.key,
+            is_owned_mode,
             entry.allow_activate_when_disarmed
         );
 
