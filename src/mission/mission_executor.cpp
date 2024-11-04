@@ -31,7 +31,7 @@ MissionExecutor::MissionExecutor(
     );
 
     // Subscription
-    vehicle_odometry_adapter_history_ = std::make_shared<History<VehicleOdometryAdapter>>();
+    vehicle_odometry_adapter_history_ = std::make_shared<History<VehicleOdometryAdapter>>(2);
 
     odometry_sub_callback_group_ = node->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
@@ -92,6 +92,7 @@ void MissionExecutor::Start(
     iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator
 ) {
 
+    RCLCPP_DEBUG(node_->get_logger(), "MissionExecutor::Start(): Initializing mode provider.");
 
     // Modes provider
     mode_provider_ = std::make_shared<iii_drone::px4::ModeProvider>(
@@ -123,7 +124,7 @@ void MissionExecutor::Start(
 
     mode_provider_->Register();
 
-    RCLCPP_INFO(node_->get_logger(), "ModeProvider::ModeProvider(): Adding node to executor.");
+    RCLCPP_DEBUG(node_->get_logger(), "MissionExecutor::Start(): Adding node to executor.");
 
     executor_.add_node(mode_provider_->mode_node());
 
