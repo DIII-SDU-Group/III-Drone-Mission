@@ -32,6 +32,9 @@
 
 #include <iii_drone_core/utils/types.hpp>
 
+
+#include <iostream>
+
 /*****************************************************************************/
 // Definitions
 /*****************************************************************************/
@@ -68,6 +71,13 @@ namespace behavior {
         GRIPPER_COMMAND_RESPONSE_ERROR = 2,
         GRIPPER_COMMAND_RESPONSE_TIMEOUT = 3
     } gripper_command_response_t;
+
+    typedef enum {
+        MODE_EXECUTOR_SCHEDULE_REQUEST_CLEAR = 0,
+        MODE_EXECUTOR_SCHEDULE_REQUEST_TAKEOFF = 1,
+        MODE_EXECUTOR_SCHEDULE_REQUEST_LAND = 2,
+        MODE_EXECUTOR_SCHEDULE_REQUEST_ARM = 3
+    } mode_executor_schedule_request_t;
 
 } // namespace behavior
 } // namespace iii_drone
@@ -166,6 +176,79 @@ namespace BT {
         }
 
         return point;
+
+    }
+
+    template <> inline iii_drone::behavior::pl_mapper_command_t convertFromString(StringView str) {
+
+        if (str == "start") {
+            return iii_drone::behavior::PL_MAPPER_COMMAND_START;
+        }
+
+        if (str == "stop") {
+            return iii_drone::behavior::PL_MAPPER_COMMAND_STOP;
+        }
+
+        if (str == "pause") {
+            return iii_drone::behavior::PL_MAPPER_COMMAND_PAUSE;
+        }
+
+        if (str == "freeze") {
+            return iii_drone::behavior::PL_MAPPER_COMMAND_FREEZE;
+        }
+
+        throw std::runtime_error("Invalid pl mapper command.");
+
+    }
+
+    template <> inline iii_drone::behavior::target_provider_mode_t convertFromString(StringView str) {
+
+        if (str == "fly_to_cable") {
+            return iii_drone::behavior::TARGET_PROVIDER_MODE_FLY_TO_CABLE;
+        }
+
+        if (str == "hover_by_cable") {
+            return iii_drone::behavior::TARGET_PROVIDER_MODE_HOVER_BY_CABLE;
+        }
+
+        throw std::runtime_error("Invalid target provider mode.");
+    }
+
+    template <> inline iii_drone::behavior::gripper_command_t convertFromString(StringView str) {
+
+        if (str == "open") {
+            return iii_drone::behavior::GRIPPER_COMMAND_OPEN;
+        }
+
+        if (str == "close") {
+            return iii_drone::behavior::GRIPPER_COMMAND_CLOSE;
+        }
+
+        throw std::runtime_error("Invalid gripper command.");
+
+    }
+
+    template <> inline iii_drone::behavior::mode_executor_schedule_request_t convertFromString(StringView str) {
+
+        std::cout << "test!!!" << std::endl;
+
+        if (str == "clear") {
+            return iii_drone::behavior::MODE_EXECUTOR_SCHEDULE_REQUEST_CLEAR;
+        }
+
+        if (str == "takeoff") {
+            return iii_drone::behavior::MODE_EXECUTOR_SCHEDULE_REQUEST_TAKEOFF;
+        }
+
+        if (str == "land") {
+            return iii_drone::behavior::MODE_EXECUTOR_SCHEDULE_REQUEST_LAND;
+        }
+
+        if (str == "arm") {
+            return iii_drone::behavior::MODE_EXECUTOR_SCHEDULE_REQUEST_ARM;
+        }
+
+        throw std::runtime_error("Invalid mode executor schedule request.");
 
     }
 

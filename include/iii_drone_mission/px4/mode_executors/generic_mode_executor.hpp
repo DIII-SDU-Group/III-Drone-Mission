@@ -27,6 +27,7 @@
 #include <iii_drone_core/control/reference.hpp>
 
 #include <iii_drone_core/utils/atomic.hpp>
+#include <iii_drone_core/utils/history.hpp>
 
 /*****************************************************************************/
 // III-Drone-Mission:
@@ -36,6 +37,13 @@
 #include <iii_drone_mission/mission/mission_specification.hpp>
 
 #include <iii_drone_mission/px4/modes/mode_provider.hpp>
+
+/*****************************************************************************/
+// III-Drone-Interfaces:
+
+#include <iii_drone_interfaces/srv/mode_executor_schedule_request.hpp>
+
+#include <iii_drone_interfaces/msg/combined_drone_awareness.hpp>
 
 /*****************************************************************************/
 // PX4:
@@ -93,12 +101,35 @@ namespace px4 {
 
         void onModeCompleted(px4_ros2::Result result);
 
-        iii_drone::utils::Atomic<bool> wait_for_land_;
-        iii_drone::utils::Atomic<bool> wait_for_arm_;
+        enum schedule_t {
+            schedule_next_mode,
+            schedule_land,
+            schedule_arm,
+            schedule_takeoff,
+            schedule_disarm,
+            schedule_arm_before_takeoff
+        };
+
+        utils::Atomic<schedule_t> schedule_next_ = schedule_next_mode;
+        utils::Atomic<schedule_t> schedule_current_ = schedule_next_mode;
+        iii_drone::utils::Atomic<float> takeoff_altitude_;
 
         rclcpp::Subscription<px4_msgs::msg::ManualControlSetpoint>::SharedPtr manual_control_setpoint_sub_;
         void manualControlSetpointCallback(const px4_msgs::msg::ManualControlSetpoint::SharedPtr msg);
 
+        rclcpp::Service<iii_drone_interfaces::srv::ModeExecutorScheduleRequest>::SharedPtr schedule_request_srv_;
+        void scheduleRequestCallback(
+            const std::shared_ptr<iii_drone_interfaces::srv::ModeExecutorScheduleRequest::Request> request,
+            std::shared_ptr<iii_drone_interfaces::srv::ModeExecutorScheduleRequest::Response> response
+        );
+
+        bool canScheduleLand();
+        bool canScheduleArm();
+        bool canScheduleTakeoff(float altitude);
+
+        rclcpp::Subscription<iii_drone_interfaces::msg::CombinedDroneAwareness>::SharedPtr combined_drone_awareness_sub_;
+        utils::History<uint8_t> drone_location_history_;
+        utils::History<bool> armed_history_;
 
     };
 

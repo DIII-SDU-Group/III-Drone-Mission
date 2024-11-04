@@ -11,13 +11,13 @@
             <Action 
                   ID="GripperCommand" 
                   name="gripper_command_open" 
-                  gripper_command="0" 
+                  gripper_command="open" 
             />
 
             <Action 
                 ID="PLMapperCommand" 
                 name="pl_mapper_command_pause" 
-                pl_mapper_command="2" 
+                pl_mapper_command="pause" 
                 reset="false"
             />
 

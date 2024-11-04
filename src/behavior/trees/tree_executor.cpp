@@ -417,6 +417,20 @@ void TreeExecutor::registerNodes() {
         );
     }
 
+    {
+        BT::RosNodeParams params;
+
+        params.nh = node;
+        params.default_port_value = "/mission/mode_executor/schedule_request";
+        params.server_timeout = server_timeout;
+        params.wait_for_server_timeout = wait_for_server_timeout;
+
+        factory_.registerNodeType<ModeExecutorScheduleRequestActionNode>(
+            "ModeExecutorScheduleRequest",
+            params
+        );
+    }
+
 }
 
 void TreeExecutor::unregisterNodes() {

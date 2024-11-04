@@ -37,8 +37,6 @@ namespace mission {
         std::string next_mode;
 
         bool allow_activate_when_disarmed;
-        bool land_when_finished;
-        bool arm_when_finished;
 
     } mission_specification_entry_t;
 

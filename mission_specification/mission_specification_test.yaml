@@ -1,0 +1,18 @@
+executor_owned_mode: "up_down"
+
+entries:
+  - key: "up_down"
+    mode_name: "Up Down"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/up_down_test_tree.xml"
+    next_mode: "takeoff"
+
+  - key: "takeoff"
+    mode_name: "Takeoff Custom"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/takeoff_test_tree.xml"
+    allow_activate_when_disarmed: true
+    next_mode: "up_down_2"
+
+  - key: "up_down_2"
+    mode_name: "Up Down 2"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/up_down_test_tree.xml"
+

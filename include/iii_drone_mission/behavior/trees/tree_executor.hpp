@@ -48,6 +48,7 @@
 #include <iii_drone_mission/behavior/action_nodes/update_powerline_overview_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/get_powerline_overview_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/powerline_waypoint_provider_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/mode_executor_schedule_request_action_node.hpp>
 
 #include <iii_drone_mission/behavior/condition_nodes/verify_powerline_detected_condition_node.hpp>
 #include <iii_drone_mission/behavior/condition_nodes/select_target_line_condition_node.hpp>
@@ -65,7 +66,7 @@
 #include <behaviortree_cpp/bt_factory.h>
 #include <behaviortree_cpp/blackboard.h>
 
-#include "behaviortree_cpp/decorators/loop_node.h"
+#include <behaviortree_cpp/decorators/loop_node.h>
 
 #include <behaviortree_ros2/ros_node_params.hpp>
 

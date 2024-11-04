@@ -80,7 +80,7 @@
                 <Action 
                     ID="PLMapperCommand" 
                     name="pl_mapper_command_start" 
-                    pl_mapper_command="0" 
+                    pl_mapper_command="start" 
                     reset="true"
                 />
                 <Action 
@@ -151,7 +151,7 @@
                 <Action
                     ID="GripperCommand"
                     name="gripper_command_close"
-                    gripper_command="1"
+                    gripper_command="close"
                 />
 
                 <RetryUntilSuccessful name="landing_maneuver_retry_until_successful" num_attempts="3">
@@ -175,6 +175,13 @@
 
                 </RetryUntilSuccessful>
 
+                <Action
+                    ID="PLMapperCommand"
+                    name="pl_mapper_command_freeze"
+                    pl_mapper_command="freeze"
+                    reset="false"
+                />
+
                 <Delay name="delay_hover_on_cable" delay_msec="1000">
                     <Action ID="HoverOnCable" name="hover_on_cable"
                         target_cable_id="{@target_cable_id}"
@@ -191,13 +198,6 @@
                         />
                     </Delay>
                 </RetryUntilSuccessful>
-
-                <Action
-                    ID="PLMapperCommand"
-                    name="pl_mapper_command_freeze"
-                    pl_mapper_command="3"
-                    reset="false"
-                />
 
             </Sequence>
         </Sequence>

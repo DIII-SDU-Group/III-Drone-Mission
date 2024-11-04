@@ -1,0 +1,27 @@
+<root BTCPP_format="4" main_tree_to_execute="Takeoff">
+     <BehaviorTree ID="Takeoff">
+        <Sequence name="takeoff_sequence">
+
+            <Action 
+                ID="Sleep" 
+                name="sleep" 
+                msec="5000"
+            />
+
+            <Action 
+                ID="ModeExecutorScheduleRequest" 
+                name="takeoff_request" 
+                schedule_request_type="1"
+                takeoff_altitude="25"
+            />
+
+            <!-- <Action 
+                ID="ModeExecutorScheduleRequest" 
+                name="arm_request" 
+                schedule_request_type="3"
+            /> -->
+
+        </Sequence>
+     </BehaviorTree>
+
+ </root>

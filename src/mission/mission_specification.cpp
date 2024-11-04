@@ -59,30 +59,16 @@ MissionSpecification::MissionSpecification(
             entry.allow_activate_when_disarmed = false;
         }
 
-        try {
-            entry.land_when_finished = (*it)["land_when_finished"].as<bool>();
-        } catch (YAML::Exception& e){
-            entry.land_when_finished = false;
-        }
-
-        try {
-            entry.arm_when_finished = (*it)["arm_when_finished"].as<bool>();
-        } catch (YAML::Exception& e){
-            entry.arm_when_finished = false;
-        }
-
         mission_specification_entries_[entry.key] = entry;
 
         RCLCPP_DEBUG(
             node_->get_logger(),
-            "MissionSpecification::MissionSpecification(): Added mission specification entry:\nkey: %s\nmode_name: %s\nbehavior_tree_xml_file: %s\nnext_mode: %s\nallow_activate_when_disarmed: %d\nland_when_finished: %d\narm_when_finished: %d",
+            "MissionSpecification::MissionSpecification(): Added mission specification entry:\nkey: %s\nmode_name: %s\nbehavior_tree_xml_file: %s\nnext_mode: %s\nallow_activate_when_disarmed: %d",
             entry.key.c_str(),
             entry.mode_name.c_str(),
             entry.behavior_tree_xml_file.c_str(),
             entry.next_mode.c_str(),
-            entry.allow_activate_when_disarmed,
-            entry.land_when_finished,
-            entry.arm_when_finished
+            entry.allow_activate_when_disarmed
         );
 
     }
