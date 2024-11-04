@@ -7,6 +7,7 @@
 using namespace iii_drone::px4;
 using namespace iii_drone::mission;
 using namespace iii_drone::configuration;
+using namespace iii_drone::adapters;
 
 /*****************************************************************************/
 // Implementation
@@ -27,8 +28,7 @@ GenericModeExecutor::GenericModeExecutor(
     mission_specification_(mission_specification),
     parameters_(parameters),
     mode_provider_(mode_provider),
-    drone_location_history_(1),
-    armed_history_(1) {
+    combined_drone_awareness_adapter_history_(1) {
 
     RCLCPP_DEBUG(node_.get_logger(), "GenericModeExecutor::GenericModeExecutor(): Initializing mode executor %s", mode_executor_name_.c_str());
 
@@ -60,8 +60,8 @@ GenericModeExecutor::GenericModeExecutor(
         "/control/maneuver_controller/combined_drone_awareness",
         10,
         [this](const iii_drone_interfaces::msg::CombinedDroneAwareness::SharedPtr msg) {
-            drone_location_history_.Store(msg->drone_location);
-            armed_history_.Store(msg->armed);
+            CombinedDroneAwarenessAdapter adapter(*msg);
+            combined_drone_awareness_adapter_history_.Store(adapter);
         }
 
     );
@@ -176,8 +176,8 @@ void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
         return;
     }
 
-    if (result != px4_ros2::Result::Success) {
-        RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): Mode %s failed, deactivating mode executor %s", current_mode_->mode_name().c_str(), mode_executor_name_.c_str());
+    if (result == px4_ros2::Result::Rejected) {
+        RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): Mode %s rejected, deactivating mode executor %s", current_mode_->mode_name().c_str(), mode_executor_name_.c_str());
         is_active_ = false;
         scheduleMode(
             mission_done_select_mode_id,
@@ -186,31 +186,52 @@ void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
         return;
     }
 
-    if (schedule_next_ == schedule_next_mode) {
-    // if (schedule_current_ != schedule_next_mode) {
+    if (result == px4_ros2::Result::Interrupted) {
+        RCLCPP_WARN(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): Mode %s interrupted, deactivating mode executor %s", current_mode_->mode_name().c_str(), mode_executor_name_.c_str());
+        is_active_ = false;
+        scheduleMode(
+            mission_done_select_mode_id,
+            [this](px4_ros2::Result result) { }
+        );
+        return;
+    }
 
-        // if (schedule_current_ == schedule_land) {
-        //     RCLCPP_INFO(
-        //         node_.get_logger(),
-        //         "GenericModeExecutor::onModeCompleted(): Waiting for disarming."
-        //     );
+    if (result == px4_ros2::Result::Timeout) {
+        RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): Mode %s timed out, deactivating mode executor %s", current_mode_->mode_name().c_str(), mode_executor_name_.c_str());
+        is_active_ = false;
+        scheduleMode(
+            mission_done_select_mode_id,
+            [this](px4_ros2::Result result) { }
+        );
+        return;
+    }
 
-        //     schedule_current_ = schedule_disarm;
+    if (result == px4_ros2::Result::Deactivated) {
+        RCLCPP_WARN(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): Mode %s deactivated, deactivating mode executor %s", current_mode_->mode_name().c_str(), mode_executor_name_.c_str());
+        is_active_ = false;
+        scheduleMode(
+            mission_done_select_mode_id,
+            [this](px4_ros2::Result result) { }
+        );
+        return;
+    }
 
-        //     waitUntilDisarmed(
-        //         [this](px4_ros2::Result result) {
-        //             onModeCompleted(result);
-        //         }
-        //     );
+    if (result != px4_ros2::Result::Success) {
+        RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): Mode %s failed for other reason, deactivating mode executor %s", current_mode_->mode_name().c_str(), mode_executor_name_.c_str());
+        is_active_ = false;
+        scheduleMode(
+            mission_done_select_mode_id,
+            [this](px4_ros2::Result result) { }
+        );
+        return;
+    }
 
-        //     return;
-        // }
+    switch(schedule_next_) {
+        case schedule_next_mode:
+            schedule_current_ = schedule_next_mode;
+            break;
 
-        schedule_current_ = schedule_next_mode;
-
-    } else {
-
-        if (schedule_next_ == schedule_land) {
+        case schedule_land:
 
             RCLCPP_INFO(
                 node_.get_logger(),
@@ -228,7 +249,7 @@ void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
 
             return;
 
-        } else if (schedule_next_ == schedule_arm) {
+        case schedule_arm:
 
             RCLCPP_INFO(
                 node_.get_logger(),
@@ -246,7 +267,7 @@ void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
 
             return;
 
-        } else if (schedule_next_ == schedule_takeoff) {
+        case schedule_takeoff:
 
             RCLCPP_INFO(
                 node_.get_logger(),
@@ -260,12 +281,12 @@ void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
                 [this](px4_ros2::Result result) {
                     onModeCompleted(result);
                 },
-                takeoff_altitude_
+                takeoff_altitude_ + combined_drone_awareness_adapter_history_[0].ground_altitude_estimate_amsl()
             );
 
             return;
 
-        } else if (schedule_next_ == schedule_arm_before_takeoff) {
+        case schedule_arm_before_takeoff:
 
             RCLCPP_INFO(
                 node_.get_logger(),
@@ -283,8 +304,12 @@ void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
 
             return;
 
-        }
+        default:
+            RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): Invalid schedule_next_ value %d, deactivating mode executor %s", schedule_next_, mode_executor_name_.c_str());
+            is_active_ = false;
 
+            return;
+        
     }
 
     std::string next_mode_key = current_mode_entry_.next_mode;
@@ -519,7 +544,7 @@ bool GenericModeExecutor::canScheduleLand() {
 
     }
 
-    if (drone_location_history_.empty()){
+    if (combined_drone_awareness_adapter_history_.empty()){
 
         RCLCPP_WARN(
             node_.get_logger(),
@@ -530,7 +555,7 @@ bool GenericModeExecutor::canScheduleLand() {
 
     }
 
-    if (drone_location_history_[0] == iii_drone_interfaces::msg::CombinedDroneAwareness::DRONE_LOCATION_UNKNOWN) {
+    if (combined_drone_awareness_adapter_history_[0].drone_location() == DRONE_LOCATION_UNKNOWN) {
 
         RCLCPP_WARN(
             node_.get_logger(),
@@ -541,7 +566,7 @@ bool GenericModeExecutor::canScheduleLand() {
 
     }
 
-    if (drone_location_history_[0] == iii_drone_interfaces::msg::CombinedDroneAwareness::DRONE_LOCATION_ON_GROUND) {
+    if (combined_drone_awareness_adapter_history_[0].on_ground()) {
 
         RCLCPP_WARN(
             node_.get_logger(),
@@ -569,7 +594,7 @@ bool GenericModeExecutor::canScheduleArm() {
 
     }
 
-    if (armed_history_.empty()){
+    if (combined_drone_awareness_adapter_history_.empty()){
 
         RCLCPP_WARN(
             node_.get_logger(),
@@ -580,7 +605,7 @@ bool GenericModeExecutor::canScheduleArm() {
 
     }
 
-    if (armed_history_[0]) {
+    if (combined_drone_awareness_adapter_history_[0].armed()) {
 
         RCLCPP_WARN(
             node_.get_logger(),
@@ -608,7 +633,7 @@ bool GenericModeExecutor::canScheduleTakeoff(float altitude) {
 
     }
 
-    if (armed_history_.empty()){
+    if (combined_drone_awareness_adapter_history_.empty()){
 
         RCLCPP_WARN(
             node_.get_logger(),
@@ -619,7 +644,7 @@ bool GenericModeExecutor::canScheduleTakeoff(float altitude) {
 
     }
 
-    if (armed_history_[0]) {
+    if (combined_drone_awareness_adapter_history_[0].armed()) {
 
         RCLCPP_WARN(
             node_.get_logger(),
@@ -628,6 +653,18 @@ bool GenericModeExecutor::canScheduleTakeoff(float altitude) {
 
         return false;
 
+    }
+
+    float gae_amsl = combined_drone_awareness_adapter_history_[0].ground_altitude_estimate_amsl();
+
+    if (gae_amsl == NAN) {
+    
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::canScheduleTakeoff(): Taking off after current mode rejected: Does not have global ground altitude estimate."
+        );
+
+        return false;
     }
 
     if (altitude <= 0) {

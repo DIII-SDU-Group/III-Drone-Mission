@@ -12,14 +12,8 @@
                 ID="ModeExecutorScheduleRequest" 
                 name="takeoff_request" 
                 schedule_request_type="1"
-                takeoff_altitude="25"
+                takeoff_altitude="4"
             />
-
-            <!-- <Action 
-                ID="ModeExecutorScheduleRequest" 
-                name="arm_request" 
-                schedule_request_type="3"
-            /> -->
 
         </Sequence>
      </BehaviorTree>

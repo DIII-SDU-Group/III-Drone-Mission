@@ -26,6 +26,8 @@
 
 #include <iii_drone_core/control/reference.hpp>
 
+#include <iii_drone_core/adapters/combined_drone_awareness_adapter.hpp>
+
 #include <iii_drone_core/utils/atomic.hpp>
 #include <iii_drone_core/utils/history.hpp>
 
@@ -128,8 +130,7 @@ namespace px4 {
         bool canScheduleTakeoff(float altitude);
 
         rclcpp::Subscription<iii_drone_interfaces::msg::CombinedDroneAwareness>::SharedPtr combined_drone_awareness_sub_;
-        utils::History<uint8_t> drone_location_history_;
-        utils::History<bool> armed_history_;
+        utils::History<adapters::CombinedDroneAwarenessAdapter> combined_drone_awareness_adapter_history_;
 
     };
 
