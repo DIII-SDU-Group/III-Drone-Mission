@@ -76,7 +76,7 @@ void ManeuverMode::Register(
 
 }
 
-void ManeuverMode::Unregister() {
+void ManeuverMode::Unregister(bool force) {
 
     RCLCPP_INFO(node().get_logger(), "ManeuverMode::Unregister(): Unregistering mode %s", mode_name_.c_str());
 
@@ -89,11 +89,18 @@ void ManeuverMode::Unregister() {
 
     tree_executor_.reset();
 
-    sendRegisterOffboardModeRequest(true);
+    sendRegisterOffboardModeRequest(
+        true,
+        force
+    );
 
     if (!doUnregister()) {
-        RCLCPP_FATAL(node().get_logger(), "ManeuverMode::Unregister(): Failed to unregister mode %s with PX4", mode_name_.c_str());
-        throw std::runtime_error("ManeuverMode::Unregister(): Failed to unregister mode with PX4");
+        if (!force) {
+            RCLCPP_FATAL(node().get_logger(), "ManeuverMode::Unregister(): Failed to unregister mode %s with PX4", mode_name_.c_str());
+            throw std::runtime_error("ManeuverMode::Unregister(): Failed to unregister mode with PX4");
+        } else {
+            RCLCPP_WARN(node().get_logger(), "ManeuverMode::Unregister(): Failed to unregister mode %s with PX4", mode_name_.c_str());
+        }
     }
 
     is_registered_ = false;
@@ -102,11 +109,17 @@ void ManeuverMode::Unregister() {
     
 }
 
-void ManeuverMode::sendRegisterOffboardModeRequest(bool deregister) {
+void ManeuverMode::sendRegisterOffboardModeRequest(
+    bool deregister,
+    bool force
+) {
 
     auto request = std::make_shared<iii_drone_interfaces::srv::RegisterOffboardMode::Request>();
     request->mode_id = id();
     request->deregister = deregister;
+
+    int cnt = 0;
+    const int max_attempts = 5;
 
     while (!register_offboard_mode_client_->wait_for_service(std::chrono::seconds(1))) {
         if (!rclcpp::ok()) {
@@ -114,6 +127,16 @@ void ManeuverMode::sendRegisterOffboardModeRequest(bool deregister) {
             return;
         }
         RCLCPP_DEBUG(node().get_logger(), "ManeuverMode::sendRegisterOffboardModeRequest(): Service not available, waiting again...");
+
+        if (++cnt >= max_attempts) {
+            if (force) {
+                RCLCPP_WARN(node().get_logger(), "ManeuverMode::sendRegisterOffboardModeRequest(): Service not available after %d attempts, continuing", max_attempts);
+                return;
+            } else {
+                RCLCPP_FATAL(node().get_logger(), "ManeuverMode::sendRegisterOffboardModeRequest(): Service not available after %d attempts, exiting", max_attempts);
+                throw std::runtime_error("ManeuverMode::sendRegisterOffboardModeRequest(): Service not available after max attempts");
+            }
+        }
     }
 
     auto future = register_offboard_mode_client_->async_send_request(

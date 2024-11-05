@@ -101,7 +101,7 @@ void ModeProvider::Stop() {
 
         auto mode = it->second;
 
-        mode->Unregister();
+        mode->Unregister(true);
 
     }
 

@@ -70,6 +70,8 @@ namespace mission {
             rclcpp::executors::MultiThreadedExecutor & executor
         );
 
+        ~MissionExecutor();
+
         void Configure(
             iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator
         );
@@ -115,6 +117,8 @@ namespace mission {
         iii_drone::px4::GenericModeExecutor::SharedPtr generic_mode_executor_;
 
         rclcpp::executors::MultiThreadedExecutor & executor_;
+
+        bool is_started_ = false;
 
     };
 

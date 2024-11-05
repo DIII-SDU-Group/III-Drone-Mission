@@ -57,9 +57,19 @@ MissionExecutor::MissionExecutor(
         mission_specification_
     );
 
-    tree_provider_->FinalizeInitialization(executor_);
+    executor_.add_node(tree_provider_);
 
     RCLCPP_INFO(node->get_logger(), "MissionExecutor::MissionExecutor(): Initialized.");
+
+}
+
+MissionExecutor::~MissionExecutor() {
+
+    RCLCPP_INFO(node_->get_logger(), "MissionExecutor::~MissionExecutor(): Removing tree provider node from executor.");
+
+    executor_.remove_node(tree_provider_);
+
+    RCLCPP_INFO(node_->get_logger(), "MissionExecutor::~MissionExecutor(): Destroying MissionExecutor.");
 
 }
 
@@ -91,6 +101,11 @@ void MissionExecutor::Cleanup() {
 void MissionExecutor::Start(
     iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator
 ) {
+
+    if (is_started_) {
+        RCLCPP_WARN(node_->get_logger(), "MissionExecutor::Start(): Already started.");
+        return;
+    }
 
     RCLCPP_DEBUG(node_->get_logger(), "MissionExecutor::Start(): Initializing mode provider.");
 
@@ -128,14 +143,23 @@ void MissionExecutor::Start(
 
     executor_.add_node(mode_provider_->mode_node());
 
+    is_started_ = true;
+
 }
 
 void MissionExecutor::Stop() {
+
+    if (!is_started_) {
+        RCLCPP_WARN(node_->get_logger(), "MissionExecutor::Stop(): Already stopped.");
+        return;
+    }
 
     executor_.remove_node(mode_provider_->mode_node());
 
     mode_provider_->Stop();
     mode_provider_->Cleanup();
     mode_provider_.reset();
+
+    is_started_ = false;
 
 }

@@ -280,20 +280,13 @@ void MissionExecutorNode::cleanup() {
     if (mission_executor_ != nullptr) {
         mission_executor_->Stop();
         mission_executor_->Cleanup();
-        mission_executor_.reset();
-        mission_executor_ = nullptr;
     }
 
-    // TF Buffer
-    tf_listener_.reset();
-    tf_listener_ = nullptr;
-
-    tf_buffer_.reset();
-    tf_buffer_ = nullptr;
-
     // Configurator
-    configurator_.reset();
-    configurator_ = nullptr;
+    if (configurator_ != nullptr) {
+        configurator_.reset();
+        configurator_ = nullptr;
+    }
 
 }
 

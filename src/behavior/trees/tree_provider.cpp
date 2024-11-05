@@ -58,17 +58,14 @@ TreeProvider::TreeProvider(
 
 }
 
-void TreeProvider::FinalizeInitialization(rclcpp::executors::MultiThreadedExecutor & executor) {
-
-    RCLCPP_INFO(get_logger(), "TreeProvider::FinalizeInitialization(): Finalizing initialization.");
-
-    executor.add_node(get_node_base_interface());
-
-}
-
 void TreeProvider::Configure(
     ManeuverReferenceClient::SharedPtr maneuver_reference_client
 ) {
+
+    if (is_configured_) {
+        RCLCPP_WARN(get_logger(), "TreeProvider::Configure(): Already configured.");
+        return;
+    }
 
     RCLCPP_INFO(get_logger(), "TreeProvider::Configure(): Configuring.");
 
@@ -80,9 +77,16 @@ void TreeProvider::Configure(
 
     initializeTreeExecutors();
 
+    is_configured_ = true;
+
 }
 
 void TreeProvider::Cleanup() {
+
+    if (!is_configured_) {
+        RCLCPP_WARN(get_logger(), "TreeProvider::Cleanup(): Not configured.");
+        return;
+    }
 
     RCLCPP_INFO(get_logger(), "TreeProvider::Cleanup(): Cleaning up.");
 
@@ -100,6 +104,8 @@ void TreeProvider::Cleanup() {
     configurator_ = nullptr;
 
     maneuver_reference_client_.reset();
+
+    is_configured_ = false;
 
 }
 

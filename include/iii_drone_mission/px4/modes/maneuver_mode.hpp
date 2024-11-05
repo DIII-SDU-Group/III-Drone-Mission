@@ -62,7 +62,7 @@ namespace px4 {
             iii_drone::behavior::TreeExecutor::SharedPtr tree_executor,
             iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client
         );
-        void Unregister();
+        void Unregister(bool force = false);
 
         void onActivate() override;
 
@@ -106,7 +106,10 @@ namespace px4 {
 
         rclcpp::CallbackGroup::SharedPtr register_offboard_mode_callback_group_;
 
-        void sendRegisterOffboardModeRequest(bool deregister);
+        void sendRegisterOffboardModeRequest(
+            bool deregister,
+            bool force = false
+        );
 
     };
 

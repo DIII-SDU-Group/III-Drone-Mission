@@ -69,7 +69,6 @@ namespace behavior {
             iii_drone::mission::MissionSpecification::SharedPtr mission_specification
         );
 
-        void FinalizeInitialization(rclcpp::executors::MultiThreadedExecutor & executor);
         void Configure(
             iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client
         );
@@ -100,6 +99,8 @@ namespace behavior {
         std::map<std::string, iii_drone::behavior::TreeExecutor::SharedPtr> tree_executors_;
 
         void initializeTreeExecutors();
+
+        bool is_configured_ = false;
 
     };
 
