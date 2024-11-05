@@ -73,11 +73,18 @@ namespace behavior {
     } gripper_command_response_t;
 
     typedef enum {
-        MODE_EXECUTOR_SCHEDULE_REQUEST_CLEAR = 0,
-        MODE_EXECUTOR_SCHEDULE_REQUEST_TAKEOFF = 1,
-        MODE_EXECUTOR_SCHEDULE_REQUEST_LAND = 2,
-        MODE_EXECUTOR_SCHEDULE_REQUEST_ARM = 3
-    } mode_executor_schedule_request_t;
+        MODE_EXECUTOR_ACTION_REQUEST_TAKEOFF = 1,
+        MODE_EXECUTOR_ACTION_REQUEST_LAND = 2,
+        MODE_EXECUTOR_ACTION_REQUEST_ARM = 3
+    } mode_executor_action_request_t;
+
+    typedef enum {
+        LOG_LEVEL_DEBUG = 0,
+        LOG_LEVEL_INFO = 1,
+        LOG_LEVEL_WARN = 2,
+        LOG_LEVEL_ERROR = 3,
+        LOG_LEVEL_FATAL = 4
+    } log_level_t;
 
 } // namespace behavior
 } // namespace iii_drone
@@ -228,27 +235,23 @@ namespace BT {
 
     }
 
-    template <> inline iii_drone::behavior::mode_executor_schedule_request_t convertFromString(StringView str) {
+    template <> inline iii_drone::behavior::mode_executor_action_request_t convertFromString(StringView str) {
 
         std::cout << "test!!!" << std::endl;
 
-        if (str == "clear") {
-            return iii_drone::behavior::MODE_EXECUTOR_SCHEDULE_REQUEST_CLEAR;
-        }
-
         if (str == "takeoff") {
-            return iii_drone::behavior::MODE_EXECUTOR_SCHEDULE_REQUEST_TAKEOFF;
+            return iii_drone::behavior::MODE_EXECUTOR_ACTION_REQUEST_TAKEOFF;
         }
 
         if (str == "land") {
-            return iii_drone::behavior::MODE_EXECUTOR_SCHEDULE_REQUEST_LAND;
+            return iii_drone::behavior::MODE_EXECUTOR_ACTION_REQUEST_LAND;
         }
 
         if (str == "arm") {
-            return iii_drone::behavior::MODE_EXECUTOR_SCHEDULE_REQUEST_ARM;
+            return iii_drone::behavior::MODE_EXECUTOR_ACTION_REQUEST_ARM;
         }
 
-        throw std::runtime_error("Invalid mode executor schedule request.");
+        throw std::runtime_error("Invalid mode executor action request.");
 
     }
 

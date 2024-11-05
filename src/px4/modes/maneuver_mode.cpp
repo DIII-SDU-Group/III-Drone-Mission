@@ -133,22 +133,83 @@ void ManeuverMode::sendRegisterOffboardModeRequest(bool deregister) {
 
 void ManeuverMode::onActivate() {
 
-    RCLCPP_INFO(node().get_logger(), "ManeuverMode::onActivate(): Activating mode %s", mode_name_.c_str());
+    if (!tree_executor_->running()) {
 
-    maneuver_reference_client_->SetReferenceModeHover();
+        RCLCPP_INFO(node().get_logger(), "ManeuverMode::onActivate(): Starting mode %s", mode_name_.c_str());
 
+        maneuver_reference_client_->SetReferenceModeHover();
 
-    setSetpointUpdateRate(1./dt_);
+        setSetpointUpdateRate(1./dt_);
 
-    tree_executor_->StartExecution();
+        tree_executor_->StartExecution();
+    
+    } else {
+
+        RCLCPP_WARN(node().get_logger(), "ManeuverMode::onActivate(): Restarting mode %s", mode_name_.c_str());
+
+    }
+
+    if (on_next_activate_callback_) {
+
+        on_next_activate_callback_();
+
+    }
+
+    on_next_activate_callback_ = nullptr;
 
 }
 
 void ManeuverMode::onDeactivate() { 
 
-    RCLCPP_INFO(node().get_logger(), "ManeuverMode::onDeactivate(): Deactivating mode %s", mode_name_.c_str());
+    if (!stay_alive_on_next_deactivate_) {
+
+        RCLCPP_INFO(node().get_logger(), "ManeuverMode::onDeactivate(): Full deactivation of mode %s", mode_name_.c_str());
+
+        tree_executor_->StopExecution();
+
+    } else {
+
+        RCLCPP_WARN(node().get_logger(), "ManeuverMode::onDeactivate(): Partial deactivation of mode %s", mode_name_.c_str());
+
+    }
+
+    stay_alive_on_next_deactivate_ = false;
+
+    on_next_activate_callback_ = nullptr;
+
+}
+
+void ManeuverMode::StayAliveOnNextDeactivate() {
+
+    RCLCPP_INFO(node().get_logger(), "ManeuverMode::StayAliveOnNextDeactivate(): Will keep running on next deactivate for mode %s", mode_name_.c_str());
+ 
+    stay_alive_on_next_deactivate_ = true;
+
+}
+
+void ManeuverMode::ClearStayAliveOnNextDeactivate() { 
+
+    RCLCPP_INFO(node().get_logger(), "ManeuverMode::ClearStayAliveOnNextDeactivate(): Will not keep running on next deactivate for mode %s", mode_name_.c_str());
+
+    stay_alive_on_next_deactivate_ = false;
+
+}
+
+void ManeuverMode::RegisterOnNextActivateCallback(std::function<void()> callback) { 
+
+    RCLCPP_INFO(node().get_logger(), "ManeuverMode::RegisterOnNextActivateCallback(): Registering callback for next activate for mode %s", mode_name_.c_str());
+
+    on_next_activate_callback_ = callback;
+
+}
+
+void ManeuverMode::StopExecution() { 
+
+    RCLCPP_INFO(node().get_logger(), "ManeuverMode::StopExecution(): Stopping execution for mode %s", mode_name_.c_str());
 
     tree_executor_->StopExecution();
+
+    on_next_activate_callback_ = nullptr;
 
 }
 

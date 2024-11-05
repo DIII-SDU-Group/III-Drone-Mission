@@ -68,6 +68,13 @@ namespace px4 {
 
         void onDeactivate() override;
 
+        void StayAliveOnNextDeactivate();
+        void ClearStayAliveOnNextDeactivate();
+
+        void RegisterOnNextActivateCallback(std::function<void()> callback);
+
+        void StopExecution();
+
         void updateSetpoint(float dt) override;
 
         std::string mode_name() const;
@@ -90,6 +97,10 @@ namespace px4 {
         bool is_owned_mode_;
 
         bool is_registered_ = false;
+
+        utils::Atomic<bool> stay_alive_on_next_deactivate_ = false;
+
+        std::function<void()> on_next_activate_callback_ = nullptr;
 
         rclcpp::Client<iii_drone_interfaces::srv::RegisterOffboardMode>::SharedPtr register_offboard_mode_client_;
 

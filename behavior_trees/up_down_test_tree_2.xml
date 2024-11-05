@@ -91,32 +91,6 @@
             <Action 
                 ID="LogMessage" 
                 name="log"
-                message="Sleep completed. Issuing arm command"
-                log_level="1"
-            />
-
-            <Action 
-                ID="ModeExecutorAction" 
-                name="arm" 
-                action_request_type="3"
-            />
-
-            <Action 
-                ID="LogMessage" 
-                name="log"
-                message="Arm completed. Issuing sleep command"
-                log_level="1"
-            />
-
-            <Action 
-                ID="Sleep" 
-                name="sleep" 
-                msec="1000"
-            />
-
-            <Action 
-                ID="LogMessage" 
-                name="log"
                 message="Sleep completed. Terminating behavior tree."
                 log_level="1"
             />

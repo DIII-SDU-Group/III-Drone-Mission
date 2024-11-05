@@ -104,7 +104,8 @@ set(III_DRONE_MISSION_HDRS
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/update_powerline_overview_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/get_powerline_overview_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/powerline_waypoint_provider_action_node.hpp"
-  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/mode_executor_schedule_request_action_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/mode_executor_action_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/log_message_action_node.hpp"
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/verify_gripper_closed_condition_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/verify_powerline_detected_condition_node.hpp"
@@ -147,7 +148,8 @@ set(III_DRONE_MISSION_SRCS
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/update_powerline_overview_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/get_powerline_overview_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/powerline_waypoint_provider_action_node.cpp"
-  "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/mode_executor_schedule_request_action_node.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/mode_executor_action_node.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/log_message_action_node.cpp"
 
   "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/verify_gripper_closed_condition_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/verify_powerline_detected_condition_node.cpp"

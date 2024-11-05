@@ -46,13 +46,32 @@ GenericModeExecutor::GenericModeExecutor(
         )
     );
 
-    schedule_request_srv_ = node_.create_service<iii_drone_interfaces::srv::ModeExecutorScheduleRequest>(
-        "/mission/mode_executor/schedule_request",
+    // schedule_request_srv_ = node_.create_service<iii_drone_interfaces::srv::ModeExecutorScheduleRequest>(
+    //     "/mission/mode_executor/schedule_request",
+    //     std::bind(
+    //         &GenericModeExecutor::scheduleRequestCallback,
+    //         this,
+    //         std::placeholders::_1,
+    //         std::placeholders::_2
+    //     )
+    // );
+
+    mode_executor_action_server_ = rclcpp_action::create_server<ModeExecutorAction>(
+        &node_,
+        "/mission/mode_executor/action",
         std::bind(
-            &GenericModeExecutor::scheduleRequestCallback,
+            &GenericModeExecutor::modeExecutorActionGoalCallback,
             this,
             std::placeholders::_1,
             std::placeholders::_2
+        ), 
+        [this](const std::shared_ptr<GoalHandleModeExecutorAction>) -> rclcpp_action::CancelResponse {
+            return rclcpp_action::CancelResponse::REJECT;
+        },
+        std::bind(
+            &GenericModeExecutor::modeExecutorActionAcceptedCallback,
+            this,
+            std::placeholders::_1
         )
     );
 
@@ -82,13 +101,46 @@ void GenericModeExecutor::onActivate() {
     schedule_next_ = schedule_next_mode;
     schedule_current_ = schedule_next_mode;
 
-    scheduleMode(
-        current_mode_->id(),
-        [this](px4_ros2::Result result) {
-            onModeCompleted(result);
-        }
-    );
+    if (isArmed()) {
 
+        scheduleMode(
+            (*current_mode_)->id(),
+            [this](px4_ros2::Result result) {
+                onModeCompleted(result);
+            }
+        );
+
+    } else {
+
+        RCLCPP_INFO(
+            node_.get_logger(), 
+            "GenericModeExecutor::onActivate(): Arming."
+        );
+
+        arm(
+            [this](px4_ros2::Result result) {
+
+                if (result != px4_ros2::Result::Success) {
+
+                    RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::onActivate(): Arming failed, deactivating mode executor %s", mode_executor_name_.c_str());
+
+                    is_active_ = false;
+
+                    return;
+
+                }
+
+                scheduleMode(
+                    (*current_mode_)->id(),
+                    [this](px4_ros2::Result result) {
+                        onModeCompleted(result);
+                    }
+                );
+
+            }
+        );
+
+    }
 }
 
 void GenericModeExecutor::onDeactivate(DeactivateReason reason) {
@@ -108,35 +160,274 @@ void GenericModeExecutor::onDeactivate(DeactivateReason reason) {
 
 void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
 
-    std::string mode_name;
+    if (!checkScheduleAndActionValidity()) return;
 
-    switch (schedule_current_) {
-        case schedule_next_mode:
-            mode_name = current_mode_->mode_name();
-            break;
-        case schedule_takeoff:
-            mode_name = "Takeoff";
-            break;
-        case schedule_land:
-            mode_name = "Landing";
-            break;
-        case schedule_arm:
-            mode_name = "Arming";
-            break;
-        case schedule_disarm:
-            mode_name = "Disarming";
-            break;
-        case schedule_arm_before_takeoff:
-            mode_name = "Arm Before Takeoff";
-            break;
-    };
+    std::string mode_name = getModeName(schedule_current_);
+
+    logModeCompleted(
+        mode_name,
+        result
+    );
+
+    if (checkPositionControlTriggered()) return;
+
+    bool action_succeeded = true;
+
+    if (
+        !checkNextModeSucceeded(
+            result, 
+            action_succeeded
+        )
+    ) return;
+
+
+    schedule_t previous_schedule_current;
+
+    if (scheduleActionIfAny(previous_schedule_current)) return;
+
+    if (previous_schedule_current == schedule_next_mode) {
+
+        bool last_mode;
+        onNormalModeSuccess(last_mode);
+
+        if (last_mode) return;
+
+    } else {
+
+        (*current_mode_)->RegisterOnNextActivateCallback(
+            [this,action_succeeded](){
+                if (action_succeeded) {
+                    tryCompleteActionGoal(true);
+                } else {
+                    tryCompleteActionGoal(false);
+                }
+            }
+        );
+    }
 
     RCLCPP_INFO(
-        node_.get_logger(), 
-        "GenericModeExecutor::onModeCompleted(): Mode %s completed with result %s", 
-        mode_name.c_str(),
-        px4_ros2::resultToString(result)
+        node_.get_logger(),
+        "GenericModeExecutor::onModeCompleted(): Activating mode %s.",
+        (*current_mode_entry_).mode_name.c_str()
     );
+
+    scheduleMode(
+        (*current_mode_)->id(),
+        [this](px4_ros2::Result result) {
+            onModeCompleted(result);
+        }
+    );
+
+}
+
+bool GenericModeExecutor::checkScheduleAndActionValidity() {
+
+    if (schedule_next_ != schedule_next_mode || schedule_current_ != schedule_next_mode) {
+        
+        if ((*current_goal_handle_) == nullptr) {
+
+            RCLCPP_ERROR(
+                node_.get_logger(), 
+                "GenericModeExecutor::checkScheduleAndActionValidity(): Mode executor action executing but no goal handle found."
+            );
+
+            is_active_ = false;
+
+            stopModeIfWaiting();
+
+            return false;
+
+        }
+
+    } else {
+
+        if ((*current_goal_handle_) != nullptr) {
+
+            RCLCPP_ERROR(
+                node_.get_logger(), 
+                "GenericModeExecutor::checkScheduleAndActionValidity(): Mode executor action not executing but goal handle found."
+            );
+
+            is_active_ = false;
+
+            stopModeIfWaiting();
+
+            return false;
+
+        }
+    }
+
+    return true;
+
+}
+
+void GenericModeExecutor::logModeCompleted(
+    std::string mode_name,
+    px4_ros2::Result result
+) {
+
+    if (schedule_current_ == schedule_next_mode && schedule_next_ != schedule_next_mode) {
+
+        RCLCPP_INFO(
+            node_.get_logger(), 
+            "GenericModeExecutor::logModeCompleted(): Mode %s temporarily deactivated with result %s to run mode executor action.", 
+            mode_name.c_str(),
+            px4_ros2::resultToString(result)
+        );
+
+    } else {
+
+        RCLCPP_INFO(
+            node_.get_logger(), 
+            "GenericModeExecutor::logModeCompleted(): Mode %s completed with result %s", 
+            mode_name.c_str(),
+            px4_ros2::resultToString(result)
+        );
+
+    }
+}
+
+bool GenericModeExecutor::checkPositionControlTriggered() {
+
+    if (triggered_position_control_) {
+        triggered_position_control_ = false;
+
+        RCLCPP_WARN(
+            node_.get_logger(), 
+            "GenericModeExecutor::checkPositionControlTriggered(): Position control triggered during mode %s, deactivating mode executor %s", 
+            (*current_mode_)->mode_name().c_str(),
+            mode_executor_name_.c_str()
+        );
+
+        is_active_ = false;
+
+        stopModeIfWaiting();
+
+        return true;
+    }
+
+    return false;
+
+}
+
+bool GenericModeExecutor::checkNextModeSucceeded(
+    px4_ros2::Result result,
+    bool & action_succeeded
+) {
+
+    action_succeeded = false;
+
+   if (result == px4_ros2::Result::Rejected) {
+
+        if (schedule_current_ == schedule_next_mode) {
+
+            RCLCPP_ERROR(
+                node_.get_logger(), 
+                "GenericModeExecutor::checkNextModeSucceeded(): Mode %s rejected, deactivating mode executor %s", 
+                (*current_mode_)->mode_name().c_str(), 
+                mode_executor_name_.c_str()
+            );
+            is_active_ = false;
+            scheduleMode(
+                missionDoneSelectModeId(),
+                [this](px4_ros2::Result result) { }
+            );
+
+            stopModeIfWaiting();
+
+            return false;
+
+        }
+
+        RCLCPP_WARN(node_.get_logger(), "GenericModeExecutor::checkNextModeSucceeded(): Mode %s rejected, mode executor action failed", (*current_mode_)->mode_name().c_str());
+
+    } else if (result == px4_ros2::Result::Interrupted) {
+
+        if (schedule_current_ == schedule_next_mode) {
+
+            RCLCPP_WARN(node_.get_logger(), "GenericModeExecutor::checkNextModeSucceeded(): Mode %s interrupted, deactivating mode executor %s", (*current_mode_)->mode_name().c_str(), mode_executor_name_.c_str());
+            is_active_ = false;
+            scheduleMode(
+                missionDoneSelectModeId(),
+                [this](px4_ros2::Result result) { }
+            );
+
+            stopModeIfWaiting();
+
+            return false;
+
+        }
+
+        RCLCPP_WARN(node_.get_logger(), "GenericModeExecutor::checkNextModeSucceeded(): Mode %s interrupted, mode executor action failed", (*current_mode_)->mode_name().c_str());
+
+    } else if (result == px4_ros2::Result::Timeout) {
+
+        if (schedule_current_ == schedule_next_mode) {
+
+            RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::checkNextModeSucceeded(): Mode %s timed out, deactivating mode executor %s", (*current_mode_)->mode_name().c_str(), mode_executor_name_.c_str());
+            is_active_ = false;
+            scheduleMode(
+                missionDoneSelectModeId(),
+                [this](px4_ros2::Result result) { }
+            );
+
+            stopModeIfWaiting();
+
+            return false;
+
+        }
+
+        RCLCPP_WARN(node_.get_logger(), "GenericModeExecutor::checkNextModeSucceeded(): Mode %s timed out, mode executor action failed", (*current_mode_)->mode_name().c_str());
+
+    } else if (result == px4_ros2::Result::Deactivated) {
+
+        if (schedule_current_ == schedule_next_mode) {
+
+            RCLCPP_WARN(node_.get_logger(), "GenericModeExecutor::checkNextModeSucceeded(): Mode %s deactivated, deactivating mode executor %s", (*current_mode_)->mode_name().c_str(), mode_executor_name_.c_str());
+            is_active_ = false;
+            scheduleMode(
+                missionDoneSelectModeId(),
+                [this](px4_ros2::Result result) { }
+            );
+
+            stopModeIfWaiting();
+
+            return false;
+
+        }
+
+        RCLCPP_WARN(node_.get_logger(), "GenericModeExecutor::checkNextModeSucceeded(): Mode %s deactivated, mode executor action failed", (*current_mode_)->mode_name().c_str());
+
+    } else if (result != px4_ros2::Result::Success) {
+
+        if (schedule_current_ == schedule_next_mode) {
+
+            RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::checkNextModeSucceeded(): Mode %s failed with result %s, deactivating mode executor %s", (*current_mode_)->mode_name().c_str(), px4_ros2::resultToString(result), mode_executor_name_.c_str());
+            is_active_ = false;
+            scheduleMode(
+                missionDoneSelectModeId(),
+                [this](px4_ros2::Result result) { }
+            );
+
+            stopModeIfWaiting();
+
+            return false;
+
+        }
+
+        RCLCPP_WARN(node_.get_logger(), "GenericModeExecutor::checkNextModeSucceeded(): Mode %s failed with result %s, mode executor action failed", (*current_mode_)->mode_name().c_str(), px4_ros2::resultToString(result));
+
+    } else {
+
+        action_succeeded = true;
+
+    }
+
+    return true;
+
+}
+
+int GenericModeExecutor::missionDoneSelectModeId() {
 
     std::string mission_done_select_mode = parameters_->GetParameter("mission_done_select_mode").as_string();
     int mission_done_select_mode_id;
@@ -155,87 +446,62 @@ void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
 
     } else {
 
-        RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): Invalid mission_done_select_mode parameter value %s, deactivating mode executor %s", mission_done_select_mode.c_str(), mode_executor_name_.c_str());
-        is_active_ = false;
-        return;
-
-    }
-
-    if (triggered_position_control_) {
-        triggered_position_control_ = false;
-
-        RCLCPP_WARN(
+        RCLCPP_FATAL(
             node_.get_logger(), 
-            "GenericModeExecutor::onModeCompleted(): Position control triggered during mode %s, deactivating mode executor %s", 
-            current_mode_->mode_name().c_str(),
-            mode_executor_name_.c_str()
+            "GenericModeExecutor::missionDoneSelectModeId(): Invalid mission_done_select_mode parameter value %s", 
+            mission_done_select_mode.c_str()
         );
 
-        is_active_ = false;
+        throw std::runtime_error("GenericModeExecutor::missionDoneSelectModeId(): Invalid mission_done_select_mode parameter value");
 
-        return;
     }
 
-    if (result == px4_ros2::Result::Rejected) {
-        RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): Mode %s rejected, deactivating mode executor %s", current_mode_->mode_name().c_str(), mode_executor_name_.c_str());
-        is_active_ = false;
-        scheduleMode(
-            mission_done_select_mode_id,
-            [this](px4_ros2::Result result) { }
-        );
-        return;
+    return mission_done_select_mode_id;
+
+}
+
+std::string GenericModeExecutor::getModeName(schedule_t schedule) {
+
+    switch(schedule) {
+        case schedule_next_mode:
+            return (*current_mode_)->mode_name();
+        case schedule_land:
+            return "Landing";
+        case schedule_arm:
+            return "Arming";
+        case schedule_takeoff:
+            return "Takeoff";
+        case schedule_disarm:
+            return "Disarming";
+        case schedule_arm_before_takeoff:
+            return "Arm Before Takeoff";
     }
 
-    if (result == px4_ros2::Result::Interrupted) {
-        RCLCPP_WARN(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): Mode %s interrupted, deactivating mode executor %s", current_mode_->mode_name().c_str(), mode_executor_name_.c_str());
-        is_active_ = false;
-        scheduleMode(
-            mission_done_select_mode_id,
-            [this](px4_ros2::Result result) { }
-        );
-        return;
-    }
+    RCLCPP_FATAL(
+        node_.get_logger(), 
+        "GenericModeExecutor::getModeName(): Invalid schedule value %d", 
+        schedule
+    );
 
-    if (result == px4_ros2::Result::Timeout) {
-        RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): Mode %s timed out, deactivating mode executor %s", current_mode_->mode_name().c_str(), mode_executor_name_.c_str());
-        is_active_ = false;
-        scheduleMode(
-            mission_done_select_mode_id,
-            [this](px4_ros2::Result result) { }
-        );
-        return;
-    }
+    throw std::runtime_error("GenericModeExecutor::getModeName(): Invalid schedule value");
 
-    if (result == px4_ros2::Result::Deactivated) {
-        RCLCPP_WARN(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): Mode %s deactivated, deactivating mode executor %s", current_mode_->mode_name().c_str(), mode_executor_name_.c_str());
-        is_active_ = false;
-        scheduleMode(
-            mission_done_select_mode_id,
-            [this](px4_ros2::Result result) { }
-        );
-        return;
-    }
+}
 
-    if (result != px4_ros2::Result::Success) {
-        RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): Mode %s failed for other reason, deactivating mode executor %s", current_mode_->mode_name().c_str(), mode_executor_name_.c_str());
-        is_active_ = false;
-        scheduleMode(
-            mission_done_select_mode_id,
-            [this](px4_ros2::Result result) { }
-        );
-        return;
-    }
+bool GenericModeExecutor::scheduleActionIfAny(schedule_t & previous_schedule_current) {
+
+    previous_schedule_current = schedule_current_;
 
     switch(schedule_next_) {
         case schedule_next_mode:
             schedule_current_ = schedule_next_mode;
-            break;
+
+            return false;
 
         case schedule_land:
 
             RCLCPP_INFO(
                 node_.get_logger(),
-                "GenericModeExecutor::onModeCompleted(): Landing."
+                "GenericModeExecutor::scheduleActionIfAny(): Landing."
             );
 
             schedule_next_ = schedule_next_mode;
@@ -247,31 +513,22 @@ void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
                 }
             );
 
-            return;
+            return true;
 
         case schedule_arm:
 
-            RCLCPP_INFO(
+            RCLCPP_FATAL(
                 node_.get_logger(),
-                "GenericModeExecutor::onModeCompleted(): Arming."
+                "GenericModeExecutor::scheduleActionIfAny(): Arming should not be handled in onModeComplete but in a custom action callback - control should not reach this point."
             );
 
-            schedule_next_ = schedule_next_mode;
-            schedule_current_ = schedule_arm;
-
-            arm(
-                [this](px4_ros2::Result result) {
-                    onModeCompleted(result);
-                }
-            );
-
-            return;
+            throw std::runtime_error("GenericModeExecutor::scheduleActionIfAny(): Arming should not be handled in onModeComplete but in a custom action callback - control should not reach this point.");
 
         case schedule_takeoff:
 
             RCLCPP_INFO(
                 node_.get_logger(),
-                "GenericModeExecutor::onModeCompleted(): Taking off."
+                "GenericModeExecutor::scheduleActionIfAny(): Taking off."
             );
 
             schedule_next_ = schedule_next_mode;
@@ -284,13 +541,13 @@ void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
                 takeoff_altitude_ + combined_drone_awareness_adapter_history_[0].ground_altitude_estimate_amsl()
             );
 
-            return;
+            return true;
 
         case schedule_arm_before_takeoff:
 
             RCLCPP_INFO(
                 node_.get_logger(),
-                "GenericModeExecutor::onModeCompleted(): Arming."
+                "GenericModeExecutor::scheduleActionIfAny(): Arming."
             );
 
             schedule_next_ = schedule_takeoff;
@@ -302,45 +559,52 @@ void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
                 }
             );
 
-            return;
+            return true;
 
         default:
-            RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): Invalid schedule_next_ value %d, deactivating mode executor %s", schedule_next_, mode_executor_name_.c_str());
-            is_active_ = false;
+            RCLCPP_FATAL(
+                node_.get_logger(), 
+                "GenericModeExecutor::scheduleActionIfAny(): Invalid schedule_next_ value %d", 
+                schedule_next_
+            );
 
-            return;
+            throw std::runtime_error("GenericModeExecutor::scheduleActionIfAny(): Invalid schedule_next_ value");
         
     }
 
-    std::string next_mode_key = current_mode_entry_.next_mode;
+    return false;
+
+}
+
+void GenericModeExecutor::onNormalModeSuccess(bool & last_mode) {
+
+    std::string next_mode_key = (*current_mode_entry_).next_mode;
 
     if (next_mode_key.empty()) {
-        RCLCPP_INFO(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): No next mode specified, deactivating mode executor %s", mode_executor_name_.c_str());
-        scheduleMode(
-            mission_done_select_mode_id,
-            [this](px4_ros2::Result result) {
-            }
+
+        RCLCPP_INFO(
+            node_.get_logger(), 
+            "GenericModeExecutor::onNormalModeSuccess(): No next mode specified, deactivating mode executor %s", 
+            mode_executor_name_.c_str()
         );
+
+        scheduleMode(
+            missionDoneSelectModeId(),
+            [this](px4_ros2::Result result) { }
+        );
+
         is_active_ = false;
+
+        last_mode = true;
+
         return;
+
     }
 
     current_mode_ = mode_provider_->GetMode(next_mode_key);
     current_mode_entry_ = mission_specification_->GetMissionSpecificationEntry(next_mode_key);
 
-    RCLCPP_INFO(
-        node_.get_logger(),
-        "GenericModeExecutor::onModeCompleted(): Activating mode %s.",
-        current_mode_entry_.mode_name.c_str()
-    );
-    
-
-    scheduleMode(
-        current_mode_->id(),
-        [this](px4_ros2::Result result) {
-            onModeCompleted(result);
-        }
-    );
+    last_mode = false;
 
 }
 
@@ -392,152 +656,284 @@ void GenericModeExecutor::manualControlSetpointCallback(const px4_msgs::msg::Man
 
 }
 
-void GenericModeExecutor::scheduleRequestCallback(
-    const std::shared_ptr<iii_drone_interfaces::srv::ModeExecutorScheduleRequest::Request> request,
-    std::shared_ptr<iii_drone_interfaces::srv::ModeExecutorScheduleRequest::Response> response
+rclcpp_action::GoalResponse GenericModeExecutor::modeExecutorActionGoalCallback(
+    const rclcpp_action::GoalUUID & uuid,
+    std::shared_ptr<const ModeExecutorAction::Goal> goal
 ) {
 
     if (schedule_current_ != schedule_next_mode) {
 
         RCLCPP_WARN(
             node_.get_logger(),
-            "GenericModeExecutor::scheduleRequestCallback(): Cannot schedule action while another action is executing. Scheduling requests must be activated during mode execution."
+            "GenericModeExecutor::modeExecutorActionGoalCallback(): Cannot execute action while another action is executing. Actions must be requested during mode execution."
         );
 
-        response->success = false;
+        return rclcpp_action::GoalResponse::REJECT;
+
+    }
+
+    switch(goal->request) {
+
+        default: {
+
+            RCLCPP_WARN(
+                node_.get_logger(),
+                "GenericModeExecutor::modeExecutorActionGoalCallback(): Unknown action, rejecting."
+            );
+
+            schedule_next_ = schedule_next_mode;
+
+            return rclcpp_action::GoalResponse::REJECT;
+
+        }
+
+        case iii_drone_interfaces::action::ModeExecutorAction::Goal::REQUEST_TAKEOFF: {
+
+            RCLCPP_INFO(
+                node_.get_logger(),
+                "GenericModeExecutor::modeExecutorActionGoalCallback(): Received takeoff request."
+            );
+
+            if (canTakeoff(goal->takeoff_altitude)) {
+
+                RCLCPP_INFO(
+                    node_.get_logger(),
+                    "GenericModeExecutor::modeExecutorActionGoalCallback(): Takeoff request accepted."
+                );
+
+                schedule_next_ = schedule_arm_before_takeoff;
+                takeoff_altitude_ = goal->takeoff_altitude;
+
+                return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+
+            } else {
+
+                RCLCPP_WARN(
+                    node_.get_logger(),
+                    "GenericModeExecutor::modeExecutorActionGoalCallback(): Takeoff request rejected."
+                );
+
+                schedule_next_ = schedule_next_mode;
+
+                return rclcpp_action::GoalResponse::REJECT;
+
+            }
+
+            break;
+
+        }
+
+        case iii_drone_interfaces::action::ModeExecutorAction::Goal::REQUEST_LAND: {
+
+            RCLCPP_INFO(
+                node_.get_logger(),
+                "GenericModeExecutor::modeExecutorActionGoalCallback(): Received landing request."
+            );
+
+            if (canLand()) {
+
+                RCLCPP_INFO(
+                    node_.get_logger(),
+                    "GenericModeExecutor::modeExecutorActionGoalCallback(): Landing request accepted."
+                );
+
+                schedule_next_ = schedule_land;
+
+                return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+
+            } else {
+
+                RCLCPP_WARN(
+                    node_.get_logger(),
+                    "GenericModeExecutor::modeExecutorActionGoalCallback(): Landing request rejected."
+                );
+
+                schedule_next_ = schedule_next_mode;
+
+                return rclcpp_action::GoalResponse::REJECT;
+
+            }
+
+            break;
+
+        }
+
+        case iii_drone_interfaces::action::ModeExecutorAction::Goal::REQUEST_ARM: {
+
+            RCLCPP_INFO(
+                node_.get_logger(),
+                "GenericModeExecutor::modeExecutorActionGoalCallback(): Received arming request."
+            );
+
+            if (canArm()) {
+
+                RCLCPP_INFO(
+                    node_.get_logger(),
+                    "GenericModeExecutor::modeExecutorActionGoalCallback(): Arming request accepted."
+                );
+
+                schedule_next_ = schedule_arm;
+
+                return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+
+            } else {
+
+                RCLCPP_WARN(
+                    node_.get_logger(),
+                    "GenericModeExecutor::modeExecutorActionGoalCallback(): Arming request rejected."
+                );
+
+                schedule_next_ = schedule_next_mode;
+
+                return rclcpp_action::GoalResponse::REJECT;
+
+            }
+
+            break;
+
+        }
+    }
+
+    RCLCPP_ERROR(
+        node_.get_logger(),
+        "GenericModeExecutor::modeExecutorActionGoalCallback(): Unknown action, rejecting."
+    );
+
+    schedule_next_ = schedule_next_mode;
+
+}
+
+void GenericModeExecutor::modeExecutorActionAcceptedCallback(const std::shared_ptr<GoalHandleModeExecutorAction> goal_handle) {
+
+    RCLCPP_INFO(
+        node_.get_logger(),
+        "GenericModeExecutor::modeExecutorActionAcceptedCallback(): Action accepted."
+    );
+
+    if (schedule_next_ == schedule_arm) {
+
+        handleArmAccepted(goal_handle);
 
         return;
 
     }
 
-    switch(request->request) {
+    current_goal_handle_ = goal_handle;
 
-        default:
-        case iii_drone_interfaces::srv::ModeExecutorScheduleRequest::Request::REQUEST_CLEAR: {
+    (*current_mode_)->StayAliveOnNextDeactivate();
+    (*current_mode_)->completed(px4_ros2::Result::Success);
 
-            RCLCPP_INFO(
-                node_.get_logger(),
-                "GenericModeExecutor::scheduleRequestCallback(): Received clear request, setting schedule next to next mode."
-            );
-
-            schedule_next_ = schedule_next_mode;
-
-            response->success = true;
-
-            break;
-
-        }
-
-        case iii_drone_interfaces::srv::ModeExecutorScheduleRequest::Request::REQUEST_TAKEOFF: {
-
-            RCLCPP_INFO(
-                node_.get_logger(),
-                "GenericModeExecutor::scheduleRequestCallback(): Received request to schedule takeoff."
-            );
-
-            if (canScheduleTakeoff(request->takeoff_altitude)) {
-
-                RCLCPP_INFO(
-                    node_.get_logger(),
-                    "GenericModeExecutor::scheduleRequestCallback(): Request to schedule takeoff accepted."
-                );
-
-                // schedule_next_ = schedule_takeoff;
-                schedule_next_ = schedule_arm_before_takeoff;
-                takeoff_altitude_ = request->takeoff_altitude;
-
-                response->success = true;
-
-            } else {
-
-                RCLCPP_WARN(
-                    node_.get_logger(),
-                    "GenericModeExecutor::scheduleRequestCallback(): Request to schedule takeoff rejected."
-                );
-
-                response->success = false;
-
-            }
-
-            break;
-
-        }
-
-        case iii_drone_interfaces::srv::ModeExecutorScheduleRequest::Request::REQUEST_LAND: {
-
-            RCLCPP_INFO(
-                node_.get_logger(),
-                "GenericModeExecutor::scheduleRequestCallback(): Received request to schedule landing."
-            );
-
-            if (canScheduleLand()) {
-
-                RCLCPP_INFO(
-                    node_.get_logger(),
-                    "GenericModeExecutor::scheduleRequestCallback(): Request to schedule landing accepted."
-                );
-
-                schedule_next_ = schedule_land;
-
-                response->success = true;
-
-            } else {
-
-                RCLCPP_WARN(
-                    node_.get_logger(),
-                    "GenericModeExecutor::scheduleRequestCallback(): Request to schedule landing rejected."
-                );
-
-                response->success = false;
-
-            }
-
-            break;
-
-        }
-
-        case iii_drone_interfaces::srv::ModeExecutorScheduleRequest::Request::REQUEST_ARM: {
-
-            RCLCPP_INFO(
-                node_.get_logger(),
-                "GenericModeExecutor::scheduleRequestCallback(): Received request to schedule arming."
-            );
-
-            if (canScheduleArm()) {
-
-                RCLCPP_INFO(
-                    node_.get_logger(),
-                    "GenericModeExecutor::scheduleRequestCallback(): Request to schedule arming accepted."
-                );
-
-                schedule_next_ = schedule_arm;
-
-                response->success = true;
-
-            } else {
-
-                RCLCPP_WARN(
-                    node_.get_logger(),
-                    "GenericModeExecutor::scheduleRequestCallback(): Request to schedule arming rejected."
-                );
-
-                response->success = false;
-
-            }
-
-            break;
-
-        }
-    }
 }
 
-bool GenericModeExecutor::canScheduleLand() {
+void GenericModeExecutor::handleArmAccepted(const std::shared_ptr<GoalHandleModeExecutorAction> goal_handle) {
+
+    RCLCPP_INFO(
+        node_.get_logger(),
+        "GenericModeExecutor::handleArmAccepted(): Arming."
+    );
+
+    arm(
+        [this,goal_handle](px4_ros2::Result result) {
+            onArmCompleted(
+                result,
+                goal_handle
+            );
+        }
+    );
+
+}
+
+void GenericModeExecutor::onArmCompleted(
+    px4_ros2::Result result,
+    const std::shared_ptr<GoalHandleModeExecutorAction> goal_handle
+) {
+
+    schedule_next_ = schedule_next_mode;
+
+    if (result != px4_ros2::Result::Success) {
+
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::onArmCompleted(): Arming failed."
+        );
+
+        goal_handle->abort(std::make_shared<ModeExecutorAction::Result>());
+
+        return;
+
+    }
+
+    RCLCPP_INFO(
+        node_.get_logger(),
+        "GenericModeExecutor::onArmCompleted(): Arming succeeded."
+    );
+
+    goal_handle->succeed(std::make_shared<ModeExecutorAction::Result>());
+
+}
+
+void GenericModeExecutor::stopModeIfWaiting() {
+
+    tryCompleteActionGoal(false);
+
+    if ((*current_mode_) != nullptr) {
+
+        RCLCPP_INFO(
+            node_.get_logger(),
+            "GenericModeExecutor::stopModeIfWaiting(): Stopping mode %s.",
+            (*current_mode_)->mode_name().c_str()
+        );
+
+        (*current_mode_)->StopExecution();
+
+    }
+
+}
+
+void GenericModeExecutor::tryCompleteActionGoal(bool success) {
+
+    if ((*current_goal_handle_) == nullptr) {
+
+        RCLCPP_DEBUG(
+            node_.get_logger(),
+            "GenericModeExecutor::tryCompleteActionGoal(): No goal handle found."
+        );
+
+        return;
+
+    }
+
+    if (success) {
+
+        RCLCPP_INFO(
+            node_.get_logger(),
+            "GenericModeExecutor::tryCompleteActionGoal(): Mode executor action succeeded."
+        );
+
+        (*current_goal_handle_)->succeed(std::make_shared<ModeExecutorAction::Result>());
+
+    } else {
+
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::tryCompleteActionGoal(): Mode executor action failed."
+        );
+
+        (*current_goal_handle_)->abort(std::make_shared<ModeExecutorAction::Result>());
+
+    }
+
+    current_goal_handle_ = (std::shared_ptr<GoalHandleModeExecutorAction>)nullptr;
+
+}
+
+bool GenericModeExecutor::canLand() {
 
     if (!is_active_) {
 
         RCLCPP_WARN(
             node_.get_logger(),
-            "GenericModeExecutor::canScheduleLand(): Landing after current mode rejected: Mode executor is not active."
+            "GenericModeExecutor::canLand(): Landing after current mode rejected: Mode executor is not active."
         );
 
         return false;
@@ -548,7 +944,7 @@ bool GenericModeExecutor::canScheduleLand() {
 
         RCLCPP_WARN(
             node_.get_logger(),
-            "GenericModeExecutor::canScheduleLand(): Landing after current mode rejected: Drone location history is empty."
+            "GenericModeExecutor::canLand(): Landing after current mode rejected: Drone location history is empty."
         );
 
         return false;
@@ -559,7 +955,7 @@ bool GenericModeExecutor::canScheduleLand() {
 
         RCLCPP_WARN(
             node_.get_logger(),
-            "GenericModeExecutor::canScheduleLand(): Landing after current mode rejected: Drone location is unknown."
+            "GenericModeExecutor::canLand(): Landing after current mode rejected: Drone location is unknown."
         );
 
         return false;
@@ -570,7 +966,7 @@ bool GenericModeExecutor::canScheduleLand() {
 
         RCLCPP_WARN(
             node_.get_logger(),
-            "GenericModeExecutor::canScheduleLand(): Landing after current mode rejected: Drone is on ground."
+            "GenericModeExecutor::canLand(): Landing after current mode rejected: Drone is on ground."
         );
 
         return false;
@@ -581,35 +977,36 @@ bool GenericModeExecutor::canScheduleLand() {
 
 }
 
-bool GenericModeExecutor::canScheduleArm() {
+bool GenericModeExecutor::canArm() {
 
     if (!is_active_) {
 
         RCLCPP_WARN(
             node_.get_logger(),
-            "GenericModeExecutor::canScheduleArm(): Arming after current mode rejected: Mode executor is not active."
+            "GenericModeExecutor::canArm(): Arming after current mode rejected: Mode executor is not active."
         );
 
         return false;
 
     }
 
-    if (combined_drone_awareness_adapter_history_.empty()){
+    // if (combined_drone_awareness_adapter_history_.empty()){
+
+    //     RCLCPP_WARN(
+    //         node_.get_logger(),
+    //         "GenericModeExecutor::canArm(): Arm after current mode rejected: Armed history is empty."
+    //     );
+
+    //     return false;
+
+    // }
+
+    // if (combined_drone_awareness_adapter_history_[0].armed()) {
+    if (isArmed()) {
 
         RCLCPP_WARN(
             node_.get_logger(),
-            "GenericModeExecutor::canScheduleArm(): Arm after current mode rejected: Armed history is empty."
-        );
-
-        return false;
-
-    }
-
-    if (combined_drone_awareness_adapter_history_[0].armed()) {
-
-        RCLCPP_WARN(
-            node_.get_logger(),
-            "GenericModeExecutor::canScheduleArm(): Armed after current mode rejected: Drone is already armed."
+            "GenericModeExecutor::canArm(): Armed after current mode rejected: Drone is already armed."
         );
 
         return false;
@@ -620,13 +1017,13 @@ bool GenericModeExecutor::canScheduleArm() {
 
 }
 
-bool GenericModeExecutor::canScheduleTakeoff(float altitude) {
+bool GenericModeExecutor::canTakeoff(float altitude) {
 
     if (!is_active_) {
 
         RCLCPP_WARN(
             node_.get_logger(),
-            "GenericModeExecutor::canScheduleTakeoff(): Taking off after current mode rejected: Mode executor is not active."
+            "GenericModeExecutor::canTakeoff(): Taking off after current mode rejected: Mode executor is not active."
         );
 
         return false;
@@ -637,23 +1034,24 @@ bool GenericModeExecutor::canScheduleTakeoff(float altitude) {
 
         RCLCPP_WARN(
             node_.get_logger(),
-            "GenericModeExecutor::canScheduleTakeoff(): Taking off after current mode rejected: Armed history is empty."
+            "GenericModeExecutor::canTakeoff(): Taking off after current mode rejected: Armed history is empty."
         );
 
         return false;
 
     }
 
-    if (combined_drone_awareness_adapter_history_[0].armed()) {
+    // if (combined_drone_awareness_adapter_history_[0].armed()) {
+    // if (isArmed()) {
 
-        RCLCPP_WARN(
-            node_.get_logger(),
-            "GenericModeExecutor::canScheduleTakeoff(): Taking off after current mode rejected: Drone is already armed."
-        );
+    //     RCLCPP_WARN(
+    //         node_.get_logger(),
+    //         "GenericModeExecutor::canTakeoff(): Taking off after current mode rejected: Drone is already armed."
+    //     );
 
-        return false;
+    //     return false;
 
-    }
+    // }
 
     float gae_amsl = combined_drone_awareness_adapter_history_[0].ground_altitude_estimate_amsl();
 
@@ -661,7 +1059,7 @@ bool GenericModeExecutor::canScheduleTakeoff(float altitude) {
     
         RCLCPP_WARN(
             node_.get_logger(),
-            "GenericModeExecutor::canScheduleTakeoff(): Taking off after current mode rejected: Does not have global ground altitude estimate."
+            "GenericModeExecutor::canTakeoff(): Taking off after current mode rejected: Does not have global ground altitude estimate."
         );
 
         return false;
@@ -671,7 +1069,7 @@ bool GenericModeExecutor::canScheduleTakeoff(float altitude) {
 
         RCLCPP_WARN(
             node_.get_logger(),
-            "GenericModeExecutor::canScheduleTakeoff(): Taking off after current mode rejected: Takeoff altitude %f is not positive.",
+            "GenericModeExecutor::canTakeoff(): Taking off after current mode rejected: Takeoff altitude %f is not positive.",
             altitude
         );
 

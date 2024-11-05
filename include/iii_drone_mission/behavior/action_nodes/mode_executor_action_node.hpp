@@ -17,12 +17,12 @@
 /*****************************************************************************/
 // III-Drone-Interfaces:
 
-#include <iii_drone_interfaces/srv/mode_executor_schedule_request.hpp>
+#include <iii_drone_interfaces/action/mode_executor_action.hpp>
 
 /*****************************************************************************/
 // BT.CPP:
 
-#include <behaviortree_ros2/bt_service_node.hpp>
+#include <behaviortree_ros2/bt_action_node.hpp>
 #include <behaviortree_ros2/plugins.hpp>
 
 /*****************************************************************************/
@@ -32,7 +32,7 @@
 namespace iii_drone {
 namespace behavior {
 
-    class ModeExecutorScheduleRequestActionNode : public BT::RosServiceNode<iii_drone_interfaces::srv::ModeExecutorScheduleRequest> {
+    class ModeExecutorActionNode : public BT::RosActionNode<iii_drone_interfaces::action::ModeExecutorAction> {
     public:
         /**
          * @brief Constructor.
@@ -41,7 +41,7 @@ namespace behavior {
          * @param conf The node configuration.
          * @param params The ROS node parameters.
          */
-        ModeExecutorScheduleRequestActionNode(
+        ModeExecutorActionNode(
             const std::string & name, 
             const BT::NodeConfig & conf,
             const BT::RosNodeParams & params
@@ -49,9 +49,9 @@ namespace behavior {
 
         static BT::PortsList providedPorts();
 
-        bool setRequest(Request::SharedPtr & request) override;
+        bool setGoal(Goal & goal) override;
 
-        BT::NodeStatus onResponseReceived(const Response::SharedPtr & response) override;
+        BT::NodeStatus onResultReceived(const WrappedResult & wr) override;
 
     private:
         rclcpp::Node::SharedPtr node_ptr_;
