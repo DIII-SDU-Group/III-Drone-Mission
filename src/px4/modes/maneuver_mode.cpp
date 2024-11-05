@@ -33,14 +33,9 @@ ManeuverMode::ManeuverMode(
 
     dt_ = dt;
 
-    register_offboard_mode_callback_group_ = node.create_callback_group(
-        rclcpp::CallbackGroupType::MutuallyExclusive
-    );
-
     register_offboard_mode_client_ = node.create_client<iii_drone_interfaces::srv::RegisterOffboardMode>(
         "/control/maneuver_controller/register_offboard_mode",
-        rmw_qos_profile_services_default,
-        register_offboard_mode_callback_group_
+        rmw_qos_profile_services_default
     );
 
 }
@@ -89,10 +84,14 @@ void ManeuverMode::Unregister(bool force) {
 
     tree_executor_.reset();
 
+    RCLCPP_DEBUG(node().get_logger(), "ManeuverMode::Unregister(): Sending deregister request for mode %s", mode_name_.c_str());
+
     sendRegisterOffboardModeRequest(
         true,
         force
     );
+
+    RCLCPP_DEBUG(node().get_logger(), "ManeuverMode::Unregister(): Calling doUnregister() for mode %s", mode_name_.c_str());
 
     if (!doUnregister()) {
         if (!force) {

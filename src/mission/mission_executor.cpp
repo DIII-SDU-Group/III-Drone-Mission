@@ -17,9 +17,11 @@ MissionExecutor::MissionExecutor(
     rclcpp_lifecycle::LifecycleNode * node,
     tf2_ros::Buffer::SharedPtr tf_buffer,
     std::string mission_specification_file,
+    rclcpp::CallbackGroup::SharedPtr odometry_sub_callback_group,
     rclcpp::executors::MultiThreadedExecutor & executor
 ) : node_(node),
     tf_buffer_(tf_buffer),
+    odometry_sub_callback_group_(odometry_sub_callback_group),
     executor_(executor)
 {
 
@@ -33,7 +35,7 @@ MissionExecutor::MissionExecutor(
     // Subscription
     vehicle_odometry_adapter_history_ = std::make_shared<History<VehicleOdometryAdapter>>(2);
 
-    odometry_sub_callback_group_ = node->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    // odometry_sub_callback_group_ = node->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
 	rclcpp::QoS px4_sub_qos(rclcpp::KeepLast(1));
 	px4_sub_qos.transient_local();
@@ -67,6 +69,10 @@ MissionExecutor::~MissionExecutor() {
 
     RCLCPP_INFO(node_->get_logger(), "MissionExecutor::~MissionExecutor(): Removing tree provider node from executor.");
 
+    if (is_started_) Stop();
+
+    if (is_configured_) Cleanup();
+
     executor_.remove_node(tree_provider_);
 
     RCLCPP_INFO(node_->get_logger(), "MissionExecutor::~MissionExecutor(): Destroying MissionExecutor.");
@@ -74,8 +80,14 @@ MissionExecutor::~MissionExecutor() {
 }
 
 void MissionExecutor::Configure(
-    iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator
+    iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator,
+    rclcpp::CallbackGroup::SharedPtr get_reference_cb_group
 ) {
+
+    if (is_configured_) {
+        RCLCPP_WARN(node_->get_logger(), "MissionExecutor::Configure(): Already configured.");
+        return;
+    }
 
     RCLCPP_DEBUG(node_->get_logger(), "MissionExecutor::Configure()");
 
@@ -83,18 +95,31 @@ void MissionExecutor::Configure(
     maneuver_reference_client_ = std::make_shared<ManeuverReferenceClient>(
         node_,
         vehicle_odometry_adapter_history_,
-        configurator->GetParameterBundle("maneuver_reference_client")
+        configurator->GetParameterBundle("maneuver_reference_client"),
+        get_reference_cb_group
     );
 
     tree_provider_->Configure(
         maneuver_reference_client_
     );
 
+    is_configured_ = true;
+
 }
 
 void MissionExecutor::Cleanup() {
 
+    if (!is_configured_) {
+        RCLCPP_WARN(node_->get_logger(), "MissionExecutor::Cleanup(): Not configured.");
+        return;
+    }
+
     tree_provider_->Cleanup();
+
+    maneuver_reference_client_.reset();
+    maneuver_reference_client_ = nullptr;
+
+    is_configured_ = false;
 
 }
 
@@ -154,11 +179,18 @@ void MissionExecutor::Stop() {
         return;
     }
 
-    executor_.remove_node(mode_provider_->mode_node());
+    executor_.remove_node(
+        mode_provider_->mode_node(),
+        true
+    );
+
+    generic_mode_executor_.reset();
+    generic_mode_executor_ = nullptr;
 
     mode_provider_->Stop();
     mode_provider_->Cleanup();
     mode_provider_.reset();
+    mode_provider_ = nullptr;
 
     is_started_ = false;
 

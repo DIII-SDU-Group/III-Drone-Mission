@@ -67,13 +67,15 @@ namespace mission {
             rclcpp_lifecycle::LifecycleNode * node,
             tf2_ros::Buffer::SharedPtr tf_buffer,
             std::string mission_specification_file,
+            rclcpp::CallbackGroup::SharedPtr odometry_sub_callback_group,
             rclcpp::executors::MultiThreadedExecutor & executor
         );
 
         ~MissionExecutor();
 
         void Configure(
-            iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator
+            iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator,
+            rclcpp::CallbackGroup::SharedPtr get_reference_cb_group
         );
         void Cleanup();
         void Start(
@@ -119,6 +121,7 @@ namespace mission {
         rclcpp::executors::MultiThreadedExecutor & executor_;
 
         bool is_started_ = false;
+        bool is_configured_ = false;
 
     };
 

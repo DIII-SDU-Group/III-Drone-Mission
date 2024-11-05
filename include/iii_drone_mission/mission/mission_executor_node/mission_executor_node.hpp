@@ -103,10 +103,8 @@ namespace mission {
 
         void cleanup();
 
-
-        rclcpp::Node::SharedPtr test_mode_node_;
-        iii_drone::px4::ManeuverMode::SharedPtr test_mode_;
-
+        rclcpp::CallbackGroup::SharedPtr odometry_sub_callback_group_;
+        rclcpp::CallbackGroup::SharedPtr get_reference_cb_group_;
 
     };
 

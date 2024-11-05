@@ -58,6 +58,8 @@ namespace px4 {
             bool allow_activate_when_disarmed
         );
 
+        // ~ManeuverMode() override;
+
         void Register(
             iii_drone::behavior::TreeExecutor::SharedPtr tree_executor,
             iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client
@@ -103,8 +105,6 @@ namespace px4 {
         std::function<void()> on_next_activate_callback_ = nullptr;
 
         rclcpp::Client<iii_drone_interfaces::srv::RegisterOffboardMode>::SharedPtr register_offboard_mode_client_;
-
-        rclcpp::CallbackGroup::SharedPtr register_offboard_mode_callback_group_;
 
         void sendRegisterOffboardModeRequest(
             bool deregister,

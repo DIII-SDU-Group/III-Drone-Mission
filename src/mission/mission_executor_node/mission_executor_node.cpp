@@ -53,6 +53,9 @@ MissionExecutorNode::MissionExecutorNode(
         std::bind(&MissionExecutorNode::writeBehaviorTreeModelXmlService, this, std::placeholders::_1, std::placeholders::_2)
     );
 
+    odometry_sub_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    get_reference_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+
     RCLCPP_INFO(get_logger(), "MissionExecutorNode::MissionExecutorNode()");
 
 }
@@ -94,18 +97,18 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     }
 
     // Mission Executor
-    if (mission_executor_ == nullptr) {
+    mission_executor_ = std::make_shared<MissionExecutor>(
+        this, 
+        tf_buffer_,
+        configurator_->GetParameter("mission_specification_file").as_string(),
+        odometry_sub_callback_group_,
+        executor_handle_
+    );
 
-        mission_executor_ = std::make_shared<MissionExecutor>(
-            this, 
-            tf_buffer_,
-            configurator_->GetParameter("mission_specification_file").as_string(),
-            executor_handle_
-        );
-
-    }
-
-    mission_executor_->Configure(configurator_);
+    mission_executor_->Configure(
+        configurator_,
+        get_reference_cb_group_
+    );
 
     RCLCPP_INFO(get_logger(), "MissionExecutorNode::on_configure(): Configured");
 
@@ -128,16 +131,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
         return ret;
     }
 
-    // Mission Executor
-    mission_executor_->Cleanup();
-
-    // Configurator
-    RCLCPP_DEBUG(
-        get_logger(), 
-        "MissionExecutorNode::on_cleanup(): Cleaning up configurator object"
-    );
-
-    configurator_.reset();
+    cleanup();
 
     RCLCPP_INFO(get_logger(), "MissionExecutorNode::on_cleanup(): Cleaned up");
 
@@ -278,15 +272,21 @@ void MissionExecutorNode::cleanup() {
 
     // Mission Executor
     if (mission_executor_ != nullptr) {
+        RCLCPP_INFO(get_logger(), "MissionExecutorNode::cleanup(): Cleaning up mission executor.");
         mission_executor_->Stop();
         mission_executor_->Cleanup();
+        mission_executor_.reset();
+        mission_executor_ = nullptr;
     }
 
     // Configurator
     if (configurator_ != nullptr) {
+        RCLCPP_INFO(get_logger(), "MissionExecutorNode::cleanup(): Cleaning up configurator.");
         configurator_.reset();
         configurator_ = nullptr;
     }
+
+    RCLCPP_DEBUG(get_logger(), "MissionExecutorNode::cleanup(): Cleaned up.");
 
 }
 
@@ -306,6 +306,7 @@ int main(int argc, char **argv) {
    try {
         
         executor.spin();
+        node.reset();
 
     } catch(const std::exception& e) {
         

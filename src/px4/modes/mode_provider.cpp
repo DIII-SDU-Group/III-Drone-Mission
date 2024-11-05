@@ -88,6 +88,7 @@ void ModeProvider::Register() {
 
 void ModeProvider::Cleanup() {
 
+    deinitializeModes();
     maneuver_reference_client_.reset();
     parameters_.reset();
 
@@ -160,6 +161,16 @@ void ModeProvider::initializeModes() {
 void ModeProvider::deinitializeModes() {
 
     RCLCPP_INFO(node_->get_logger(), "ModeProvider::deinitializeModes(): Deinitializing modes.");
+
+    for (auto it = modes_.begin(); it != modes_.end(); ++it) {
+
+        RCLCPP_DEBUG(node_->get_logger(), "ModeProvider::deinitializeModes(): Deinitializing mode %s.", it->first.c_str());
+
+        it->second.reset();
+
+    }
+
+    RCLCPP_DEBUG(node_->get_logger(), "ModeProvider::deinitializeModes(): Clearing modes.");
 
     modes_.clear();
 
