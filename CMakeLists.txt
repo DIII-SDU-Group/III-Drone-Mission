@@ -250,28 +250,6 @@ function(custom_cpp_target target_name target_sources)
 
 endfunction()
 
-# # Continuous mission orchestrator:
-# custom_cpp_target(continuous_mission_orchestrator
-#   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/continuous_mission_orchestrator_node/continuous_mission_orchestrator_node.hpp"
-#   "${PROJECT_SOURCE_DIR}/src/mission/continuous_mission_orchestrator_node/continuous_mission_orchestrator_node.cpp"
-# )
-
-# custom_cpp_target(test_tree
-#   "${PROJECT_SOURCE_DIR}/src/behavior/trees/test_tree.cpp"
-# )
-
-# custom_cpp_target(px4_mode_test
-#   "${PROJECT_SOURCE_DIR}/src/px4_mode_test.cpp"
-# )
-
-# custom_cpp_target(serialization_test
-#   "${PROJECT_SOURCE_DIR}/serialization_test.cpp"
-# )
-
-# custom_cpp_target(system_test
-#   "${PROJECT_SOURCE_DIR}/system_test.cpp"
-# )
-
 custom_cpp_target(mission_executor
   "${PROJECT_SOURCE_DIR}/src/mission/mission_executor_node/mission_executor_node.cpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/mission_executor_node/mission_executor_node.hpp"
@@ -281,11 +259,6 @@ custom_cpp_target(powerline_overview_provider
   "${PROJECT_SOURCE_DIR}/src/mission/powerline_overview_provider_node/powerline_overview_provider_node.cpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/powerline_overview_provider_node/powerline_overview_provider_node.hpp"
 )
-
-# custom_cpp_target(state_storer
-#   "${PROJECT_SOURCE_DIR}/src/mission/state_storer_node/state_storer_node.cpp"
-#   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/state_storer_node/state_storer_node.hpp"
-# )
 
 ############
 # Install ##
