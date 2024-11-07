@@ -1,20 +1,26 @@
-executor_owned_mode: "reach_cable"
+executor_owned_mode: "takeoff1"
 
 entries:
-  - key: "reach_cable"
-    mode_name: "Reach Cable"
-    # behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/opti_track_test_tree.xml"
-    # behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/land_on_cable_tree.xml"
-    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/reach_cable_tree.xml"
-    next_mode: "hover_on_cable"
-    
-  - key: "hover_on_cable"
-    mode_name: "Hover on Cable"
-    # behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/opti_track_test_tree.xml"
-    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/hover_on_cable_tree.xml"
-    next_mode: "leave_cable"
+  - key: "takeoff1"
+    mode_name: "Takeoff 1"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/takeoff_test_tree.xml"
     allow_activate_when_disarmed: true
-    
-  - key: "leave_cable"
-    mode_name: "Leave Cable"
-    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/leave_cable_tree.xml"
+    next_mode: "up_down"
+
+  - key: "up_down"
+    mode_name: "Up Down"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/up_down_test_tree.xml"
+    allow_activate_when_disarmed: true
+    next_mode: "takeoff2"
+
+  - key: "takeoff2"
+    mode_name: "Takeoff 2"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/takeoff_test_tree.xml"
+    allow_activate_when_disarmed: true
+    next_mode: "up_down_2"
+
+  - key: "up_down_2"
+    mode_name: "Up Down 2"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/up_down_test_tree_2.xml"
+    allow_activate_when_disarmed: true
+
