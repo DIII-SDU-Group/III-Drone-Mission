@@ -1,0 +1,14 @@
+executor_owned_mode: "up_down_ot_1"
+
+entries:
+  - key: "up_down_ot_1"
+    mode_name: "Up Down 1"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/up_down_opti_track_test_tree.xml"
+    allow_activate_when_disarmed: true
+    next_mode: "up_down_ot_2"
+
+  - key: "up_down_ot_2"
+    mode_name: "Up Down 2"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/up_down_opti_track_test_tree_2.xml"
+    allow_activate_when_disarmed: true
+

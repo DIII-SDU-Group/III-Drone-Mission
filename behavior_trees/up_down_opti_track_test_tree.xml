@@ -1,0 +1,45 @@
+<root BTCPP_format="4" main_tree_to_execute="UpDown">
+     <BehaviorTree ID="UpDown">
+        <Sequence name="up_down_sequence">
+
+            <Action
+                ID="FlyToPosition"
+                name="ftp1"
+                target_position="0,0,0.5"
+                target_yaw="0"
+                frame_id="drone"
+            />
+
+            <Action 
+                ID="Hover" 
+                name="hover" 
+                duration_s="1." 
+                sustain_action="true"
+            />
+
+            <Action
+                ID="FlyToPosition"
+                name="ftp1"
+                target_position="0,0,-0.5"
+                target_yaw="0"
+                frame_id="drone"
+            />
+
+            <Action 
+                ID="Hover" 
+                name="hover" 
+                duration_s="5." 
+                sustain_action="true"
+            />
+
+            <Action 
+                ID="LogMessage" 
+                name="log"
+                message="Terminating behavior tree."
+                log_level="1"
+            />
+
+        </Sequence>
+     </BehaviorTree>
+
+ </root>
