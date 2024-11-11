@@ -33,6 +33,7 @@ px4_ros2::SetpointBase::Configuration TrajectorySetpoint::getConfiguration() {
     config.position_enabled = true;
     config.altitude_enabled = true;
     config.climb_rate_enabled = true;
+    config.offboard_enabled = true;
 
     return config;
 
