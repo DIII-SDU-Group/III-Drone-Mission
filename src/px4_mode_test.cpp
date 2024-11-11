@@ -1,55 +1,197 @@
 #include <rclcpp/rclcpp.hpp>
-#include <rclcpp_lifecycle/lifecycle_node.hpp>
-
-#include <iii_drone_mission/px4/modes/maneuver_mode.hpp>
 
 #include <px4_ros2/components/mode.hpp>
-#include <px4_ros2/components/node_with_mode.hpp>
+#include <px4_ros2/components/mode_executor.hpp>
+// #include <px4_ros2/common/setpoint_base.hpp>
 
+#include <iii_drone_core/control/reference.hpp>
+// #include <iii_drone_core/adapters/px4/trajectory_setpoint_adapter.hpp>
 #include <iii_drone_mission/px4/setpoints/trajectory_setpoint.hpp>
 
-#include <iii_drone_mission/mission/mission_executor.hpp>
-#include <iii_drone_mission/mission/mission_specification.hpp>
-
-#include <iostream>
-#include <thread>
-
 using namespace iii_drone::px4;
-using namespace iii_drone::configuration;
-using namespace iii_drone::mission;
 
-// class TestMode : public px4_ros2::ModeBase
-// {
+// class TrajectorySetpoint : public px4_ros2::SetpointBase {
 // public:
-//     explicit TestMode(rclcpp::Node & node) : px4_ros2::ModeBase(
-//         node,
-//         px4_ros2::ModeBase::Settings(
-//             "Test mode",
-//             false
-//         )
-//     )
-//     {
-//         RCLCPP_INFO(node.get_logger(), "TestMode::TestMode(): Initializing.");
+//     explicit TrajectorySetpoint(px4_ros2::Context & context) : px4_ros2::SetpointBase(context), 
 
-//         traj_setpoint_ = std::make_shared<iii_drone::px4::TrajectorySetpoint>(*this);
+//         node_(context.node()) {
+
+//         trajectory_setpoint_pub_ = node_.create_publisher<px4_msgs::msg::TrajectorySetpoint>(
+//             "/fmu/in/trajectory_setpoint", 
+//             1
+//         );
+
 //     }
 
-//     void onActivate() override {
-//         RCLCPP_INFO(node().get_logger(), "TestMode::onActivate(): Activating mode");
+//     ~TrajectorySetpoint() override = default;
+
+//     Configuration getConfiguration() override {
+//         px4_ros2::SetpointBase::Configuration config{};
+
+//         config.rates_enabled = true;
+//         config.attitude_enabled = true;
+//         config.acceleration_enabled = true;
+//         config.velocity_enabled = true;
+//         config.position_enabled = true;
+//         config.altitude_enabled = true;
+//         config.climb_rate_enabled = true;
+
+//         return config;
 //     }
 
-//     void onDeactivate() override {
-//         RCLCPP_INFO(node().get_logger(), "TestMode::onDeactivate(): Deactivating mode");
-//     }
+//     void update(const iii_drone::control::Reference & reference) {
 
-//     void updateSetpoint(float dt) override {
-//         RCLCPP_INFO(node().get_logger(), "TestMode::updateSetpoint(): Updating setpoint");
+//         onUpdate();
+
+//         iii_drone::adapters::px4::TrajectorySetpointAdapter adapter(reference);
+
+//         px4_msgs::msg::TrajectorySetpoint msg = adapter.ToMsg();
+
+//         trajectory_setpoint_pub_->publish(adapter.ToMsg());
+
 //     }
 
 // private:
-//     std::shared_ptr<iii_drone::px4::TrajectorySetpoint> traj_setpoint_;
+//     rclcpp::Node & node_;
+//     rclcpp::Publisher<px4_msgs::msg::TrajectorySetpoint>::SharedPtr trajectory_setpoint_pub_;
+
 
 // };
+
+class TestMode : public px4_ros2::ModeBase
+{
+public:
+    explicit TestMode(rclcpp::Node & node) : px4_ros2::ModeBase(
+        node,
+        px4_ros2::ModeBase::Settings(
+            "Test mode",
+            true
+        )
+    )
+    {
+        RCLCPP_INFO(node.get_logger(), "TestMode::TestMode(): Initializing.");
+
+        traj_setpoint_ = std::make_shared<TrajectorySetpoint>(*this);
+        // rates_setpoint_ = std::make_shared<px4_ros2::RatesSetpointType>(*this);
+    }
+
+    void onActivate() override {
+        RCLCPP_INFO(node().get_logger(), "TestMode::onActivate(): Activating mode");
+
+        start_time_ = rclcpp::Clock().now();
+
+        completed_ = false;
+
+    }
+
+    void onDeactivate() override {
+        RCLCPP_INFO(node().get_logger(), "TestMode::onDeactivate(): Deactivating mode");
+
+        completed_ = true;
+
+    }
+
+    void updateSetpoint(float dt) override {
+
+        if (completed_) {
+            return;
+        }
+
+        RCLCPP_INFO_THROTTLE(
+            node().get_logger(), 
+            *node().get_clock(),
+            1000,
+            "TestMode::updateSetpoint(): Updating setpoint"
+        );
+
+        iii_drone::control::Reference reference(
+            {NAN, NAN, NAN},
+            NAN,
+            {0,0,5},
+            0,
+            {0,0,5},
+            0
+        );
+
+        traj_setpoint_->update(reference);
+
+        // rates_setpoint_->update(
+        //     Eigen::Vector3f(0,0,0),
+        //     Eigen::Vector3f(0,0,-1)
+        // );
+
+        if ((rclcpp::Clock().now() - start_time_).seconds() > 10) {
+            RCLCPP_INFO(node().get_logger(), "TestMode::updateSetpoint(): Deactivating mode");
+            completed(px4_ros2::Result::Success);
+        }
+
+    }
+
+private:
+    std::shared_ptr<TrajectorySetpoint> traj_setpoint_;
+    // std::shared_ptr<px4_ros2::RatesSetpointType> rates_setpoint_;
+
+    rclcpp::Time start_time_;
+
+    bool completed_;
+
+};
+
+class TestModeExecutor : public px4_ros2::ModeExecutorBase {
+public:
+    TestModeExecutor(
+        px4_ros2::ModeBase & owned_mode,
+        rclcpp::Node & node
+    ) : px4_ros2::ModeExecutorBase(
+        node,
+        px4_ros2::ModeExecutorBase::Settings{.activation=px4_ros2::ModeExecutorBase::Settings::Activation::ActivateAlways},
+        owned_mode
+    ) {
+        RCLCPP_INFO(node.get_logger(), "TestModeExecutor::TestModeExecutor(): Initializing.");
+    }
+
+    void onActivate() override {
+        RCLCPP_INFO(node().get_logger(), "TestModeExecutor::onActivate(): Activating mode executor");
+
+        RCLCPP_INFO(
+            node().get_logger(), 
+            "ModeExecutorBase::onActivate(): Arming."
+        );
+
+        arm(
+            [this](px4_ros2::Result result) {
+
+                if (result != px4_ros2::Result::Success) {
+
+                    RCLCPP_ERROR(node().get_logger(), "TestModeExecutor::onActivate(): Arming failed, deactivating mode executor");
+
+                    return;
+
+                }
+
+                scheduleMode(
+                    ownedMode().id(),
+                    [this](px4_ros2::Result result) {
+                        RCLCPP_INFO(node().get_logger(), "TestModeExecutor::onActivate(): Mode completed");
+                        scheduleMode(
+                            2,
+                            [this](px4_ros2::Result result) {
+                                RCLCPP_INFO(node().get_logger(), "TestModeExecutor::onActivate(): Mode completed");
+                            }
+                        );
+                    }
+                );
+
+            }
+        );
+    }
+
+    void onDeactivate(DeactivateReason reason) override {
+        RCLCPP_INFO(node().get_logger(), "TestModeExecutor::onDeactivate(): Deactivating mode executor");
+    }
+
+
+};
 
 int main(int argc, char * argv[])
 {
@@ -57,194 +199,30 @@ int main(int argc, char * argv[])
 
     rclcpp::init(argc, argv);
 
-    // std::cout << "Initializing node" << std::endl;
-
-    // // auto mode_node_ = std::make_shared<px4_ros2::NodeWithMode<TestMode>>(
-    // //     "test_mode",
-    // //     true
-    // // );
-
-    // auto mode_node_ = std::make_shared<rclcpp::Node>(
-    //     "mode"
-    // );
-
-    // std::cout << "Initializing mode" << std::endl;
-
-    // ManeuverMode::SharedPtr mode = std::make_shared<ManeuverMode>(
-    //     *mode_node_,
-    //     "Test mode",
-    //     0.2,
-    //     false,
-    //     false
-    // );
-
-    // std::cout << "Spinning node in separate thread" << std::endl;
-
-    // std::thread spin_thread([mode_node_](){
-    //     rclcpp::executors::MultiThreadedExecutor executor;
-    //     executor.add_node(mode_node_);
-    //     executor.spin();
-    // });
-
-    // spin_thread.detach();
-
-    // std::this_thread::sleep_for(std::chrono::seconds(5));
-
-    // std::cout << "Registering mode" << std::endl;
-
-    // // if (!mode->doRegister()) {
-    // //     std::cout << "Failed to register mode" << std::endl;
-    // //     return 1;
-    // // }
-
-    // mode->Register(nullptr, nullptr);
-
-    // std::cout << "Looping" << std::endl;
-
-    // while (rclcpp::ok()) {
-    //     std::this_thread::sleep_for(std::chrono::seconds(1));
-    // }
-
-
-    rclcpp::executors::MultiThreadedExecutor executor;
-
-    auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>(
-        "mission_executor",
-        "/mission/mission_executor"
-    );
-
-    executor.add_node(node->get_node_base_interface());
-
-    std::cout << "Spinning  executor in separate thread" << std::endl;
-
-    std::thread spin_thread([&executor](){
-        executor.spin();
-    });
-
-    spin_thread.detach();
-
-    std::this_thread::sleep_for(std::chrono::seconds(5));
-
-    std::cout << "Creating mission specification" << std::endl;
-
-    MissionSpecification::SharedPtr mission_specification_ = std::make_shared<MissionSpecification>(
-        "$MISSION_SPECIFICATION_DIR/mission_specification.yaml",
-        node.get()
-    );
-
-    std::cout << "Creating tf buffer" << std::endl;
-
-    tf2_ros::Buffer::SharedPtr tf_buffer_ = std::make_shared<tf2_ros::Buffer>(node->get_clock());
-    std::unique_ptr<tf2_ros::TransformListener> tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
-
-    std::cout << "Creating tree provider" << std::endl;
-
-    // Tree provider
-    auto tree_provider_ = std::make_shared<iii_drone::behavior::TreeProvider>(
-        tf_buffer_,
-        mission_specification_
-    );
-
-    std::cout << "Creating mode provider" << std::endl;
-
-    // Modes provider
-    auto mode_provider_ = std::make_shared<iii_drone::px4::ModeProvider>(
-        tree_provider_,
-        mission_specification_,
-        node.get(),
-        0.2
-    );
-
-    std::cout << "Initializing configurator" << std::endl;
-
-    auto configurator_ = std::make_shared<Configurator<rclcpp_lifecycle::LifecycleNode>>(
-        node.get(),
-        "mission_executor"
-    );
-
-    std::cout << "Finalizing initialization of tree provider" << std::endl;
-
-    tree_provider_->FinalizeInitialization(executor);
-
-    std::cout << "Finalizing initialization of mode provider" << std::endl;
-
-    // mode_provider_->FinalizeInitialization(executor);
-
-    std::cout << "Initializing mode node" << std::endl;
-
     auto mode_node = std::make_shared<rclcpp::Node>(
-        "mode"
+        "mode_node"
     );
 
-    // std::cout << "Creating mode" << std::endl;
+    auto mode = std::make_shared<TestMode>(
+        *mode_node
+    );
 
-    // ManeuverMode::SharedPtr mode = std::make_shared<ManeuverMode>(
-    //     *mode_node,
-    //     "Test mode name",
-    //     0.2,
-    //     false,
-    //     false
-    // );
+    auto mode_executor = std::make_shared<TestModeExecutor>(
+        *mode,
+        *mode_node
+    );
 
-    // std::cout << "Registering mode" << std::endl;
+    if (!mode_executor->doRegister()) {
+        std::cout << "Failed to register mode executor" << std::endl;
+        return 1;
+    }
 
-    // if(!mode->doRegister())
-    // {
-    //     std::string fatal_msg = "ModeProvider::initializeModes(): Failed to register mode";
-
-    //     RCLCPP_FATAL(node->get_logger(), fatal_msg.c_str());
-
-    //     throw std::runtime_error(fatal_msg);
+    // if (!mode->doRegister()) {
+    //     std::cout << "Failed to register mode executor" << std::endl;
+    //     return 1;
     // }
 
-    for (mission_specification_entry_t entry : *mission_specification_) {
-
-        std::cout << "Creating mode " << entry.key << std::endl;
-    
-        ManeuverMode::SharedPtr mode = std::make_shared<ManeuverMode>(
-            *mode_node,
-            entry.mode_name,
-            0.2,
-            false,
-            false
-        );
-
-        std::cout << "Registering mode " << entry.key << std::endl;
-
-        if(!mode->doRegister())
-        {
-            std::string fatal_msg = "ModeProvider::initializeModes(): Failed to register mode: " + entry.key;
-
-            throw std::runtime_error(fatal_msg);
-        }
-
-        // modes_[entry.key] = mode;
-
-    }
-
-    // Works. Put all the functionality into a seperate node class which initializes everything in a simple way, create that class in the containing lifecycle node.
-
-
-    // auto mission_executor = std::make_shared<iii_drone::mission::MissionExecutor>(
-    //     node.get(),
-    //     tf_buffer_,
-    //     configurator_->GetParameter("mission_specification_file").as_string(),
-    //     configurator_->GetParameter("dt").as_double()
-    // );
-
-    // mission_executor->FinalizeInitialization(executor);
-
-    // mission_executor->Configure(configurator_);
-
-    // std::cout << "Starting mission executor" << std::endl;
-
-    // mission_executor->Start();
-
-    std::cout << "volá" << std::endl;
-
-    while (rclcpp::ok()) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
+    rclcpp::spin(mode_node);
 
     rclcpp::shutdown();
     return 0;

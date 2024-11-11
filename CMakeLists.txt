@@ -250,6 +250,10 @@ function(custom_cpp_target target_name target_sources)
 
 endfunction()
 
+# custom_cpp_target(px4_mode_test
+#   "${PROJECT_SOURCE_DIR}/src/px4_mode_test.cpp"
+# )
+
 custom_cpp_target(mission_executor
   "${PROJECT_SOURCE_DIR}/src/mission/mission_executor_node/mission_executor_node.cpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/mission_executor_node/mission_executor_node.hpp"
