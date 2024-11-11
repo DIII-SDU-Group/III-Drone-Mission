@@ -1,0 +1,13 @@
+<root BTCPP_format="4" main_tree_to_execute="OnCable">
+     <BehaviorTree ID="OnCable">
+        <Sequence name="on_cable_sequence">
+
+            <Action 
+                ID="Sleep" 
+                name="sleep" 
+                msec="5000"
+            />
+            
+        </Sequence>
+     </BehaviorTree>
+ </root>

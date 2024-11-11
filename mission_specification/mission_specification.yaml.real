@@ -3,14 +3,11 @@ executor_owned_mode: "reach_cable"
 entries:
   - key: "reach_cable"
     mode_name: "Reach Cable"
-    # behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/opti_track_test_tree.xml"
-    # behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/land_on_cable_tree.xml"
     behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/reach_cable_tree.xml"
     next_mode: "hover_on_cable"
     
   - key: "hover_on_cable"
-    mode_name: "Hover on Cable"
-    # behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/opti_track_test_tree.xml"
+    mode_name: "Hover On Cable"
     behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/hover_on_cable_tree.xml"
     next_mode: "leave_cable"
     allow_activate_when_disarmed: true
