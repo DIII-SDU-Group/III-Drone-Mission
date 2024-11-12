@@ -31,7 +31,8 @@ PortsList HoverOnCableManeuverActionNode::providedPorts() {
     return providedManeuverActionNodePorts({
         InputPort<int>("target_cable_id", "The target cable ID"),
         InputPort<float>("duration_s", 1., "Duration of the hover maneuver in seconds"),
-        InputPort<bool>("sustain_action", false, "Sustain the action for the duration of the action")
+        InputPort<bool>("sustain_action", false, "Sustain the action for the duration of the action"),
+        InputPort<float>("target_upwards_velocity")
     });
 
 }
@@ -57,7 +58,10 @@ bool HoverOnCableManeuverActionNode::setGoal(Goal & goal) {
         return false;
     }
 
-    goal.target_z_velocity = parameter_bundle_->GetParameter("hover_on_cable_target_z_velocity").as_double();
+    if (!getInput("target_upwards_velocity", goal.target_z_velocity)) {
+        goal.target_z_velocity = parameter_bundle_->GetParameter("hover_on_cable_target_z_velocity").as_double();
+    }
+
     goal.target_yaw_rate = parameter_bundle_->GetParameter("hover_on_cable_target_yaw_rate").as_double();
 
     if (goal.duration_s <= 0) {

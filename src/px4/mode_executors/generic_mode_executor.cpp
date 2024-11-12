@@ -504,10 +504,34 @@ bool GenericModeExecutor::scheduleActionIfAny(schedule_t & previous_schedule_cur
                 "GenericModeExecutor::scheduleActionIfAny(): Landing."
             );
 
-            schedule_next_ = schedule_next_mode;
+            schedule_next_ = schedule_disarm;
             schedule_current_ = schedule_land;
 
             land(
+                [this](px4_ros2::Result result) {
+                    onModeCompleted(result);
+                }
+            );
+
+            return true;
+
+        case schedule_disarm:
+
+            RCLCPP_INFO(
+                node_.get_logger(),
+                "GenericModeExecutor::scheduleActionIfAny(): Disarming."
+            );
+
+            schedule_next_ = schedule_next_mode;
+            schedule_current_ = schedule_disarm;
+
+            sendCommandSync(
+                px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM,
+                0,
+                21196
+            );
+
+            waitUntilDisarmed(
                 [this](px4_ros2::Result result) {
                     onModeCompleted(result);
                 }

@@ -26,6 +26,19 @@
                 start_yaw="{start_yaw}"
             />
 
+            <Action 
+                ID="LogMessage" 
+                name="log"
+                message="Issuing land command"
+                log_level="1"
+            />
+
+            <Action 
+                ID="ModeExecutorAction" 
+                name="land" 
+                action_request_type="2"
+            />
+
         </Sequence>
      </BehaviorTree>
 

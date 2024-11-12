@@ -5,9 +5,9 @@
             <Action 
                 ID="Sleep" 
                 name="sleep" 
-                msec="5000"
+                msec="10000"
             />
-            
+
         </Sequence>
      </BehaviorTree>
  </root>

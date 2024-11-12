@@ -2,10 +2,25 @@
      <BehaviorTree ID="LeaveCable">
         <Sequence name="charge_top_sequence">
 
+            <Action 
+                ID="LogMessage" 
+                name="log"
+                message="Issuing arm command"
+                log_level="1"
+            />
+
+            <Action 
+                ID="ModeExecutorAction" 
+                name="arm" 
+                action_request_type="3"
+            />
+            
+
             <Action ID="HoverOnCable" name="hover_on_cable" 
                   target_cable_id="{@target_cable_id}"
-                  duration_s="5." 
-                  sustain_action="true"
+                  duration_s="3." 
+                  sustain_action="true",
+                  target_upwards_velocity="2.0"
             />
 
             <Action 
@@ -14,7 +29,7 @@
                   gripper_command="0" 
             />
 
-            <Action 
+            <!-- <Action 
                 ID="PLMapperCommand" 
                 name="pl_mapper_command_pause" 
                 pl_mapper_command="2" 
@@ -32,7 +47,7 @@
                 initial_state="{@initial_state}"
                 initial_yaw="{@initial_yaw}"
                 waypoints="{@waypoints_return}"
-            />
+            /> -->
             
         </Sequence>
      </BehaviorTree>
