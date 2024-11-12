@@ -161,7 +161,14 @@ namespace px4 {
 
         void handleArmAccepted(const std::shared_ptr<GoalHandleModeExecutorAction> goal_handle);
 
+        void handleDisarmAccepted(const std::shared_ptr<GoalHandleModeExecutorAction> goal_handle);
+
         void onArmCompleted(
+            px4_ros2::Result result,
+            const std::shared_ptr<GoalHandleModeExecutorAction> goal_handle
+        );
+
+        void onDisarmCompleted(
             px4_ros2::Result result,
             const std::shared_ptr<GoalHandleModeExecutorAction> goal_handle
         );
@@ -174,6 +181,7 @@ namespace px4 {
 
         bool canLand();
         bool canArm();
+        bool canDisarm();
         bool canTakeoff(float altitude);
 
         rclcpp::Subscription<iii_drone_interfaces::msg::CombinedDroneAwareness>::SharedPtr combined_drone_awareness_sub_;

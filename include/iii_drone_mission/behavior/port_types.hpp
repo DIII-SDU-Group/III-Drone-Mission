@@ -75,7 +75,8 @@ namespace behavior {
     typedef enum {
         MODE_EXECUTOR_ACTION_REQUEST_TAKEOFF = 1,
         MODE_EXECUTOR_ACTION_REQUEST_LAND = 2,
-        MODE_EXECUTOR_ACTION_REQUEST_ARM = 3
+        MODE_EXECUTOR_ACTION_REQUEST_ARM = 3,
+        MODE_EXECUTOR_ACTION_REQUEST_DISARM = 4
     } mode_executor_action_request_t;
 
     typedef enum {

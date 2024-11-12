@@ -75,6 +75,9 @@ namespace px4 {
 
         void RegisterOnNextActivateCallback(std::function<void()> callback);
 
+        void StopControls();
+        void StartControls();
+
         void StopExecution();
 
         void updateSetpoint(float dt) override;
@@ -101,6 +104,8 @@ namespace px4 {
         bool is_registered_ = false;
 
         utils::Atomic<bool> stay_alive_on_next_deactivate_ = false;
+
+        utils::Atomic<bool> stop_controls_ = false;
 
         std::function<void()> on_next_activate_callback_ = nullptr;
 

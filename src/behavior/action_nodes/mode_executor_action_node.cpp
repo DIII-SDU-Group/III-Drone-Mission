@@ -25,7 +25,8 @@ PortsList ModeExecutorActionNode::providedPorts() {
 
     return providedBasicPorts({
         InputPort<mode_executor_action_request_t>("action_request_type"),
-        InputPort<float>("takeoff_altitude")
+        InputPort<float>("takeoff_altitude"),
+        InputPort<bool>("force_disarm", false, "Force disarm")
     });
 
 }
@@ -93,6 +94,19 @@ bool ModeExecutorActionNode::setGoal(Goal & goal) {
             );
 
             goal.request = iii_drone_interfaces::action::ModeExecutorAction::Goal::REQUEST_ARM;
+
+            return true;
+
+        case MODE_EXECUTOR_ACTION_REQUEST_DISARM:
+
+            RCLCPP_INFO(
+                node_ptr_->get_logger(),
+                "ModeExecutorActionNode::setGoal(): Setting action request disarm."
+            );
+
+            goal.request = iii_drone_interfaces::action::ModeExecutorAction::Goal::REQUEST_DISARM;
+
+            getInput("force_disarm", goal.force_disarm);
 
             return true;
 

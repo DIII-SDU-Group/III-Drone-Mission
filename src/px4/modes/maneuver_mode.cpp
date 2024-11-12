@@ -155,6 +155,8 @@ void ManeuverMode::sendRegisterOffboardModeRequest(
 
 void ManeuverMode::onActivate() {
 
+    RCLCPP_DEBUG(node().get_logger(), "ManeuverMode::onActivate(): Activating mode %s", mode_name_.c_str());
+
     if (!tree_executor_->running()) {
 
         RCLCPP_INFO(node().get_logger(), "ManeuverMode::onActivate(): Starting mode %s", mode_name_.c_str());
@@ -164,6 +166,8 @@ void ManeuverMode::onActivate() {
         setSetpointUpdateRate(1./dt_);
 
         tree_executor_->StartExecution();
+
+        stop_controls_ = false;
     
     } else {
 
@@ -225,6 +229,22 @@ void ManeuverMode::RegisterOnNextActivateCallback(std::function<void()> callback
 
 }
 
+void ManeuverMode::StopControls() { 
+
+    RCLCPP_INFO(node().get_logger(), "ManeuverMode::StopControls(): Stopping controls for mode %s", mode_name_.c_str());
+
+    stop_controls_ = true;
+
+}
+
+void ManeuverMode::StartControls() { 
+
+    RCLCPP_INFO(node().get_logger(), "ManeuverMode::StartControls(): Starting controls for mode %s", mode_name_.c_str());
+
+    stop_controls_ = false;
+
+}
+
 void ManeuverMode::StopExecution() { 
 
     RCLCPP_INFO(node().get_logger(), "ManeuverMode::StopExecution(): Stopping execution for mode %s", mode_name_.c_str());
@@ -237,24 +257,28 @@ void ManeuverMode::StopExecution() {
 
 void ManeuverMode::updateSetpoint(float dt) { 
 
-    Reference reference = maneuver_reference_client_->GetReference(
-        dt,
-        [this]() {
-            RCLCPP_ERROR(
-                node().get_logger(), 
-                "ManeuverMode::updateSetpoint(): Reference not available for mode %s, halting behavior tree execution", 
-                mode_name_.c_str()
-            );
-            tree_executor_->StopExecution(false);
-            maneuver_reference_client_->SetReferenceModeHover();
-        }
-    );
+    if (!stop_controls_) {
 
-    traj_setpoint_->update(reference);
+        Reference reference = maneuver_reference_client_->GetReference(
+            dt,
+            [this]() {
+                RCLCPP_ERROR(
+                    node().get_logger(), 
+                    "ManeuverMode::updateSetpoint(): Reference not available for mode %s, halting behavior tree execution", 
+                    mode_name_.c_str()
+                );
+                tree_executor_->StopExecution(false);
+                maneuver_reference_client_->SetReferenceModeHover();
+            }
+        );
+
+        traj_setpoint_->update(reference);
+
+    }
 
     if (tree_executor_->finished()) {
 
-        RCLCPP_INFO_ONCE(
+        RCLCPP_INFO(
             node().get_logger(), 
             "ManeuverMode::updateSetpoint(): Tree execution finished %s",
             tree_executor_->success() ? "successfully" : "unsuccessfully"

@@ -46,16 +46,6 @@ GenericModeExecutor::GenericModeExecutor(
         )
     );
 
-    // schedule_request_srv_ = node_.create_service<iii_drone_interfaces::srv::ModeExecutorScheduleRequest>(
-    //     "/mission/mode_executor/schedule_request",
-    //     std::bind(
-    //         &GenericModeExecutor::scheduleRequestCallback,
-    //         this,
-    //         std::placeholders::_1,
-    //         std::placeholders::_2
-    //     )
-    // );
-
     mode_executor_action_server_ = rclcpp_action::create_server<ModeExecutorAction>(
         &node_,
         "/mission/mode_executor/action",
@@ -180,7 +170,6 @@ void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
         )
     ) return;
 
-
     schedule_t previous_schedule_current;
 
     if (scheduleActionIfAny(previous_schedule_current)) return;
@@ -205,30 +194,85 @@ void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
         );
     }
 
-    RCLCPP_INFO(
-        node_.get_logger(),
-        "GenericModeExecutor::onModeCompleted(): Activating mode %s.",
-        (*current_mode_entry_).mode_name.c_str()
-    );
+    auto activate_next_mode = [this]() {
 
-    scheduleMode(
-        (*current_mode_)->id(),
-        [this](px4_ros2::Result result) {
-            onModeCompleted(result);
-        }
-    );
+ 
+
+    };
+
+    // if (!isArmed()) {
+    
+    //     RCLCPP_INFO(
+    //         node_.get_logger(), 
+    //         "GenericModeExecutor::onModeCompleted(): Arming before next mode."
+    //     );
+
+    //     arm(
+    //         [this](px4_ros2::Result result) {
+
+    //             if (result != px4_ros2::Result::Success) {
+
+    //                 RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::onModeCompleted(): Arming failed, deactivating mode executor %s", mode_executor_name_.c_str());
+
+    //                 is_active_ = false;
+
+    //                 return;
+
+    //             }
+
+    //             RCLCPP_INFO(
+    //                 node_.get_logger(),
+    //                 "GenericModeExecutor::onModeCompleted(): Activating mode %s.",
+    //                 (*current_mode_entry_).mode_name.c_str()
+    //             );
+
+    //             scheduleMode(
+    //                 (*current_mode_)->id(),
+    //                 [this](px4_ros2::Result result) {
+    //                     onModeCompleted(result);
+    //                 }
+    //             );
+    //         }
+    //     );
+
+    // }  else {
+
+        RCLCPP_INFO(
+            node_.get_logger(),
+            "GenericModeExecutor::onModeCompleted(): Activating mode %s.",
+            (*current_mode_entry_).mode_name.c_str()
+        );
+
+        scheduleMode(
+            (*current_mode_)->id(),
+            [this](px4_ros2::Result result) {
+                onModeCompleted(result);
+            }
+        );
+
+    // }
 
 }
 
 bool GenericModeExecutor::checkScheduleAndActionValidity() {
 
-    if (schedule_next_ != schedule_next_mode || schedule_current_ != schedule_next_mode) {
+    RCLCPP_DEBUG(
+        node_.get_logger(), 
+        "GenericModeExecutor::checkScheduleAndActionValidity()"
+    );
+
+    std::string schedule_next_name = getModeName(schedule_next_);
+    std::string schedule_current_name = getModeName(schedule_current_);
         
+    if (schedule_next_ != schedule_next_mode || schedule_current_ != schedule_next_mode) {
+
         if ((*current_goal_handle_) == nullptr) {
 
             RCLCPP_ERROR(
                 node_.get_logger(), 
-                "GenericModeExecutor::checkScheduleAndActionValidity(): Mode executor action executing but no goal handle found."
+                "GenericModeExecutor::checkScheduleAndActionValidity(): Mode executor action executing but no goal handle found. Schedule next: %s, schedule current: %s",
+                schedule_next_name.c_str(),
+                schedule_current_name.c_str()
             );
 
             is_active_ = false;
@@ -245,7 +289,9 @@ bool GenericModeExecutor::checkScheduleAndActionValidity() {
 
             RCLCPP_ERROR(
                 node_.get_logger(), 
-                "GenericModeExecutor::checkScheduleAndActionValidity(): Mode executor action not executing but goal handle found."
+                "GenericModeExecutor::checkScheduleAndActionValidity(): Mode executor action not executing but goal handle found. Schedule next: %s, schedule current: %s",
+                schedule_next_name.c_str(),
+                schedule_current_name.c_str()
             );
 
             is_active_ = false;
@@ -314,6 +360,11 @@ bool GenericModeExecutor::checkNextModeSucceeded(
     px4_ros2::Result result,
     bool & action_succeeded
 ) {
+
+    RCLCPP_DEBUG(
+        node_.get_logger(), 
+        "GenericModeExecutor::checkNextModeSucceeded()"
+    );
 
     action_succeeded = false;
 
@@ -489,6 +540,11 @@ std::string GenericModeExecutor::getModeName(schedule_t schedule) {
 
 bool GenericModeExecutor::scheduleActionIfAny(schedule_t & previous_schedule_current) {
 
+    RCLCPP_DEBUG(
+        node_.get_logger(), 
+        "GenericModeExecutor::scheduleActionIfAny()"
+    );
+
     previous_schedule_current = schedule_current_;
 
     switch(schedule_next_) {
@@ -504,38 +560,19 @@ bool GenericModeExecutor::scheduleActionIfAny(schedule_t & previous_schedule_cur
                 "GenericModeExecutor::scheduleActionIfAny(): Landing."
             );
 
-            schedule_next_ = schedule_disarm;
+            schedule_next_ = schedule_next_mode;
             schedule_current_ = schedule_land;
 
             land(
                 [this](px4_ros2::Result result) {
+                    if (result != px4_ros2::Result::Success) {
+                        (*current_mode_)->StartControls();
+                    }
                     onModeCompleted(result);
                 }
             );
 
-            return true;
-
-        case schedule_disarm:
-
-            RCLCPP_INFO(
-                node_.get_logger(),
-                "GenericModeExecutor::scheduleActionIfAny(): Disarming."
-            );
-
-            schedule_next_ = schedule_next_mode;
-            schedule_current_ = schedule_disarm;
-
-            sendCommandSync(
-                px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM,
-                0,
-                21196
-            );
-
-            waitUntilDisarmed(
-                [this](px4_ros2::Result result) {
-                    onModeCompleted(result);
-                }
-            );
+            (*current_mode_)->StopControls();
 
             return true;
 
@@ -548,6 +585,15 @@ bool GenericModeExecutor::scheduleActionIfAny(schedule_t & previous_schedule_cur
 
             throw std::runtime_error("GenericModeExecutor::scheduleActionIfAny(): Arming should not be handled in onModeComplete but in a custom action callback - control should not reach this point.");
 
+        case schedule_disarm:
+
+            RCLCPP_FATAL(
+                node_.get_logger(),
+                "GenericModeExecutor::scheduleActionIfAny(): Disarming should not be handled in onModeComplete but in a custom action callback - control should not reach this point."
+            );
+
+            throw std::runtime_error("GenericModeExecutor::scheduleActionIfAny(): Disarming should not be handled in onModeComplete but in a custom action callback - control should not reach this point.");
+
         case schedule_takeoff:
 
             RCLCPP_INFO(
@@ -558,8 +604,13 @@ bool GenericModeExecutor::scheduleActionIfAny(schedule_t & previous_schedule_cur
             schedule_next_ = schedule_next_mode;
             schedule_current_ = schedule_takeoff;
 
+            (*current_mode_)->StartControls();
+
             takeoff(
                 [this](px4_ros2::Result result) {
+                    if (result != px4_ros2::Result::Success) {
+                        (*current_mode_)->StopControls();
+                    }
                     onModeCompleted(result);
                 },
                 takeoff_altitude_ + combined_drone_awareness_adapter_history_[0].ground_altitude_estimate_amsl()
@@ -816,6 +867,41 @@ rclcpp_action::GoalResponse GenericModeExecutor::modeExecutorActionGoalCallback(
             break;
 
         }
+
+        case iii_drone_interfaces::action::ModeExecutorAction::Goal::REQUEST_DISARM: {
+
+            RCLCPP_INFO(
+                node_.get_logger(),
+                "GenericModeExecutor::modeExecutorActionGoalCallback(): Received disarming request."
+            );
+
+            if (canDisarm()) {
+
+                RCLCPP_INFO(
+                    node_.get_logger(),
+                    "GenericModeExecutor::modeExecutorActionGoalCallback(): Disarming request accepted."
+                );
+
+                schedule_next_ = schedule_disarm;
+
+                return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+
+            } else {
+
+                RCLCPP_WARN(
+                    node_.get_logger(),
+                    "GenericModeExecutor::modeExecutorActionGoalCallback(): Disarming request rejected."
+                );
+
+                schedule_next_ = schedule_next_mode;
+
+                return rclcpp_action::GoalResponse::REJECT;
+
+            }
+
+            break;
+
+        }
     }
 
     RCLCPP_ERROR(
@@ -842,6 +928,14 @@ void GenericModeExecutor::modeExecutorActionAcceptedCallback(const std::shared_p
 
     }
 
+    if (schedule_next_ == schedule_disarm) {
+
+        handleDisarmAccepted(goal_handle);
+
+        return;
+
+    }
+
     current_goal_handle_ = goal_handle;
 
     (*current_mode_)->StayAliveOnNextDeactivate();
@@ -856,9 +950,69 @@ void GenericModeExecutor::handleArmAccepted(const std::shared_ptr<GoalHandleMode
         "GenericModeExecutor::handleArmAccepted(): Arming."
     );
 
+    (*current_mode_)->StartControls();
+
     arm(
         [this,goal_handle](px4_ros2::Result result) {
+            if (result != px4_ros2::Result::Success) {
+                (*current_mode_)->StopControls();
+            }
             onArmCompleted(
+                result,
+                goal_handle
+            );
+        }
+    );
+
+}
+
+void GenericModeExecutor::handleDisarmAccepted(const std::shared_ptr<GoalHandleModeExecutorAction> goal_handle) {
+
+    bool force_disarm = goal_handle->get_goal()->force_disarm;
+
+    if (force_disarm) {
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::handleDisarmAccepted(): Force disarming."
+        );
+    } else {
+        RCLCPP_INFO(
+            node_.get_logger(),
+            "GenericModeExecutor::handleDisarmAccepted(): Disarming."
+        );
+    }
+
+    (*current_mode_)->StopControls();
+
+    px4_ros2::Result res = sendCommandSync(
+        px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM,
+        0,
+        force_disarm ? 21196 : 0
+    );
+
+    if (res != px4_ros2::Result::Success) {
+
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::handleDisarmAccepted(): Disarming failed."
+        );
+
+        (*current_mode_)->StartControls();
+
+        schedule_next_ = schedule_next_mode;
+
+        goal_handle->abort(std::make_shared<ModeExecutorAction::Result>());
+
+        return;
+
+    }
+
+    waitUntilDisarmed(
+        [this, goal_handle](px4_ros2::Result result) {
+            if (result != px4_ros2::Result::Success) {
+                (*current_mode_)->StartControls();
+            }
+            onDisarmCompleted(
                 result,
                 goal_handle
             );
@@ -896,6 +1050,35 @@ void GenericModeExecutor::onArmCompleted(
 
 }
 
+void GenericModeExecutor::onDisarmCompleted(
+    px4_ros2::Result result,
+    const std::shared_ptr<GoalHandleModeExecutorAction> goal_handle
+) {
+
+    schedule_next_ = schedule_next_mode;
+
+    if (result != px4_ros2::Result::Success) {
+
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::onDisarmCompleted(): Disarming failed."
+        );
+
+        goal_handle->abort(std::make_shared<ModeExecutorAction::Result>());
+
+        return;
+
+    }
+
+    RCLCPP_INFO(
+        node_.get_logger(),
+        "GenericModeExecutor::onDisarmCompleted(): Disarming succeeded."
+    );
+
+    goal_handle->succeed(std::make_shared<ModeExecutorAction::Result>());
+
+}
+
 void GenericModeExecutor::stopModeIfWaiting() {
 
     tryCompleteActionGoal(false);
@@ -915,6 +1098,11 @@ void GenericModeExecutor::stopModeIfWaiting() {
 }
 
 void GenericModeExecutor::tryCompleteActionGoal(bool success) {
+
+    RCLCPP_DEBUG(
+        node_.get_logger(),
+        "GenericModeExecutor::tryCompleteActionGoal()"
+    );
 
     if ((*current_goal_handle_) == nullptr) {
 
@@ -1031,6 +1219,70 @@ bool GenericModeExecutor::canArm() {
         RCLCPP_WARN(
             node_.get_logger(),
             "GenericModeExecutor::canArm(): Armed after current mode rejected: Drone is already armed."
+        );
+
+        return false;
+
+    }
+
+    return true;
+
+}
+
+bool GenericModeExecutor::canDisarm() {
+
+    if (!is_active_) {
+
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::canDisarm(): Disarming after current mode rejected: Mode executor is not active."
+        );
+
+        return false;
+
+    }
+
+    if (combined_drone_awareness_adapter_history_.empty()){
+
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::canDisarm(): Disarm after current mode rejected: Combined drone awareness history is empty."
+        );
+
+        return false;
+
+    }
+
+    auto drone_location = combined_drone_awareness_adapter_history_[0].drone_location();
+
+    if (drone_location == DRONE_LOCATION_UNKNOWN) {
+
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::canDisarm(): Disarming after current mode rejected: Drone location is unknown."
+        );
+
+        return false;
+
+    }
+
+    if (drone_location == DRONE_LOCATION_IN_FLIGHT) {
+
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::canDisarm(): Disarming after current mode rejected: Drone is in flight."
+        );
+
+        return false;
+
+    }
+
+    // if (combined_drone_awareness_adapter_history_[0].armed()) {
+    if (!isArmed()) {
+
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::canDisarm(): Disarming after current mode rejected: Drone is not armed."
         );
 
         return false;
