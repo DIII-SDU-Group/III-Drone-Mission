@@ -28,8 +28,8 @@
             <Action 
                 ID="Hover" 
                 name="hover" 
-                duration_s="5." 
-                sustain_action="true"
+                duration_s="10."
+                stop_maneuver_after_timeout_ms="9900"
             />
 
             <!-- <Action
@@ -66,7 +66,7 @@
                 ID="LogMessage" 
                 name="log"
                 message="Issuing land command"
-                log_level="1"
+                log_level="3"
             />
 
             <Action 
@@ -78,11 +78,11 @@
             <Action 
                 ID="LogMessage" 
                 name="log"
-                message="Land completed. Issuing sleep command"
-                log_level="1"
+                message="Land completed. Terminating tree"
+                log_level="3"
             />
 
-            <Action 
+            <!-- <Action 
                 ID="Sleep" 
                 name="sleep" 
                 msec="10000"
@@ -92,8 +92,8 @@
                 ID="LogMessage" 
                 name="log"
                 message="Sleep completed. Terminating behavior tree."
-                log_level="1"
-            />
+                log_level="3"
+            /> -->
 
             <!-- <Action 
                 ID="ModeExecutorAction" 

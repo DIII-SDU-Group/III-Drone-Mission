@@ -3,9 +3,54 @@
         <Sequence name="on_cable_sequence">
 
             <Action 
+                ID="LogMessage" 
+                name="log"
+                message="On cable tree started. Force disarming."
+                log_level="2"
+            />
+
+            <RetryUntilSuccessful name="disarm_retry" num_attempts="5">
+                <Delay name="delay_disarm" delay_msec="1000">
+                    <Action 
+                        ID="ModeExecutorAction" 
+                        name="disarm" 
+                        action_request_type="4"
+                        force_disarm="true"
+                    />
+                </Delay>
+            </RetryUntilSuccessful>
+
+            <Action 
+                ID="LogMessage" 
+                name="log"
+                message="Disarming succeeded. Sleeping."
+                log_level="2"
+            />
+
+            <Action 
                 ID="Sleep" 
                 name="sleep" 
                 msec="10000"
+            />
+
+            <Action 
+                ID="LogMessage" 
+                name="log"
+                message="Sleep completed. Arming."
+                log_level="2"
+            />
+
+            <Action 
+                ID="ModeExecutorAction" 
+                name="arm" 
+                action_request_type="3"
+            />
+
+            <Action 
+                ID="LogMessage" 
+                name="log"
+                message="Arm completed. Terminating tree."
+                log_level="2"
             />
 
         </Sequence>

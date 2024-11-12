@@ -1,20 +1,12 @@
 <root BTCPP_format="4" main_tree_to_execute="LeaveCable">
      <BehaviorTree ID="LeaveCable">
         <Sequence name="charge_top_sequence">
-
-            <Action 
+           <Action 
                 ID="LogMessage" 
                 name="log"
-                message="Issuing arm command"
-                log_level="1"
+                message="Leave cable tree started. Hovering on cable."
+                log_level="2"
             />
-
-            <Action 
-                ID="ModeExecutorAction" 
-                name="arm" 
-                action_request_type="3"
-            />
-            
 
             <Action ID="HoverOnCable" name="hover_on_cable" 
                   target_cable_id="{@target_cable_id}"
@@ -23,11 +15,18 @@
                   target_upwards_velocity="2.0"
             />
 
-            <Action 
+           <Action 
+                ID="LogMessage" 
+                name="log"
+                message="Hovering on cable completed. Terminating tree."
+                log_level="2"
+            />
+
+            <!-- <Action 
                   ID="GripperCommand" 
                   name="gripper_command_open" 
                   gripper_command="0" 
-            />
+            /> -->
 
             <!-- <Action 
                 ID="PLMapperCommand" 

@@ -30,13 +30,20 @@
                 ID="LogMessage" 
                 name="log"
                 message="Issuing land command"
-                log_level="1"
+                log_level="2"
             />
 
             <Action 
                 ID="ModeExecutorAction" 
                 name="land" 
                 action_request_type="2"
+            />
+
+            <Action 
+                ID="LogMessage" 
+                name="log"
+                message="Land completed. Terminating behavior tree."
+                log_level="2"
             />
 
         </Sequence>
