@@ -4,6 +4,7 @@ entries:
   - key: "reach_cable"
     mode_name: "Reach Cable"
     behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/reach_cable_tree.xml"
+    allow_activate_when_disarmed: true
     next_mode: "on_cable"
     
   - key: "on_cable"

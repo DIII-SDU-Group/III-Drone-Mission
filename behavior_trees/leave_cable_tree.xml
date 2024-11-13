@@ -1,6 +1,6 @@
 <root BTCPP_format="4" main_tree_to_execute="LeaveCable">
      <BehaviorTree ID="LeaveCable">
-        <Sequence name="charge_top_sequence">
+        <Sequence name="leave_cable_top_sequence">
            <Action 
                 ID="LogMessage" 
                 name="log"
@@ -11,24 +11,31 @@
             <Action ID="HoverOnCable" name="hover_on_cable" 
                   target_cable_id="{@target_cable_id}"
                   duration_s="3." 
-                  sustain_action="true",
+                  sustain_action="true"
                   target_upwards_velocity="2.0"
+            />
+
+            <Action ID="HoverOnCable" name="hover_on_cable_2" 
+                target_cable_id="{@target_cable_id}"
+                duration_s="10." 
+                target_upwards_velocity="2.0"
+                stop_maneuver_after_timeout_ms="9900"
             />
 
            <Action 
                 ID="LogMessage" 
                 name="log"
-                message="Hovering on cable completed. Terminating tree."
+                message="Hovering on cable completed."
                 log_level="2"
             />
 
-            <!-- <Action 
+            <Action 
                   ID="GripperCommand" 
                   name="gripper_command_open" 
                   gripper_command="0" 
-            /> -->
+            />
 
-            <!-- <Action 
+            <Action 
                 ID="PLMapperCommand" 
                 name="pl_mapper_command_pause" 
                 pl_mapper_command="2" 
@@ -41,12 +48,19 @@
                target_cable_id="{@target_cable_id}"
             />
 
+            <Action 
+                ID="PLMapperCommand" 
+                name="pl_mapper_command_stop" 
+                pl_mapper_command="1" 
+                reset="true"
+            />
+
             <SubTree 
                 ID="FlyToInitPosition"
                 initial_state="{@initial_state}"
                 initial_yaw="{@initial_yaw}"
                 waypoints="{@waypoints_return}"
-            /> -->
+            />
             
         </Sequence>
      </BehaviorTree>

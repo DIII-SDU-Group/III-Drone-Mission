@@ -208,6 +208,12 @@
                     stop_maneuver_after_timeout_ms="9900"
                 />
 
+                <Action 
+                    ID="Sleep" 
+                    name="sleep" 
+                    msec="1000"
+                />
+
                 <RetryUntilSuccessful name="gripper_closed_retry" num_attempts="5">
                     <Delay name="delay_gripper_closed" delay_msec="1000">
                         <Condition

@@ -9,7 +9,27 @@
                 log_level="2"
             />
 
-            <RetryUntilSuccessful name="disarm_retry" num_attempts="5">
+            <RetryUntilSuccessful name="disarm_retry_until_successful" num_attempts="5">
+                <Fallback name="disarm_fallback">
+                    <Action 
+                        ID="ModeExecutorAction" 
+                        name="disarm" 
+                        action_request_type="4"
+                        force_disarm="true"
+                    />
+
+                    <Decorator ID="ForceFailure" name="disarm_delay_force_failure">
+                        <Action 
+                            ID="Sleep" 
+                            name="sleep" 
+                            msec="200"
+                        />
+                    </Decorator>
+                </Fallback>
+
+            </RetryUntilSuccessful>
+
+            <!-- <RetryUntilSuccessful name="disarm_retry" num_attempts="5">
                 <Delay name="delay_disarm" delay_msec="1000">
                     <Action 
                         ID="ModeExecutorAction" 
@@ -18,7 +38,7 @@
                         force_disarm="true"
                     />
                 </Delay>
-            </RetryUntilSuccessful>
+            </RetryUntilSuccessful> -->
 
             <Action 
                 ID="LogMessage" 
