@@ -177,10 +177,13 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
 
     double highest_z = std::numeric_limits<double>::min();
 
+    bool has_mid_point = false;
+
     for (auto & point : powerline_points) {
-        if (point[2] > highest_z) {
+        if (point[2] > highest_z || !has_mid_point) {
             highest_z = point[2];
             middle_line_point = point;
+            has_mid_point = true;
         }
     }
 
@@ -434,11 +437,27 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
     waypoint_displacement *= -1;
     negative_top_waypoint += waypoint_displacement;
 
+    // RLCPP_INFO(
+    //     node_->get_logger(),
+    //     "PowerlineWaypointProviderActionNode::tick(): negative_top_waypoint: [%f,%f,%f]",
+    //     negative_top_waypoint[0],
+    //     negative_top_waypoint[1],
+    //     negative_top_waypoint[2]
+    // );
+
     point_t positive_top_waypoint = positive_direction_furthest_point;
     positive_top_waypoint[2] = highest_z;
     positive_top_waypoint[2] += parameters_->GetParameter("top_clearance_m").as_double();
     waypoint_displacement *= -1;
     positive_top_waypoint += waypoint_displacement;
+
+    // RLCPP_INFO(
+    //     node_->get_logger(),
+    //     "PowerlineWaypointProviderActionNode::tick(): negative_top_waypoint: [%f,%f,%f]",
+    //     negative_top_waypoint[0],
+    //     negative_top_waypoint[1],
+    //     negative_top_waypoint[2]
+    // );
 
     if (positive_direction_is_higher) {
         if (start_state_is_on_negative_side) {
@@ -495,8 +514,16 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
 
     RCLCPP_INFO(
         node_->get_logger(),
-        "PowerlineWaypointProviderActionNode::tick(): Finished computing waypoints"
+        "PowerlineWaypointProviderActionNode::tick(): Finished computing waypoints:"
     );
+
+    for (auto & point : *shared_queue) {
+        RCLCPP_INFO(
+            node_->get_logger(),
+            "[%f, %f, %f]",
+            point[0], point[1], point[2]
+        );
+    }
 
     return NodeStatus::SUCCESS;
 
