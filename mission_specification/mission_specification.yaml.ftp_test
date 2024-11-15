@@ -1,0 +1,6 @@
+executor_owned_mode: "ftp"
+
+entries:
+  - key: "ftp"
+    mode_name: "Fly To Position"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/ftp_test.xml"

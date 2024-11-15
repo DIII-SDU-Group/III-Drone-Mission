@@ -26,7 +26,7 @@
                 start_yaw="{start_yaw}"
             />
 
-            <Action 
+            <!-- <Action 
                 ID="LogMessage" 
                 name="log"
                 message="Issuing land command"
@@ -44,7 +44,7 @@
                 name="log"
                 message="Land completed. Terminating behavior tree."
                 log_level="2"
-            />
+            /> -->
 
         </Sequence>
      </BehaviorTree>
@@ -214,14 +214,14 @@
                     msec="1000"
                 />
 
-                <RetryUntilSuccessful name="gripper_closed_retry" num_attempts="5">
+                <!-- <RetryUntilSuccessful name="gripper_closed_retry" num_attempts="5">
                     <Delay name="delay_gripper_closed" delay_msec="1000">
                         <Condition
                             ID="VerifyGripperClosed"
                             name="verify_gripper_closed"
                         />
                     </Delay>
-                </RetryUntilSuccessful>
+                </RetryUntilSuccessful> -->
 
             </Sequence>
         </Sequence>

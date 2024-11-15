@@ -1,0 +1,15 @@
+<root BTCPP_format="4" main_tree_to_execute="ReachCable">
+     <BehaviorTree ID="ReachCable">
+        <Sequence name="land_on_cable_top_sequence">
+            <Action
+                ID="FlyToPosition"
+                name="ftp1"
+                target_position="3,3,3"
+                target_yaw="0"
+                frame_id="drone"
+            />
+        </Sequence>
+     </BehaviorTree>
+
+ </root>
+

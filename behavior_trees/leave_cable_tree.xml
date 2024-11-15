@@ -15,7 +15,7 @@
                   target_upwards_velocity="2.0"
             />
 
-            <Action ID="HoverOnCable" name="hover_on_cable_2" 
+            <!-- <Action ID="HoverOnCable" name="hover_on_cable_2" 
                 target_cable_id="{@target_cable_id}"
                 duration_s="10." 
                 target_upwards_velocity="2.0"
@@ -33,7 +33,7 @@
                   ID="GripperCommand" 
                   name="gripper_command_open" 
                   gripper_command="0" 
-            />
+            /> -->
 
             <Action 
                 ID="PLMapperCommand" 
