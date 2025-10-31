@@ -1,0 +1,46 @@
+<root BTCPP_format="4" main_tree_to_execute="ReachCable">
+     <BehaviorTree ID="ReachCable">
+        <Sequence name="land_on_cable_top_sequence">
+
+            <RetryUntilSuccessful name="store_init_state_retry_until_successful" num_attempts="3">
+                <Decorator ID="Delay" name="delay_store_state" delay_msec="1000">
+                    <Condition 
+                        ID="StoreCurrentState"
+                        name="store_initial_state"
+                        current_position="{@initial_position}"
+                        current_yaw="{@initial_yaw}"
+                        current_state="{@initial_state}"
+                    />
+                </Decorator>
+            </RetryUntilSuccessful>
+
+            <SubTree 
+                ID="FlyToUnderCables"
+                initial_state="{@initial_state}"
+                initial_yaw="{@initial_yaw}"
+            />
+
+        </Sequence>
+     </BehaviorTree>
+
+     <BehaviorTree ID="FlyToUnderCables">
+        <Sequence name="fly_to_under_cable_sequence">
+            <Action
+                ID="GetPowerlineOverview"
+                name="get_powerline_overview"
+                stored_powerline="{stored_powerline}"
+            />
+
+            <Action
+                ID="PowerlineWaypointProvider"
+                name="fly_to_powerline_waypoint_provider"
+                stored_powerline="{stored_powerline}"
+                start_state="{initial_state}"
+                waypoints_depart="{waypoints}"
+                waypoints_return="{@waypoints_return}"
+            />
+
+        </Sequence>
+     </BehaviorTree>
+ </root>
+

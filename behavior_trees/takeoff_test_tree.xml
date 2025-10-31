@@ -1,0 +1,60 @@
+<root BTCPP_format="4" main_tree_to_execute="Takeoff">
+     <BehaviorTree ID="Takeoff">
+        <Sequence name="takeoff_sequence">
+
+            <Action 
+                ID="LogMessage" 
+                name="log"
+                message="Takeoff behavior tree started. Force disarming."
+                log_level="3"
+            />
+
+            <RetryUntilSuccessful name="disarm_retry" num_attempts="5">
+                <Delay name="delay_disarm" delay_msec="1000">
+                    <Action 
+                        ID="ModeExecutorAction" 
+                        name="disarm" 
+                        action_request_type="4"
+                        force_disarm="true"
+                    />
+                </Delay>
+            </RetryUntilSuccessful>
+
+            <Action 
+                ID="LogMessage" 
+                name="log"
+                message="Disarming completed. Sleeping."
+                log_level="3"
+            />
+
+            <Action 
+                ID="Sleep" 
+                name="sleep" 
+                msec="5000"
+            />
+
+            <Action 
+                ID="LogMessage" 
+                name="log"
+                message="Sleep finished. Issuing takeoff command."
+                log_level="3"
+            />
+
+            <Action 
+                ID="ModeExecutorAction" 
+                name="takeoff" 
+                action_request_type="1"
+                takeoff_altitude="4"
+            />
+
+            <Action 
+                ID="LogMessage" 
+                name="log"
+                message="Takeoff completed. Terminating tree"
+                log_level="3"
+            />
+
+        </Sequence>
+     </BehaviorTree>
+
+ </root>

@@ -1,0 +1,135 @@
+<root BTCPP_format="4" main_tree_to_execute="UpDown">
+     <BehaviorTree ID="UpDown">
+        <Sequence name="up_down_sequence">
+
+            <Action
+                ID="FlyToPosition"
+                name="ftp1"
+                target_position="0,0,0.5"
+                target_yaw="0"
+                frame_id="drone"
+            />
+
+            <Action 
+                ID="Hover" 
+                name="hover" 
+                duration_s="1." 
+                sustain_action="true"
+            />
+
+            <Action
+                ID="FlyToPosition"
+                name="ftp1"
+                target_position="0,0,-0.5"
+                target_yaw="0"
+                frame_id="drone"
+            />
+
+            <Action 
+                ID="Hover" 
+                name="hover" 
+                duration_s="10."
+                stop_maneuver_after_timeout_ms="9900"
+            />
+
+            <!-- <Action
+                ID="FlyToPosition"
+                name="ftp1"
+                target_position="0,0,0.5"
+                target_yaw="0"
+                frame_id="drone"
+            />
+
+            <Action 
+                ID="Hover" 
+                name="hover" 
+                duration_s="1." 
+                sustain_action="true"
+            />
+
+            <Action
+                ID="FlyToPosition"
+                name="ftp1"
+                target_position="0,0,-0.5"
+                target_yaw="0"
+                frame_id="drone"
+            />
+
+            <Action 
+                ID="Hover" 
+                name="hover" 
+                duration_s="5." 
+                sustain_action="true"
+            /> -->
+
+            <Action 
+                ID="LogMessage" 
+                name="log"
+                message="Issuing land command"
+                log_level="3"
+            />
+
+            <Action 
+                ID="ModeExecutorAction" 
+                name="land" 
+                action_request_type="2"
+            />
+
+            <Action 
+                ID="LogMessage" 
+                name="log"
+                message="Land completed. Terminating tree"
+                log_level="3"
+            />
+
+            <!-- <Action 
+                ID="Sleep" 
+                name="sleep" 
+                msec="10000"
+            />
+
+            <Action 
+                ID="LogMessage" 
+                name="log"
+                message="Sleep completed. Terminating behavior tree."
+                log_level="3"
+            /> -->
+
+            <!-- <Action 
+                ID="ModeExecutorAction" 
+                name="takeoff" 
+                action_request_type="1"
+                takeoff_altitude="4"
+            />
+
+            <Action
+                ID="FlyToPosition"
+                name="ftp1"
+                target_position="0,0,5"
+                target_yaw="0"
+                frame_id="drone"
+            />
+
+            <Action 
+                ID="Hover" 
+                name="hover" 
+                duration_s="5." 
+                sustain_action="true"
+            /> -->
+
+            <!-- <Action 
+                ID="ModeExecutorAction" 
+                name="land" 
+                action_request_type="2"
+            />
+
+            <Action 
+                ID="Sleep" 
+                name="sleep" 
+                msec="10000"
+            /> -->
+
+        </Sequence>
+     </BehaviorTree>
+
+ </root>

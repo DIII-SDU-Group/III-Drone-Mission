@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>iii_drone_mission</name>
+  <version>2.2.0</version>
+  <description>
+    The III-Drone mission system. This package contains the mission logic for the III-Drone system, including behavior management and PX4 interface.
+  </description>
+  <maintainer email="ffn@sdu.dk">ffn</maintainer>
+  <license>Proprietary</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+
+  <depend>dynmsg</depend>
+
+  <depend>builtin_interfaces</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>nav_msgs</depend>
+
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+
+  <depend>iii_drone_core</depend>
+  <depend>iii_drone_interfaces</depend>
+  <depend>iii_drone_configuration</depend>
+
+  <depend>px4_msgs</depend>
+  <depend>px4_ros2_cpp</depend>
+
+  <depend>behaviortree_cpp</depend>
+  <depend>behaviortree_ros2</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

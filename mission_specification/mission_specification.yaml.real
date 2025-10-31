@@ -1,0 +1,19 @@
+executor_owned_mode: "reach_cable"
+
+entries:
+  - key: "reach_cable"
+    mode_name: "Reach Cable"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/reach_cable_tree.xml"
+    allow_activate_when_disarmed: true
+    next_mode: "hover_on_cable"
+    
+  - key: "hover_on_cable"
+    mode_name: "Hover On Cable"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/hover_on_cable_tree.xml"
+    next_mode: "leave_cable"
+    #allow_activate_when_disarmed: true
+    
+  - key: "leave_cable"
+    mode_name: "Leave Cable"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/leave_cable_tree.xml"
+    #allow_activate_when_disarmed: true
