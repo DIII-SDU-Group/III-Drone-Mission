@@ -6,7 +6,7 @@
                 ID="LogMessage" 
                 name="log"
                 message="Takeoff behavior tree started. Force disarming."
-                log_level="3"
+                log_level="0"
             />
 
             <RetryUntilSuccessful name="disarm_retry" num_attempts="5">
@@ -24,7 +24,7 @@
                 ID="LogMessage" 
                 name="log"
                 message="Disarming completed. Sleeping."
-                log_level="3"
+                log_level="0"
             />
 
             <Action 
@@ -37,7 +37,7 @@
                 ID="LogMessage" 
                 name="log"
                 message="Sleep finished. Issuing takeoff command."
-                log_level="3"
+                log_level="0"
             />
 
             <Action 
@@ -51,7 +51,7 @@
                 ID="LogMessage" 
                 name="log"
                 message="Takeoff completed. Terminating tree"
-                log_level="3"
+                log_level="0"
             />
 
         </Sequence>
