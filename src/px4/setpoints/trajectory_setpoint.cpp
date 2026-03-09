@@ -45,7 +45,7 @@ void TrajectorySetpoint::update(const Reference & reference) {
 
     TrajectorySetpointAdapter adapter(reference);
 
-    px4_msgs::msg::TrajectorySetpoint msg = adapter.ToMsg();
+    const px4_msgs::msg::TrajectorySetpoint msg = adapter.ToMsg();
 
     // RCLCPP_DEBUG(node_.get_logger(), "TrajectorySetpoint::update(): Publishing trajectory setpoint:");
     // RCLCPP_DEBUG(node_.get_logger(), "TrajectorySetpoint::update(): position: [%f, %f, %f]", msg.position[0], msg.position[1], msg.position[2]);
@@ -54,6 +54,6 @@ void TrajectorySetpoint::update(const Reference & reference) {
     // RCLCPP_DEBUG(node_.get_logger(), "TrajectorySetpoint::update(): yaw: %f", msg.yaw);
     // RCLCPP_DEBUG(node_.get_logger(), "TrajectorySetpoint::update(): yaw_rate: %f", msg.yawspeed);
 
-    trajectory_setpoint_pub_->publish(adapter.ToMsg());
+    trajectory_setpoint_pub_->publish(msg);
 
 }

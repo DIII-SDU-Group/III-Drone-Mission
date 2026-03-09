@@ -194,12 +194,6 @@ void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
         );
     }
 
-    auto activate_next_mode = [this]() {
-
- 
-
-    };
-
     // if (!isArmed()) {
     
     //     RCLCPP_INFO(
@@ -381,7 +375,7 @@ bool GenericModeExecutor::checkNextModeSucceeded(
             is_active_ = false;
             scheduleMode(
                 missionDoneSelectModeId(),
-                [this](px4_ros2::Result result) { }
+                [](px4_ros2::Result) { }
             );
 
             stopModeIfWaiting();
@@ -400,7 +394,7 @@ bool GenericModeExecutor::checkNextModeSucceeded(
             is_active_ = false;
             scheduleMode(
                 missionDoneSelectModeId(),
-                [this](px4_ros2::Result result) { }
+                [](px4_ros2::Result) { }
             );
 
             stopModeIfWaiting();
@@ -419,7 +413,7 @@ bool GenericModeExecutor::checkNextModeSucceeded(
             is_active_ = false;
             scheduleMode(
                 missionDoneSelectModeId(),
-                [this](px4_ros2::Result result) { }
+                [](px4_ros2::Result) { }
             );
 
             stopModeIfWaiting();
@@ -438,7 +432,7 @@ bool GenericModeExecutor::checkNextModeSucceeded(
             is_active_ = false;
             scheduleMode(
                 missionDoneSelectModeId(),
-                [this](px4_ros2::Result result) { }
+                [](px4_ros2::Result) { }
             );
 
             stopModeIfWaiting();
@@ -457,7 +451,7 @@ bool GenericModeExecutor::checkNextModeSucceeded(
             is_active_ = false;
             scheduleMode(
                 missionDoneSelectModeId(),
-                [this](px4_ros2::Result result) { }
+                [](px4_ros2::Result) { }
             );
 
             stopModeIfWaiting();
@@ -640,7 +634,7 @@ bool GenericModeExecutor::scheduleActionIfAny(schedule_t & previous_schedule_cur
             RCLCPP_FATAL(
                 node_.get_logger(), 
                 "GenericModeExecutor::scheduleActionIfAny(): Invalid schedule_next_ value %d", 
-                schedule_next_
+                static_cast<int>(schedule_next_.Load())
             );
 
             throw std::runtime_error("GenericModeExecutor::scheduleActionIfAny(): Invalid schedule_next_ value");
@@ -665,7 +659,7 @@ void GenericModeExecutor::onNormalModeSuccess(bool & last_mode) {
 
         scheduleMode(
             missionDoneSelectModeId(),
-            [this](px4_ros2::Result result) { }
+            [](px4_ros2::Result) { }
         );
 
         is_active_ = false;
@@ -724,7 +718,7 @@ void GenericModeExecutor::manualControlSetpointCallback(const px4_msgs::msg::Man
 
         scheduleMode(
             px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_POSCTL,
-            [this](px4_ros2::Result result) { }
+            [](px4_ros2::Result) { }
         );
 
     }
@@ -735,6 +729,7 @@ rclcpp_action::GoalResponse GenericModeExecutor::modeExecutorActionGoalCallback(
     const rclcpp_action::GoalUUID & uuid,
     std::shared_ptr<const ModeExecutorAction::Goal> goal
 ) {
+    (void)uuid;
 
     if (schedule_current_ != schedule_next_mode) {
 
