@@ -19,7 +19,7 @@ VerifyPowerlineDetectedConditionNode::VerifyPowerlineDetectedConditionNode(
         name, 
         conf, 
         params
-),  node_ptr_(params.nh) { }
+),  node_ptr_(params.nh.lock()) { }
 
 PortsList VerifyPowerlineDetectedConditionNode::providedPorts() {
 

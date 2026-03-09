@@ -20,7 +20,7 @@ VerifyGripperClosedConditionNode::VerifyGripperClosedConditionNode(
         conf, 
         params,
         rclcpp::QoS(rclcpp::KeepLast(1)).best_effort()
-),  node_ptr_(params.nh) { }
+),  node_ptr_(params.nh.lock()) { }
 
 NodeStatus VerifyGripperClosedConditionNode::onTick(const std::shared_ptr<iii_drone_interfaces::msg::GripperStatus> & last_msg) {
 

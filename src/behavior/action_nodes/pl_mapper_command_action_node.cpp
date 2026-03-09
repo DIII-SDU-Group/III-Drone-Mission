@@ -19,7 +19,7 @@ PLMapperCommandActionNode::PLMapperCommandActionNode(
         name, 
         conf, 
         params
-),  node_ptr_(params.nh) { }
+),  node_ptr_(params.nh.lock()) { }
 
 PortsList PLMapperCommandActionNode::providedPorts() {
 

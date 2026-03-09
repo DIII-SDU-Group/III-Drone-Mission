@@ -23,6 +23,12 @@ TreeProvider::TreeProvider(
 ),  tf_buffer_(tf_buffer),
     mission_specification_(mission_specification)
 {
+    auto set_logger_level = [this](int severity) {
+        const rcutils_ret_t ret = rcutils_logging_set_logger_level(this->get_logger().get_name(), severity);
+        if (ret != RCUTILS_RET_OK) {
+            RCLCPP_WARN(this->get_logger(), "Failed to set logger level, rcutils_ret_t=%d", static_cast<int>(ret));
+        }
+    };
 
     // RCLCPP_INFO(get_logger(), "TreeProvider::TreeProvider(): Initializing.");
 
@@ -39,15 +45,15 @@ TreeProvider::TreeProvider(
 		);
 
 		if (log_level == "DEBUG") {
-			rcutils_logging_set_logger_level(this->get_logger().get_name(), RCUTILS_LOG_SEVERITY_DEBUG);
+			set_logger_level(RCUTILS_LOG_SEVERITY_DEBUG);
 		} else if (log_level == "INFO") {
-			rcutils_logging_set_logger_level(this->get_logger().get_name(), RCUTILS_LOG_SEVERITY_INFO);
+			set_logger_level(RCUTILS_LOG_SEVERITY_INFO);
 		} else if (log_level == "WARN") {
-			rcutils_logging_set_logger_level(this->get_logger().get_name(), RCUTILS_LOG_SEVERITY_WARN);
+			set_logger_level(RCUTILS_LOG_SEVERITY_WARN);
 		} else if (log_level == "ERROR") {
-			rcutils_logging_set_logger_level(this->get_logger().get_name(), RCUTILS_LOG_SEVERITY_ERROR);
+			set_logger_level(RCUTILS_LOG_SEVERITY_ERROR);
 		} else if (log_level == "FATAL") {
-			rcutils_logging_set_logger_level(this->get_logger().get_name(), RCUTILS_LOG_SEVERITY_FATAL);
+			set_logger_level(RCUTILS_LOG_SEVERITY_FATAL);
 		}
 
 	}
