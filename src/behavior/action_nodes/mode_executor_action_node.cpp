@@ -19,7 +19,7 @@ ModeExecutorActionNode::ModeExecutorActionNode(
         name, 
         conf, 
         params
-),  node_ptr_(params.nh) { }
+),  node_ptr_(params.nh.lock()) { }
 
 PortsList ModeExecutorActionNode::providedPorts() {
 

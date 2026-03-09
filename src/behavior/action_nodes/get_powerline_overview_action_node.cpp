@@ -19,7 +19,7 @@ GetPowerlineOverviewActionNode::GetPowerlineOverviewActionNode(
         name, 
         conf, 
         params
-),  node_ptr_(params.nh) { }
+),  node_ptr_(params.nh.lock()) { }
 
 PortsList GetPowerlineOverviewActionNode::providedPorts() {
 
@@ -30,6 +30,7 @@ PortsList GetPowerlineOverviewActionNode::providedPorts() {
 }
 
 bool GetPowerlineOverviewActionNode::setRequest(Request::SharedPtr & request) {
+    (void)request;
 
     RCLCPP_INFO(
         node_ptr_->get_logger(),

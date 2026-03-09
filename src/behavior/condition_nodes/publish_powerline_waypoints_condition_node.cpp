@@ -21,7 +21,7 @@ PublishPowerlineWaypointsConditionNode::PublishPowerlineWaypointsConditionNode(
         name, 
         conf, 
         params
-),  node_(params.nh.get()) { }
+) { }
 
 PortsList PublishPowerlineWaypointsConditionNode::providedPorts() {
 
