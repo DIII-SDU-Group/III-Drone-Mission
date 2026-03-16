@@ -13,7 +13,7 @@
 /*****************************************************************************/
 // III-Drone-Configuration:
 
-#include <iii_drone_configuration/parameter_bundle.hpp>
+#include <iii_drone_configuration/configuration.hpp>
 
 /*****************************************************************************/
 // III-Drone-Core:
@@ -58,7 +58,7 @@ namespace px4 {
             iii_drone::mission::MissionSpecification::SharedPtr mission_specification,
             rclcpp_lifecycle::LifecycleNode * node,
             iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
-            iii_drone::configuration::ParameterBundle::SharedPtr parameters
+            iii_drone::configuration::Configuration::SharedPtr parameters
         );
 
         void Register();
@@ -82,7 +82,7 @@ namespace px4 {
 
         iii_drone::mission::MissionSpecification::SharedPtr mission_specification_;
 
-        iii_drone::configuration::ParameterBundle::SharedPtr parameters_;
+        iii_drone::configuration::Configuration::SharedPtr configuration_;
 
         rclcpp_lifecycle::LifecycleNode * node_;
         rclcpp::Node::SharedPtr mode_node_;

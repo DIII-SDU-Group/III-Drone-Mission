@@ -23,7 +23,7 @@
 // III-Drone-Configuration:
 
 #include <iii_drone_configuration/configurator.hpp>
-#include <iii_drone_configuration/parameter_bundle.hpp>
+#include <iii_drone_configuration/configuration.hpp>
 
 /*****************************************************************************/
 // III-Drone-Core:

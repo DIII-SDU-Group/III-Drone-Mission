@@ -3,9 +3,47 @@
 /*****************************************************************************/
 
 #include <iii_drone_mission/mission/mission_executor_node/mission_executor_node.hpp>
-
 using namespace iii_drone::configuration;
 using namespace iii_drone::mission;
+
+namespace {
+
+using LifecycleConfigurator = Configurator<rclcpp_lifecycle::LifecycleNode>;
+using ParameterType = rclcpp::ParameterType;
+using ConfigurationEntry = iii_drone::configuration::configuration_entry_t;
+
+void DeclareManagedParameters(LifecycleConfigurator & configurator)
+{
+    const auto bool_t = ParameterType::PARAMETER_BOOL;
+    const auto int_t = ParameterType::PARAMETER_INTEGER;
+    const auto double_t = ParameterType::PARAMETER_DOUBLE;
+    const auto string_t = ParameterType::PARAMETER_STRING;
+
+    configurator.DeclareParameter("/mission/mission_specification_file", string_t);
+    configurator.DeclareParameter("/mission/use_nans_when_hovering", bool_t);
+    configurator.DeclareParameter("/mission/max_failed_attempts_during_maneuver", int_t);
+    configurator.DeclareParameter("/mission/wait_for_maneuver_start_timeout_ms", int_t);
+    configurator.DeclareParameter("/control/dt", double_t);
+    configurator.DeclareParameter("/mission/get_reference_timeout_ms", int_t);
+    configurator.DeclareParameter("/mission/manual_stick_input_threshold", double_t);
+    configurator.DeclareParameter("/mission/mission_done_select_mode", string_t);
+
+    configurator.CreateConfiguration("maneuver_reference_client", {
+        ConfigurationEntry("/mission/use_nans_when_hovering", bool_t),
+        ConfigurationEntry("/mission/max_failed_attempts_during_maneuver", int_t),
+        ConfigurationEntry("/mission/wait_for_maneuver_start_timeout_ms", int_t),
+        ConfigurationEntry("/mission/get_reference_timeout_ms", int_t),
+    });
+    configurator.CreateConfiguration("mode_provider", {
+        ConfigurationEntry("/control/dt", double_t),
+    });
+    configurator.CreateConfiguration("mode_executor", {
+        ConfigurationEntry("/mission/manual_stick_input_threshold", double_t),
+        ConfigurationEntry("/mission/mission_done_select_mode", string_t),
+    });
+}
+
+}  // namespace
 
 /*****************************************************************************/
 // Implementation
@@ -95,6 +133,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
         this,
         "mission_executor"
     );
+    DeclareManagedParameters(*configurator_);
+    configurator_->validate();
 
     // TF Buffer
     if (tf_buffer_ == nullptr) {
@@ -106,7 +146,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     mission_executor_ = std::make_shared<MissionExecutor>(
         this, 
         tf_buffer_,
-        configurator_->GetParameter("mission_specification_file").as_string(),
+        configurator_->GetParameter("/mission/mission_specification_file").as_string(),
         odometry_sub_callback_group_,
         executor_handle_
     );

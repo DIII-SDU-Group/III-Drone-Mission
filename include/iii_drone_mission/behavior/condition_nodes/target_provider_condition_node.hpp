@@ -18,7 +18,7 @@
 /*****************************************************************************/
 // III-Drone-Configuration:
 
-#include <iii_drone_configuration/parameter_bundle.hpp>
+#include <iii_drone_configuration/configuration.hpp>
 
 /*****************************************************************************/
 // III-Drone-Core:
@@ -58,7 +58,7 @@ namespace behavior {
             const BT::NodeConfig & config,
             rclcpp::Node * node,
             tf2_ros::Buffer::SharedPtr tf_buffer,
-            iii_drone::configuration::ParameterBundle::SharedPtr parameter_bundle
+            iii_drone::configuration::Configuration::SharedPtr configuration
         );
 
         BT::NodeStatus tick() override;
@@ -70,7 +70,7 @@ namespace behavior {
 
         tf2_ros::Buffer::SharedPtr tf_buffer_;
 
-        iii_drone::configuration::ParameterBundle::SharedPtr parameter_bundle_;
+        iii_drone::configuration::Configuration::SharedPtr configuration_;
 
         bool getFlyToCableTarget(
             int target_id,

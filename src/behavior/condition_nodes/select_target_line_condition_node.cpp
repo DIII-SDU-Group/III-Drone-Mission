@@ -19,14 +19,14 @@ SelectTargetLineConditionNode::SelectTargetLineConditionNode(
     const NodeConfig & conf,
     const RosNodeParams & params,
     std::shared_ptr<tf2_ros::Buffer> tf_buffer,
-    iii_drone::configuration::ParameterBundle::SharedPtr parameter_bundle
+    iii_drone::configuration::Configuration::SharedPtr configuration
 ) : RosTopicSubNode<iii_drone_interfaces::msg::Powerline>(
         name, 
         conf, 
         params
 ),  node_(params.nh.lock()),
     tf_buffer_(tf_buffer),
-    parameter_bundle_(parameter_bundle) { }
+    configuration_(configuration) { }
 
 PortsList SelectTargetLineConditionNode::providedPorts() {
 
@@ -56,7 +56,7 @@ NodeStatus SelectTargetLineConditionNode::onTick(const std::shared_ptr<iii_drone
 
         point_t line_point_drone_frame;
 
-        if (line.header.frame_id != parameter_bundle_->GetParameter("drone_frame_id").as_string()) {
+        if (line.header.frame_id != configuration_->GetParameter("/tf/drone_frame_id").as_string()) {
 
             geometry_msgs::msg::PoseStamped line_pose;
             line_pose.header = line.header;
@@ -64,7 +64,7 @@ NodeStatus SelectTargetLineConditionNode::onTick(const std::shared_ptr<iii_drone
 
             try {
 
-                geometry_msgs::msg::PoseStamped line_pose_drone_frame = tf_buffer_->transform(line_pose, parameter_bundle_->GetParameter("drone_frame_id").as_string());
+                geometry_msgs::msg::PoseStamped line_pose_drone_frame = tf_buffer_->transform(line_pose, configuration_->GetParameter("/tf/drone_frame_id").as_string());
 
                 line_point_drone_frame = point_t(
                     line_pose_drone_frame.pose.position.x, 
@@ -89,7 +89,7 @@ NodeStatus SelectTargetLineConditionNode::onTick(const std::shared_ptr<iii_drone
 
         }
         
-        if (line_point_drone_frame(2) > parameter_bundle_->GetParameter("line_min_height_above_drone").as_double()) {
+        if (line_point_drone_frame(2) > configuration_->GetParameter("/behavior/line_min_height_above_drone").as_double()) {
 
             lines_above.push_back(SingleLineAdapter(line));
 
@@ -235,7 +235,7 @@ NodeStatus SelectTargetLineConditionNode::onTick(const std::shared_ptr<iii_drone
 
 SelectTargetLineConditionNode::select_target_line_method_t SelectTargetLineConditionNode::getSelectTargetLineMethod() {
 
-    std::string select_target_line_method_str = parameter_bundle_->GetParameter("select_target_line_method").as_string();
+    std::string select_target_line_method_str = configuration_->GetParameter("/behavior/select_target_line_method").as_string();
 
     if (select_target_line_method_str == "random_above") {
 

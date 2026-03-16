@@ -24,7 +24,7 @@
 /*****************************************************************************/
 // III-Drone-Core:
 
-#include <iii_drone_configuration/parameter_bundle.hpp>
+#include <iii_drone_configuration/configuration.hpp>
 
 /*****************************************************************************/
 // III-Drone-Core:
@@ -77,7 +77,7 @@ namespace behavior {
             const BT::NodeConfig & conf,
             const BT::RosNodeParams & params,
             std::shared_ptr<tf2_ros::Buffer> tf_buffer,
-            iii_drone::configuration::ParameterBundle::SharedPtr parameter_bundle
+            iii_drone::configuration::Configuration::SharedPtr configuration
         );
 
         static BT::PortsList providedPorts();
@@ -89,7 +89,7 @@ namespace behavior {
 
         std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
 
-        iii_drone::configuration::ParameterBundle::SharedPtr parameter_bundle_;
+        iii_drone::configuration::Configuration::SharedPtr configuration_;
 
         typedef enum {
             SELECT_TARGET_LINE_METHOD_RANDOM_ABOVE = 0,

@@ -22,7 +22,7 @@
 /*****************************************************************************/
 // III-Drone-Configuration:
 
-#include <iii_drone_configuration/parameter_bundle.hpp>
+#include <iii_drone_configuration/configuration.hpp>
 
 /*****************************************************************************/
 // III-Drone-Core:
@@ -67,14 +67,14 @@ namespace behavior {
          * @param conf The node configuration.
          * @param tf_buffer The tf buffer.
          * @param node The ROS2 node.
-         * @param params Parameter bundle
+         * @param params Read-only live configuration view
          */
         PowerlineWaypointProviderActionNode(
             const std::string & name, 
             const BT::NodeConfiguration & conf,
             tf2_ros::Buffer::SharedPtr tf_buffer,
             rclcpp::Node * node,
-            iii_drone::configuration::ParameterBundle::SharedPtr params
+            iii_drone::configuration::Configuration::SharedPtr params
         );
 
         static BT::PortsList providedPorts();
@@ -86,7 +86,7 @@ namespace behavior {
 
         rclcpp::Node * node_;
 
-        iii_drone::configuration::ParameterBundle::SharedPtr parameters_;
+        iii_drone::configuration::Configuration::SharedPtr configuration_;
 
         // std::shared_ptr<std::deque<iii_drone::types::point_t>> applyLinearInterpolation(
         //     std::shared_ptr<std::deque<iii_drone::types::point_t>> points

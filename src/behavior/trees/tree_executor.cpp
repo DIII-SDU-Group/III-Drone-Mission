@@ -113,7 +113,7 @@ const BT::BehaviorTreeFactory & TreeExecutor::factory() const {
 
 void TreeExecutor::execute() {
 
-    unsigned int tick_period_ms = configurator_->GetParameter("tick_period_ms").as_int();
+    unsigned int tick_period_ms = configurator_->GetParameter("/behavior/tick_period_ms").as_int();
 
     std::chrono::milliseconds tick_period(tick_period_ms);
 
@@ -145,8 +145,8 @@ void TreeExecutor::registerNodes() {
 
     RCLCPP_DEBUG(node_->get_logger(), "TreeExecutor::registerNodes(): Registering nodes for %s.", tree_name_.c_str());
 
-    unsigned int server_timeout_ms = configurator_->GetParameter("server_timeout_ms").as_int();
-    unsigned int wait_for_server_timeout_ms = configurator_->GetParameter("wait_for_server_timeout_ms").as_int();
+    unsigned int server_timeout_ms = configurator_->GetParameter("/behavior/server_timeout_ms").as_int();
+    unsigned int wait_for_server_timeout_ms = configurator_->GetParameter("/behavior/wait_for_server_timeout_ms").as_int();
 
     std::chrono::milliseconds server_timeout(server_timeout_ms);
     std::chrono::milliseconds wait_for_server_timeout(wait_for_server_timeout_ms);
@@ -180,7 +180,7 @@ void TreeExecutor::registerNodes() {
             "HoverOnCable",
             params,
             maneuver_reference_client_,
-            configurator_->GetParameterBundle("hover_on_cable_maneuver_action_node")
+            configurator_->GetConfiguration("hover_on_cable_maneuver_action_node")
         );
     }
 
@@ -257,7 +257,7 @@ void TreeExecutor::registerNodes() {
             "CableTakeoff",
             params,
             maneuver_reference_client_,
-            configurator_->GetParameterBundle("cable_takeoff_maneuver_action_node")
+            configurator_->GetConfiguration("cable_takeoff_maneuver_action_node")
         );
     }
 
@@ -310,7 +310,7 @@ void TreeExecutor::registerNodes() {
             "SelectTargetLine",
             params,
             tf_buffer_,
-            configurator_->GetParameterBundle("select_target_line_condition_node")
+            configurator_->GetConfiguration("select_target_line_condition_node")
         );
     }
 
@@ -319,7 +319,7 @@ void TreeExecutor::registerNodes() {
             "TargetProvider",
             node_,
             tf_buffer_,
-            configurator_->GetParameterBundle("target_provider")
+            configurator_->GetConfiguration("target_provider")
         );
     }
 
@@ -368,7 +368,7 @@ void TreeExecutor::registerNodes() {
             "PowerlineWaypointProvider",
             tf_buffer_,
             node_,
-            configurator_->GetParameterBundle("powerline_waypoint_provider_action_node")
+            configurator_->GetConfiguration("powerline_waypoint_provider_action_node")
         );
     }
 

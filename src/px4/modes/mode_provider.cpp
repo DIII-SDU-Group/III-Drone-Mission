@@ -20,7 +20,7 @@ ModeProvider::ModeProvider(
     iii_drone::mission::MissionSpecification::SharedPtr mission_specification,
     rclcpp_lifecycle::LifecycleNode * node,
     iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
-    iii_drone::configuration::ParameterBundle::SharedPtr parameters
+    iii_drone::configuration::Configuration::SharedPtr parameters
 ) : tree_provider_(tree_provider),
     mission_specification_(mission_specification),
     node_(node)
@@ -65,7 +65,7 @@ ModeProvider::ModeProvider(
 	}
 
     maneuver_reference_client_ = maneuver_reference_client;
-    parameters_ = parameters;
+    configuration_ = parameters;
 
     RCLCPP_INFO(node_->get_logger(), "ModeProvider::ModeProvider(): Initializing modes.");
 
@@ -96,7 +96,7 @@ void ModeProvider::Cleanup() {
 
     deinitializeModes();
     maneuver_reference_client_.reset();
-    parameters_.reset();
+    configuration_.reset();
 
 }
 
@@ -138,7 +138,7 @@ void ModeProvider::initializeModes() {
 
     RCLCPP_INFO(node_->get_logger(), "ModeProvider::initializeModes(): Getting dt");
 
-    float dt = parameters_->GetParameter("maneuver_setpoint_dt").as_double();
+    float dt = configuration_->GetParameter("/control/dt").as_double();
 
     RCLCPP_INFO(node_->get_logger(), "ModeProvider::initializeModes(): Initializing modes.");
 
