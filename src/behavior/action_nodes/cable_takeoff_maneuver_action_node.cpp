@@ -18,13 +18,13 @@ CableTakeoffManeuverActionNode::CableTakeoffManeuverActionNode(
     const NodeConfig & conf,
     const RosNodeParams & params,
     ManeuverReferenceClient::SharedPtr maneuver_reference_client,
-    iii_drone::configuration::ParameterBundle::SharedPtr parameter_bundle
+    iii_drone::configuration::Configuration::SharedPtr configuration
 ) : ManeuverActionNode<iii_drone_interfaces::action::CableTakeoff>(
         name, 
         conf, 
         params,
         maneuver_reference_client
-),  parameter_bundle_(parameter_bundle) { }
+),  configuration_(configuration) { }
 
 PortsList CableTakeoffManeuverActionNode::providedPorts() {
 
@@ -47,7 +47,7 @@ bool CableTakeoffManeuverActionNode::setGoal(Goal & goal) {
             node_ptr_->get_logger(), 
             "CableTakeoffManeuverActionNode::setGoal(): Using default target cable distance."
         );
-        goal.target_cable_distance = parameter_bundle_->GetParameter("target_cable_distance").as_double();
+        goal.target_cable_distance = configuration_->GetParameter("/behavior/target_cable_distance").as_double();
     }
 
     if (goal.target_cable_id < 0) {
@@ -55,8 +55,8 @@ bool CableTakeoffManeuverActionNode::setGoal(Goal & goal) {
         return false;
     }
 
-    if (goal.target_cable_distance < parameter_bundle_->GetParameter("cable_takeoff_min_target_cable_distance").as_double() 
-        || goal.target_cable_distance > parameter_bundle_->GetParameter("cable_takeoff_max_target_cable_distance").as_double()) {
+    if (goal.target_cable_distance < configuration_->GetParameter("/control/maneuver_controller/cable_takeoff_min_target_cable_distance").as_double() 
+        || goal.target_cable_distance > configuration_->GetParameter("/control/maneuver_controller/cable_takeoff_max_target_cable_distance").as_double()) {
 
         RCLCPP_WARN(node_ptr_->get_logger(), "CableTakeoffManeuverActionNode::setGoal(): Target cable distance out of range.");
         return false;

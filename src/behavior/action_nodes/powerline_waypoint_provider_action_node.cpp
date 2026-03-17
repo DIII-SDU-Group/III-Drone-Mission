@@ -20,8 +20,8 @@ PowerlineWaypointProviderActionNode::PowerlineWaypointProviderActionNode(
     const NodeConfiguration & conf,
     tf2_ros::Buffer::SharedPtr tf_buffer,
     rclcpp::Node * node,
-    ParameterBundle::SharedPtr params
-) : SyncActionNode(name, conf), tf_buffer_(tf_buffer), node_(node), parameters_(params) { }
+    Configuration::SharedPtr params
+) : SyncActionNode(name, conf), tf_buffer_(tf_buffer), node_(node), configuration_(params) { }
 
 PortsList PowerlineWaypointProviderActionNode::providedPorts() {
 
@@ -67,7 +67,7 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
         "PowerlineWaypointProviderActionNode::tick(): Transforming powerline to world frame"
     );
 
-    powerline_adapter.Transform(parameters_->GetParameter("world_frame_id").as_string(), tf_buffer_);
+    powerline_adapter.Transform(configuration_->GetParameter("/tf/world_frame_id").as_string(), tf_buffer_);
 
     RCLCPP_DEBUG(
         node_->get_logger(),
@@ -401,7 +401,7 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
     // double distance_to_middle_line_point = abs(start_state_position_dot_prod_plane_direction - middle_line_point_dot_prod_plane_direction);
     double distance_to_middle_line_point = middle_line_point_xy_to_start_state_pos_no_z.norm();
 
-    if (!start_state_is_on_positive_side && !start_state_is_on_negative_side && distance_to_middle_line_point < parameters_->GetParameter("inside_powerline_xy_distance_threshold_m").as_double()) {
+    if (!start_state_is_on_positive_side && !start_state_is_on_negative_side && distance_to_middle_line_point < configuration_->GetParameter("/behavior/inside_powerline_xy_distance_threshold_m").as_double()) {
         // Drone is inside the powerline, no need to go around it.
         RCLCPP_DEBUG(
             node_->get_logger(),
@@ -409,7 +409,7 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
         );
         point_t waypoint = middle_line_point;
         waypoint[2] = positive_direction_is_higher ? positive_direction_furthest_point[2] : negative_direction_furthest_point[2];
-        waypoint[2] -= parameters_->GetParameter("under_cable_clearance_m").as_double();
+        waypoint[2] -= configuration_->GetParameter("/behavior/under_cable_clearance_m").as_double();
 
         shared_queue->push_back(waypoint);
 
@@ -431,8 +431,8 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
 
     point_t negative_top_waypoint = negative_direction_furthest_point;
     negative_top_waypoint[2] = highest_z;
-    negative_top_waypoint[2] += parameters_->GetParameter("top_clearance_m").as_double();
-    vector_t waypoint_displacement = parameters_->GetParameter("horizontal_clearance_m").as_double() * powerline_normal / powerline_normal.norm();
+    negative_top_waypoint[2] += configuration_->GetParameter("/behavior/top_clearance_m").as_double();
+    vector_t waypoint_displacement = configuration_->GetParameter("/behavior/horizontal_clearance_m").as_double() * powerline_normal / powerline_normal.norm();
     waypoint_displacement[2] = 0;
     waypoint_displacement *= -1;
     negative_top_waypoint += waypoint_displacement;
@@ -447,7 +447,7 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
 
     point_t positive_top_waypoint = positive_direction_furthest_point;
     positive_top_waypoint[2] = highest_z;
-    positive_top_waypoint[2] += parameters_->GetParameter("top_clearance_m").as_double();
+    positive_top_waypoint[2] += configuration_->GetParameter("/behavior/top_clearance_m").as_double();
     waypoint_displacement *= -1;
     positive_top_waypoint += waypoint_displacement;
 
@@ -490,8 +490,8 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
     point_t waypoint;
 
     waypoint = positive_direction_is_higher ? positive_direction_furthest_point : negative_direction_furthest_point;
-    waypoint[2] -= parameters_->GetParameter("under_cable_clearance_m").as_double();
-    waypoint_displacement = parameters_->GetParameter("horizontal_clearance_m").as_double() * powerline_normal / powerline_normal.norm();
+    waypoint[2] -= configuration_->GetParameter("/behavior/under_cable_clearance_m").as_double();
+    waypoint_displacement = configuration_->GetParameter("/behavior/horizontal_clearance_m").as_double() * powerline_normal / powerline_normal.norm();
     waypoint_displacement[2] = 0;
     waypoint_displacement *= positive_direction_is_higher ? 1 : -1;
     waypoint += waypoint_displacement;
@@ -533,7 +533,7 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
 //     SharedQueue<point_t> points
 // ) {
 
-//     float interpolation_segment_distance = parameters_->GetParameter("interpolation_segment_distance_m").as_double();
+//     float interpolation_segment_distance = configuration_->GetParameter("/behavior/interpolation_segment_distance_m").as_double();
 
 //     SharedQueue<point_t> interpolated_points = std::make_shared<std::deque<point_t>>();
 

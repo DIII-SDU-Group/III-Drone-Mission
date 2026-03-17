@@ -16,8 +16,8 @@ PX4Handler::PX4Handler(
     float dt,
     rclcpp_lifecycle::LifecycleNode * node,
     iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
-    iii_drone::configuration::ParameterBundle::SharedPtr mode_provider_parameters,
-    iii_drone::configuration::ParameterBundle::SharedPtr mode_executor_parameters,
+    iii_drone::configuration::Configuration::SharedPtr mode_provider_parameters,
+    iii_drone::configuration::Configuration::SharedPtr mode_executor_parameters,
     rclcpp::executors::MultiThreadedExecutor & executor
 ) {
 

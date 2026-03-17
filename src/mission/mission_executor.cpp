@@ -95,7 +95,7 @@ void MissionExecutor::Configure(
     maneuver_reference_client_ = std::make_shared<ManeuverReferenceClient>(
         node_,
         vehicle_odometry_adapter_history_,
-        configurator->GetParameterBundle("maneuver_reference_client"),
+        configurator->GetConfiguration("maneuver_reference_client"),
         get_reference_cb_group
     );
 
@@ -140,7 +140,7 @@ void MissionExecutor::Start(
         mission_specification_,
         node_,
         maneuver_reference_client_,
-        configurator->GetParameterBundle("mode_provider")
+        configurator->GetConfiguration("mode_provider")
     );
 
     RCLCPP_DEBUG(node_->get_logger(), "MissionExecutor::Start(): Initializing mode executor.");
@@ -150,7 +150,7 @@ void MissionExecutor::Start(
         "mode_executor",
         mission_specification_,
         mode_provider_,
-        configurator->GetParameterBundle("mode_executor")
+        configurator->GetConfiguration("mode_executor")
     );
 
     RCLCPP_DEBUG(node_->get_logger(), "MissionExecutor::Start(): Registering mode executor.");

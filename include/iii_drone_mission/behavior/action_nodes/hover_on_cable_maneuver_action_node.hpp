@@ -18,7 +18,7 @@
 /*****************************************************************************/
 // III-Drone-Configuration:
 
-#include <iii_drone_configuration/parameter_bundle.hpp>
+#include <iii_drone_configuration/configuration.hpp>
 
 /*****************************************************************************/
 // III-Drone-Mission:
@@ -57,7 +57,7 @@ namespace behavior {
             const BT::NodeConfig & conf,
             const BT::RosNodeParams & params,
             iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
-            iii_drone::configuration::ParameterBundle::SharedPtr parameter_bundle
+            iii_drone::configuration::Configuration::SharedPtr configuration
         );
 
         bool setGoal(Goal & goal) override;
@@ -65,7 +65,7 @@ namespace behavior {
         static BT::PortsList providedPorts();
 
     private:
-        iii_drone::configuration::ParameterBundle::SharedPtr parameter_bundle_;
+        iii_drone::configuration::Configuration::SharedPtr configuration_;
 
     };
 

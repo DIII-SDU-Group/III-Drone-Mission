@@ -51,8 +51,7 @@ entries:
     behavior_tree_xml_file: /tmp/tree_b.xml
 )");
 
-  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("mission_specification_test_node");
-  iii_drone::mission::MissionSpecification spec(mission_file.string(), node.get());
+  iii_drone::mission::MissionSpecification spec(mission_file.string(), nullptr);
 
   const auto first = spec.GetMissionSpecificationEntry("first");
   const auto second = spec.GetMissionSpecificationEntry("second");
@@ -75,8 +74,7 @@ entries:
     behavior_tree_xml_file: /tmp/tree.xml
 )");
 
-  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("mission_specification_missing_entry_node");
-  iii_drone::mission::MissionSpecification spec(mission_file.string(), node.get());
+  iii_drone::mission::MissionSpecification spec(mission_file.string(), nullptr);
 
   EXPECT_THROW(static_cast<void>(spec.GetMissionSpecificationEntry("missing")), std::runtime_error);
 }
@@ -90,8 +88,7 @@ entries:
     behavior_tree_xml_file: /tmp/tree.xml
 )");
 
-  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("mission_specification_defaults_node");
-  iii_drone::mission::MissionSpecification spec(mission_file.string(), node.get());
+  iii_drone::mission::MissionSpecification spec(mission_file.string(), nullptr);
 
   const auto entry = spec.GetMissionSpecificationEntry("only");
 
@@ -112,8 +109,7 @@ entries:
     next_mode: beta
 )");
 
-  auto node = std::make_shared<rclcpp_lifecycle::LifecycleNode>("mission_specification_iterator_node");
-  iii_drone::mission::MissionSpecification spec(mission_file.string(), node.get());
+  iii_drone::mission::MissionSpecification spec(mission_file.string(), nullptr);
 
   std::vector<std::string> keys;
   std::vector<std::string> modes;

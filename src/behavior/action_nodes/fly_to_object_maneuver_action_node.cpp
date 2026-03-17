@@ -67,11 +67,11 @@ bool FlyToObjectManeuverActionNode::setGoal(Goal & goal) {
     // }
 
     // goal.target.target_type = iii_drone_interfaces::msg::Target::TARGET_TYPE_CABLE;
-    // goal.target.reference_frame_id = parameter_bundle_->GetParameter("drone_frame_id").as_string();
+    // goal.target.reference_frame_id = configuration_->GetParameter("/tf/drone_frame_id").as_string();
 
     // quaternion_t gripper_q_cable(1, 0, 0, 0);
     // geometry_msgs::msg::QuaternionStamped gripper_q_cable_msg;
-    // gripper_q_cable_msg.header.frame_id = parameter_bundle_->GetParameter("gripper_frame_id").as_string();
+    // gripper_q_cable_msg.header.frame_id = configuration_->GetParameter("/tf/cable_gripper_frame_id").as_string();
     // gripper_q_cable_msg.quaternion = quaternionMsgFromQuaternion(gripper_q_cable);
 
     // geometry_msgs::msg::QuaternionStamped drone_q_cable_msg;
@@ -80,7 +80,7 @@ bool FlyToObjectManeuverActionNode::setGoal(Goal & goal) {
 
     //     drone_q_cable_msg = tf_buffer_->transform(
     //         gripper_q_cable_msg,
-    //         parameter_bundle_->GetParameter("drone_frame_id").as_string()
+    //         configuration_->GetParameter("/tf/drone_frame_id").as_string()
     //     );
 
     // } catch (tf2::TransformException & e) {
@@ -98,7 +98,7 @@ bool FlyToObjectManeuverActionNode::setGoal(Goal & goal) {
 
     // quaternion_t drone_q_cable = quaternionFromQuaternionMsg(drone_q_cable_msg.quaternion);
 
-    // vector_t drone_v_cable(0, 0, parameter_bundle_->GetParameter("target_cable_distance").as_double());
+    // vector_t drone_v_cable(0, 0, configuration_->GetParameter("/behavior/target_cable_distance").as_double());
 
     // goal.target.target_transform = transformMsgFromTransform(
     //     drone_v_cable,

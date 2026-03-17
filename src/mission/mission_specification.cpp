@@ -4,7 +4,70 @@
 
 #include <iii_drone_mission/mission/mission_specification.hpp>
 
+#include <cstdlib>
+#include <cctype>
+
 using namespace iii_drone::mission;
+
+namespace
+{
+
+std::string ExpandEnvironmentVariables(const std::string& input)
+{
+    std::string expanded;
+    expanded.reserve(input.size());
+
+    for (std::size_t i = 0; i < input.size(); ++i) {
+        if (input[i] != '$') {
+            expanded.push_back(input[i]);
+            continue;
+        }
+
+        std::string variable_name;
+        std::size_t consumed = i;
+        if (i + 1 < input.size() && input[i + 1] == '{') {
+            const std::size_t end = input.find('}', i + 2);
+            if (end == std::string::npos) {
+                expanded.push_back(input[i]);
+                continue;
+            }
+            variable_name = input.substr(i + 2, end - (i + 2));
+            consumed = end;
+        } else {
+            std::size_t j = i + 1;
+            while (j < input.size() &&
+                   (std::isalnum(static_cast<unsigned char>(input[j])) || input[j] == '_')) {
+                ++j;
+            }
+            if (j == i + 1) {
+                expanded.push_back(input[i]);
+                continue;
+            }
+            variable_name = input.substr(i + 1, j - (i + 1));
+            consumed = j - 1;
+        }
+
+        if (const char * value = std::getenv(variable_name.c_str()); value != nullptr) {
+            expanded += value;
+        }
+        i = consumed;
+    }
+
+    return expanded;
+}
+
+std::string ExpandShellPath(const std::string& path)
+{
+    std::string expanded_path = path;
+    if (!expanded_path.empty() && expanded_path[0] == '~') {
+        if (const char * home = std::getenv("HOME"); home != nullptr) {
+            expanded_path = std::string(home) + expanded_path.substr(1);
+        }
+    }
+    return ExpandEnvironmentVariables(expanded_path);
+}
+
+}  // namespace
 
 /*****************************************************************************/
 // Implementation
@@ -14,17 +77,7 @@ MissionSpecification::MissionSpecification(
     const std::string& mission_specification_file,
     rclcpp_lifecycle::LifecycleNode * node
 ) : node_(node) {
-
-    RCLCPP_DEBUG(
-        node_->get_logger(),
-        "MissionSpecification::MissionSpecification(): Initializing."
-    );
-
-    wordexp_t wordexp_result;
-    wordexp(mission_specification_file.c_str(), &wordexp_result, 0);
-    std::string expanded_mission_specification_file = wordexp_result.we_wordv[0];
-    wordfree(&wordexp_result);
-
+    std::string expanded_mission_specification_file = ExpandShellPath(mission_specification_file);
     YAML::Node mission_specification_node = YAML::LoadFile(expanded_mission_specification_file);
 
     executor_owned_mode_ = mission_specification_node["executor_owned_mode"].as<std::string>();
@@ -41,11 +94,7 @@ MissionSpecification::MissionSpecification(
 
         entry.behavior_tree_xml_file = (*it)["behavior_tree_xml_file"].as<std::string>();
 
-        if (entry.behavior_tree_xml_file[0] == '~') {
-
-            entry.behavior_tree_xml_file = std::string(getenv("HOME")) + entry.behavior_tree_xml_file.substr(1);
-
-        }
+        entry.behavior_tree_xml_file = ExpandShellPath(entry.behavior_tree_xml_file);
 
         try {
             entry.next_mode = (*it)["next_mode"].as<std::string>();
@@ -60,17 +109,6 @@ MissionSpecification::MissionSpecification(
         }
 
         mission_specification_entries_[entry.key] = entry;
-
-        RCLCPP_DEBUG(
-            node_->get_logger(),
-            "MissionSpecification::MissionSpecification(): Added mission specification entry:\nkey: %s\nmode_name: %s\nbehavior_tree_xml_file: %s\nnext_mode: %s\nallow_activate_when_disarmed: %d",
-            entry.key.c_str(),
-            entry.mode_name.c_str(),
-            entry.behavior_tree_xml_file.c_str(),
-            entry.next_mode.c_str(),
-            entry.allow_activate_when_disarmed
-        );
-
     }
 
 }

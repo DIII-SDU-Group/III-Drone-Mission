@@ -43,6 +43,28 @@ int main(int argc, char **argv) {
     // mode_test.doRegister();
 
     Configurator<rclcpp::Node>::SharedPtr configurator = std::make_shared<Configurator<rclcpp::Node>>(node.get(), node->get_name());
+    configurator->DeclareParameter("/mission/mission_specification_file", rclcpp::ParameterType::PARAMETER_STRING);
+    configurator->DeclareParameter("/mission/use_nans_when_hovering", rclcpp::ParameterType::PARAMETER_BOOL);
+    configurator->DeclareParameter("/mission/max_failed_attempts_during_maneuver", rclcpp::ParameterType::PARAMETER_INTEGER);
+    configurator->DeclareParameter("/mission/wait_for_maneuver_start_timeout_ms", rclcpp::ParameterType::PARAMETER_INTEGER);
+    configurator->DeclareParameter("/control/dt", rclcpp::ParameterType::PARAMETER_DOUBLE);
+    configurator->DeclareParameter("/mission/get_reference_timeout_ms", rclcpp::ParameterType::PARAMETER_INTEGER);
+    configurator->DeclareParameter("/mission/manual_stick_input_threshold", rclcpp::ParameterType::PARAMETER_DOUBLE);
+    configurator->DeclareParameter("/mission/mission_done_select_mode", rclcpp::ParameterType::PARAMETER_STRING);
+    configurator->CreateConfiguration("maneuver_reference_client", {
+        iii_drone::configuration::configuration_entry_t("/mission/use_nans_when_hovering", rclcpp::ParameterType::PARAMETER_BOOL),
+        iii_drone::configuration::configuration_entry_t("/mission/max_failed_attempts_during_maneuver", rclcpp::ParameterType::PARAMETER_INTEGER),
+        iii_drone::configuration::configuration_entry_t("/mission/wait_for_maneuver_start_timeout_ms", rclcpp::ParameterType::PARAMETER_INTEGER),
+        iii_drone::configuration::configuration_entry_t("/mission/get_reference_timeout_ms", rclcpp::ParameterType::PARAMETER_INTEGER),
+    });
+    configurator->CreateConfiguration("mode_provider", {
+        iii_drone::configuration::configuration_entry_t("/control/dt", rclcpp::ParameterType::PARAMETER_DOUBLE),
+    });
+    configurator->CreateConfiguration("mode_executor", {
+        iii_drone::configuration::configuration_entry_t("/mission/manual_stick_input_threshold", rclcpp::ParameterType::PARAMETER_DOUBLE),
+        iii_drone::configuration::configuration_entry_t("/mission/mission_done_select_mode", rclcpp::ParameterType::PARAMETER_STRING),
+    });
+    configurator->validate();
 
     tf2_ros::Buffer::SharedPtr tf_buffer = std::make_shared<tf2_ros::Buffer>(node->get_clock());
     tf2_ros::TransformListener tf_listener(*tf_buffer);

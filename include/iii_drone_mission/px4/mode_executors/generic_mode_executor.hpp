@@ -18,7 +18,7 @@
 /*****************************************************************************/
 // III-Drone-Configuration:
 
-#include <iii_drone_configuration/parameter_bundle.hpp>
+#include <iii_drone_configuration/configuration.hpp>
 
 /*****************************************************************************/
 // III-Drone-Core:
@@ -78,7 +78,7 @@ namespace px4 {
             std::string mode_executor_name,
             iii_drone::mission::MissionSpecification::SharedPtr mission_specification,
             ModeProvider::SharedPtr mode_provider,
-            iii_drone::configuration::ParameterBundle::SharedPtr parameters
+            iii_drone::configuration::Configuration::SharedPtr parameters
         ); 
         
         void onActivate() override;
@@ -96,7 +96,7 @@ namespace px4 {
 
         iii_drone::mission::MissionSpecification::SharedPtr mission_specification_;
 
-        iii_drone::configuration::ParameterBundle::SharedPtr parameters_;
+        iii_drone::configuration::Configuration::SharedPtr configuration_;
 
         ModeProvider::SharedPtr mode_provider_;
 

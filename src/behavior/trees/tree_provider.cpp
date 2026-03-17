@@ -3,11 +3,70 @@
 /*****************************************************************************/
 
 #include <iii_drone_mission/behavior/trees/tree_provider.hpp>
-
 using namespace iii_drone::behavior;
 using namespace iii_drone::mission;
 using namespace iii_drone::configuration;
 using namespace iii_drone::control::maneuver;
+
+namespace {
+
+using NodeConfigurator = Configurator<rclcpp::Node>;
+using ParameterType = rclcpp::ParameterType;
+using ConfigurationEntry = iii_drone::configuration::configuration_entry_t;
+
+void DeclareManagedParameters(NodeConfigurator & configurator)
+{
+    const auto int_t = ParameterType::PARAMETER_INTEGER;
+    const auto double_t = ParameterType::PARAMETER_DOUBLE;
+    const auto string_t = ParameterType::PARAMETER_STRING;
+
+    configurator.DeclareParameter("/behavior/server_timeout_ms", int_t);
+    configurator.DeclareParameter("/behavior/wait_for_server_timeout_ms", int_t);
+    configurator.DeclareParameter("/behavior/tick_period_ms", int_t);
+    configurator.DeclareParameter("/behavior/target_cable_distance", double_t);
+    configurator.DeclareParameter("/control/maneuver_controller/cable_takeoff_min_target_cable_distance", double_t);
+    configurator.DeclareParameter("/control/maneuver_controller/cable_takeoff_max_target_cable_distance", double_t);
+    configurator.DeclareParameter("/behavior/line_min_height_above_drone", double_t);
+    configurator.DeclareParameter("/behavior/select_target_line_method", string_t);
+    configurator.DeclareParameter("/behavior/hover_on_cable_target_z_velocity", double_t);
+    configurator.DeclareParameter("/behavior/hover_on_cable_target_yaw_rate", double_t);
+    configurator.DeclareParameter("/behavior/top_clearance_m", double_t);
+    configurator.DeclareParameter("/behavior/horizontal_clearance_m", double_t);
+    configurator.DeclareParameter("/behavior/under_cable_clearance_m", double_t);
+    configurator.DeclareParameter("/behavior/inside_powerline_xy_distance_threshold_m", double_t);
+    configurator.DeclareParameter("/tf/drone_frame_id", string_t);
+    configurator.DeclareParameter("/tf/cable_gripper_frame_id", string_t);
+    configurator.DeclareParameter("/tf/world_frame_id", string_t);
+
+    configurator.CreateConfiguration("target_provider", {
+        ConfigurationEntry("/behavior/target_cable_distance", double_t),
+        ConfigurationEntry("/tf/drone_frame_id", string_t),
+        ConfigurationEntry("/tf/cable_gripper_frame_id", string_t),
+    });
+    configurator.CreateConfiguration("cable_takeoff_maneuver_action_node", {
+        ConfigurationEntry("/control/maneuver_controller/cable_takeoff_min_target_cable_distance", double_t),
+        ConfigurationEntry("/control/maneuver_controller/cable_takeoff_max_target_cable_distance", double_t),
+        ConfigurationEntry("/behavior/target_cable_distance", double_t),
+    });
+    configurator.CreateConfiguration("select_target_line_condition_node", {
+        ConfigurationEntry("/behavior/line_min_height_above_drone", double_t),
+        ConfigurationEntry("/behavior/select_target_line_method", string_t),
+        ConfigurationEntry("/tf/drone_frame_id", string_t),
+    });
+    configurator.CreateConfiguration("hover_on_cable_maneuver_action_node", {
+        ConfigurationEntry("/behavior/hover_on_cable_target_z_velocity", double_t),
+        ConfigurationEntry("/behavior/hover_on_cable_target_yaw_rate", double_t),
+    });
+    configurator.CreateConfiguration("powerline_waypoint_provider_action_node", {
+        ConfigurationEntry("/behavior/top_clearance_m", double_t),
+        ConfigurationEntry("/behavior/horizontal_clearance_m", double_t),
+        ConfigurationEntry("/behavior/inside_powerline_xy_distance_threshold_m", double_t),
+        ConfigurationEntry("/behavior/under_cable_clearance_m", double_t),
+        ConfigurationEntry("/tf/world_frame_id", string_t),
+    });
+}
+
+}  // namespace
 
 /*****************************************************************************/
 // Implementation
@@ -78,6 +137,8 @@ void TreeProvider::Configure(
     maneuver_reference_client_ = maneuver_reference_client;
 
     configurator_ = std::make_shared<Configurator<rclcpp::Node>>(this, "behavior_tree");
+    DeclareManagedParameters(*configurator_);
+    configurator_->validate();
 
     global_blackboard_ = BT::Blackboard::create();
 

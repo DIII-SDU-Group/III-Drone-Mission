@@ -18,13 +18,13 @@ HoverOnCableManeuverActionNode::HoverOnCableManeuverActionNode(
     const NodeConfig & conf,
     const RosNodeParams & params,
     ManeuverReferenceClient::SharedPtr maneuver_reference_client,
-    ParameterBundle::SharedPtr parameter_bundle
+    Configuration::SharedPtr configuration
 ) : ManeuverActionNode<iii_drone_interfaces::action::HoverOnCable>(
         name, 
         conf, 
         params,
         maneuver_reference_client
-),  parameter_bundle_(parameter_bundle) { }
+),  configuration_(configuration) { }
 
 PortsList HoverOnCableManeuverActionNode::providedPorts() {
 
@@ -59,10 +59,10 @@ bool HoverOnCableManeuverActionNode::setGoal(Goal & goal) {
     }
 
     if (!getInput("target_upwards_velocity", goal.target_z_velocity)) {
-        goal.target_z_velocity = parameter_bundle_->GetParameter("hover_on_cable_target_z_velocity").as_double();
+        goal.target_z_velocity = configuration_->GetParameter("/behavior/hover_on_cable_target_z_velocity").as_double();
     }
 
-    goal.target_yaw_rate = parameter_bundle_->GetParameter("hover_on_cable_target_yaw_rate").as_double();
+    goal.target_yaw_rate = configuration_->GetParameter("/behavior/hover_on_cable_target_yaw_rate").as_double();
 
     if (goal.duration_s <= 0) {
         return false;

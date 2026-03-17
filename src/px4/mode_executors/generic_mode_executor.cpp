@@ -18,7 +18,7 @@ GenericModeExecutor::GenericModeExecutor(
     std::string mode_executor_name,
     MissionSpecification::SharedPtr mission_specification,
     ModeProvider::SharedPtr mode_provider,
-    ParameterBundle::SharedPtr parameters
+    Configuration::SharedPtr parameters
 ) : ModeExecutorBase(
     *mode_provider->mode_node(), 
     px4_ros2::ModeExecutorBase::Settings{.activation=px4_ros2::ModeExecutorBase::Settings::Activation::ActivateAlways}, 
@@ -26,7 +26,7 @@ GenericModeExecutor::GenericModeExecutor(
 ),  node_(*mode_provider->mode_node()),
     mode_executor_name_(mode_executor_name),
     mission_specification_(mission_specification),
-    parameters_(parameters),
+    configuration_(parameters),
     mode_provider_(mode_provider),
     combined_drone_awareness_adapter_history_(1) {
 
@@ -474,7 +474,7 @@ bool GenericModeExecutor::checkNextModeSucceeded(
 
 int GenericModeExecutor::missionDoneSelectModeId() {
 
-    std::string mission_done_select_mode = parameters_->GetParameter("mission_done_select_mode").as_string();
+    std::string mission_done_select_mode = configuration_->GetParameter("/mission/mission_done_select_mode").as_string();
     int mission_done_select_mode_id;
 
     if (mission_done_select_mode == "hold") {
@@ -685,7 +685,7 @@ void GenericModeExecutor::manualControlSetpointCallback(const px4_msgs::msg::Man
 
     bool switch_to_position_control = false;
 
-    double manual_stick_input_threshold = parameters_->GetParameter("manual_stick_input_threshold").as_double();
+    double manual_stick_input_threshold = configuration_->GetParameter("/mission/manual_stick_input_threshold").as_double();
 
     if (abs(msg->throttle) > manual_stick_input_threshold) {
 
