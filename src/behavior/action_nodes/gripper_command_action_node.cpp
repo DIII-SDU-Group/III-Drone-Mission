@@ -19,7 +19,7 @@ GripperCommandActionNode::GripperCommandActionNode(
         name, 
         conf, 
         params
-),  node_ptr_(params.nh) { }
+),  node_ptr_(params.nh.lock()) { }
 
 PortsList GripperCommandActionNode::providedPorts() {
 

@@ -19,9 +19,10 @@ UpdatePowerlineOverviewActionNode::UpdatePowerlineOverviewActionNode(
         name, 
         conf, 
         params
-),  node_ptr_(params.nh) { }
+),  node_ptr_(params.nh.lock()) { }
 
 bool UpdatePowerlineOverviewActionNode::setRequest(Request::SharedPtr & request) {
+    (void)request;
 
     RCLCPP_INFO(
         node_ptr_->get_logger(),

@@ -24,7 +24,7 @@ GetGripperAlignmentYawConditionNode::GetGripperAlignmentYawConditionNode(
         name, 
         conf, 
         params
-),  node_(params.nh),
+),  node_(params.nh.lock()),
     tf_buffer_(tf_buffer) { }
 
 PortsList GetGripperAlignmentYawConditionNode::providedPorts() {

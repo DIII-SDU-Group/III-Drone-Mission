@@ -49,9 +49,6 @@ namespace behavior {
 
         bool setMessage(nav_msgs::msg::Path & msg) override;
 
-    private:
-        rclcpp::Node * node_;
-
     };
 
 } // namespace behavior

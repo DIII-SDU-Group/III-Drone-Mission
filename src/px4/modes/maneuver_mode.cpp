@@ -35,7 +35,7 @@ ManeuverMode::ManeuverMode(
 
     register_offboard_mode_client_ = node.create_client<iii_drone_interfaces::srv::RegisterOffboardMode>(
         "/control/maneuver_controller/register_offboard_mode",
-        rmw_qos_profile_services_default
+        rclcpp::ServicesQoS()
     );
 
 }

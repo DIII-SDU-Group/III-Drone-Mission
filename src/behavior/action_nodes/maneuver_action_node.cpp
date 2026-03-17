@@ -11,6 +11,7 @@
 #include <iii_drone_interfaces/action/hover.hpp>
 #include <iii_drone_interfaces/action/hover_by_object.hpp>
 #include <iii_drone_interfaces/action/hover_on_cable.hpp>
+#include <stdexcept>
 
 using namespace iii_drone::behavior;
 using namespace iii_drone::control;
@@ -34,7 +35,11 @@ ManeuverActionNode<ActionT>::ManeuverActionNode(
         params
 ),  maneuver_reference_client_(maneuver_reference_client),
     name_(name),
-    node_ptr_(params.nh) { }
+    node_ptr_(params.nh.lock()) {
+    if (!node_ptr_) {
+        throw std::runtime_error("ManeuverActionNode: ROS node handle expired");
+    }
+}
 
 template <typename ActionT>
 void ManeuverActionNode<ActionT>::onGoalAccepted() {

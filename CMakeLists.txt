@@ -19,6 +19,8 @@ if(NOT DEFINED CMAKE_SUPPRESS_DEVELOPER_WARNINGS)
      set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS 1 CACHE INTERNAL "No dev warnings")
 endif()
 
+include(CTest)
+
 # find dependencies
 find_package(ament_cmake REQUIRED)
 
@@ -55,24 +57,8 @@ foreach(dep ${dependencies})
   find_package(${dep} REQUIRED)
 endforeach()
 
-# Yaml cpp
-include(FetchContent)
-
-FetchContent_Declare(
-  yaml_cpp
-  GIT_REPOSITORY https://github.com/DIII-SDU-Group/yaml-cpp.git
-  GIT_TAG        0.8.0
-)
-
-FetchContent_GetProperties(yaml_cpp)
-
-if(NOT yaml_cpp_POPULATED)
-  message(STATUS "Fetching yaml-cpp...")
-  FetchContent_Populate(yaml_cpp)
-  if(NOT TARGET yaml-cpp)
-    add_subdirectory(${yaml_cpp_SOURCE_DIR} ${yaml_cpp_BINARY_DIR})
-  endif()
-endif()
+# yaml-cpp: require system package to avoid vendored deprecation warnings.
+find_package(yaml-cpp REQUIRED)
 
 # Include dir
 set(III_DRONE_MISSION_INCLUDE_DIRS
@@ -279,5 +265,19 @@ install(DIRECTORY
   "${PROJECT_SOURCE_DIR}/include/"
   DESTINATION include
 )
+
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+
+  ament_add_gtest(iii_drone_mission_specification_test
+    test/mission_specification_test.cpp
+  )
+
+  if(TARGET iii_drone_mission_specification_test)
+    target_include_directories(iii_drone_mission_specification_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+    target_link_libraries(iii_drone_mission_specification_test iii_drone_mission_lib)
+    ament_target_dependencies(iii_drone_mission_specification_test ${dependencies})
+  endif()
+endif()
 
 ament_package()

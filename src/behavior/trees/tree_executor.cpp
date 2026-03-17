@@ -153,8 +153,6 @@ void TreeExecutor::registerNodes() {
 
     std::shared_ptr<rclcpp::Node> node = node_->shared_from_this();
 
-    factory_ = BT::BehaviorTreeFactory();
-
     {
         BT::RosNodeParams params;
 
@@ -445,7 +443,5 @@ void TreeExecutor::unregisterNodes() {
     RCLCPP_DEBUG(node_->get_logger(), "TreeExecutor::unregisterNodes(): Unregistering nodes for %s.", tree_name_.c_str());
 
     factory_.clearRegisteredBehaviorTrees();
-    
-    factory_ = BT::BehaviorTreeFactory();
 
 }
