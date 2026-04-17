@@ -91,7 +91,8 @@ TreeProvider::TreeProvider(
 
     // RCLCPP_INFO(get_logger(), "TreeProvider::TreeProvider(): Initializing.");
 
-	std::string log_level = std::getenv("BEHAVIOR_TREE_LOG_LEVEL");
+	const char * log_level_env = std::getenv("BEHAVIOR_TREE_LOG_LEVEL");
+	std::string log_level = log_level_env == nullptr ? "" : log_level_env;
 
 	if (log_level != "") {
 

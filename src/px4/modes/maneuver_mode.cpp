@@ -4,6 +4,9 @@
 
 #include <iii_drone_mission/px4/modes/maneuver_mode.hpp>
 
+#include <exception>
+#include <future>
+
 using namespace iii_drone::px4;
 using namespace iii_drone::control;
 using namespace iii_drone::control::maneuver;
@@ -25,7 +28,8 @@ ManeuverMode::ManeuverMode(
         Settings(
             mode_name,
             allow_activate_when_disarmed
-        )
+        ),
+        "/"
 ),  mode_name_(mode_name),
     is_owned_mode_(is_owned_mode) { 
 
@@ -142,12 +146,53 @@ void ManeuverMode::sendRegisterOffboardModeRequest(
         request
     );
 
-    if (rclcpp::spin_until_future_complete(
-        node().get_node_base_interface(),
-        future,
-        std::chrono::seconds(5)
-    ) != rclcpp::FutureReturnCode::SUCCESS) {
-        RCLCPP_FATAL(node().get_logger(), "ManeuverMode::sendRegisterOffboardModeRequest(): Failed to register mode %s as offboard mode", mode_name_.c_str());
+    rclcpp::FutureReturnCode result = rclcpp::FutureReturnCode::TIMEOUT;
+    auto node_base = node().get_node_base_interface();
+
+    try {
+        if (node_base->get_associated_with_executor_atomic().load()) {
+            result = future.wait_for(std::chrono::seconds(5)) == std::future_status::ready
+                ? rclcpp::FutureReturnCode::SUCCESS
+                : rclcpp::FutureReturnCode::TIMEOUT;
+        } else {
+            result = rclcpp::spin_until_future_complete(
+                node_base,
+                future,
+                std::chrono::seconds(5)
+            );
+        }
+    } catch (const std::exception & exc) {
+        RCLCPP_WARN(
+            node().get_logger(),
+            "ManeuverMode::sendRegisterOffboardModeRequest(): Failed while waiting for %s request for mode %s: %s",
+            deregister ? "deregister" : "register",
+            mode_name_.c_str(),
+            exc.what()
+        );
+        result = future.wait_for(std::chrono::seconds(5)) == std::future_status::ready
+            ? rclcpp::FutureReturnCode::SUCCESS
+            : rclcpp::FutureReturnCode::TIMEOUT;
+    }
+
+    if (result != rclcpp::FutureReturnCode::SUCCESS) {
+        register_offboard_mode_client_->remove_pending_request(future);
+
+        if (force) {
+            RCLCPP_WARN(
+                node().get_logger(),
+                "ManeuverMode::sendRegisterOffboardModeRequest(): Failed to %s mode %s as offboard mode, continuing",
+                deregister ? "deregister" : "register",
+                mode_name_.c_str()
+            );
+            return;
+        }
+
+        RCLCPP_FATAL(
+            node().get_logger(),
+            "ManeuverMode::sendRegisterOffboardModeRequest(): Failed to %s mode %s as offboard mode",
+            deregister ? "deregister" : "register",
+            mode_name_.c_str()
+        );
         throw std::runtime_error("ManeuverMode::sendRegisterOffboardModeRequest(): Failed to register mode as offboard mode");
     }
 
@@ -165,13 +210,15 @@ void ManeuverMode::onActivate() {
 
         setSetpointUpdateRate(1./dt_);
 
+        tree_completion_reported_ = false;
+
         tree_executor_->StartExecution();
 
         stop_controls_ = false;
     
     } else {
 
-        RCLCPP_WARN(node().get_logger(), "ManeuverMode::onActivate(): Restarting mode %s", mode_name_.c_str());
+        RCLCPP_WARN(node().get_logger(), "ManeuverMode::onActivate(): Resuming mode %s", mode_name_.c_str());
 
     }
 
@@ -276,16 +323,19 @@ void ManeuverMode::updateSetpoint(float dt) {
 
     }
 
-    if (tree_executor_->finished()) {
+    if (tree_executor_->finished() && !tree_completion_reported_) {
+
+        tree_completion_reported_ = true;
+        const bool tree_success = tree_executor_->success();
 
         RCLCPP_INFO(
             node().get_logger(), 
             "ManeuverMode::updateSetpoint(): Tree execution finished %s",
-            tree_executor_->success() ? "successfully" : "unsuccessfully"
+            tree_success ? "successfully" : "unsuccessfully"
         );
         
         completed(
-            tree_executor_->success() ? px4_ros2::Result::Success : px4_ros2::Result::ModeFailureOther
+            tree_success ? px4_ros2::Result::Success : px4_ros2::Result::ModeFailureOther
         );
 
     }

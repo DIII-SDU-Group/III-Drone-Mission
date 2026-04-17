@@ -107,6 +107,8 @@ namespace px4 {
 
         utils::Atomic<bool> stop_controls_ = false;
 
+        utils::Atomic<bool> tree_completion_reported_ = false;
+
         std::function<void()> on_next_activate_callback_ = nullptr;
 
         rclcpp::Client<iii_drone_interfaces::srv::RegisterOffboardMode>::SharedPtr register_offboard_mode_client_;

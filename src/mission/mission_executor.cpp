@@ -179,16 +179,19 @@ void MissionExecutor::Stop() {
         return;
     }
 
-    executor_.remove_node(
-        mode_provider_->mode_node(),
-        true
-    );
+    auto mode_node = mode_provider_->mode_node();
 
     generic_mode_executor_.reset();
     generic_mode_executor_ = nullptr;
 
     mode_provider_->Stop();
     mode_provider_->Cleanup();
+
+    executor_.remove_node(
+        mode_node,
+        true
+    );
+
     mode_provider_.reset();
     mode_provider_ = nullptr;
 

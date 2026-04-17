@@ -3,6 +3,12 @@
 /*****************************************************************************/
 
 #include <iii_drone_mission/mission/mission_executor_node/mission_executor_node.hpp>
+
+#include <chrono>
+#include <exception>
+
+#include <px4_msgs/msg/vehicle_status.hpp>
+
 using namespace iii_drone::configuration;
 using namespace iii_drone::mission;
 
@@ -11,6 +17,41 @@ namespace {
 using LifecycleConfigurator = Configurator<rclcpp_lifecycle::LifecycleNode>;
 using ParameterType = rclcpp::ParameterType;
 using ConfigurationEntry = iii_drone::configuration::configuration_entry_t;
+
+bool WaitForVehicleStatusMessage(
+    rclcpp_lifecycle::LifecycleNode & node,
+    const std::string & topic_name,
+    std::chrono::milliseconds timeout
+) {
+    auto subscription = node.create_subscription<px4_msgs::msg::VehicleStatus>(
+        topic_name,
+        rclcpp::QoS(1).best_effort(),
+        [](px4_msgs::msg::VehicleStatus::UniquePtr) {}
+    );
+
+    rclcpp::WaitSet wait_set;
+    wait_set.add_subscription(subscription);
+
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (rclcpp::ok() && std::chrono::steady_clock::now() < deadline) {
+        const auto now = std::chrono::steady_clock::now();
+        const auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(deadline - now);
+        const auto wait_result = wait_set.wait(remaining);
+
+        if (wait_result.kind() == rclcpp::WaitResultKind::Ready) {
+            px4_msgs::msg::VehicleStatus message;
+            rclcpp::MessageInfo message_info;
+
+            if (subscription->take(message, message_info)) {
+                wait_set.remove_subscription(subscription);
+                return true;
+            }
+        }
+    }
+
+    wait_set.remove_subscription(subscription);
+    return false;
+}
 
 void DeclareManagedParameters(LifecycleConfigurator & configurator)
 {
@@ -66,7 +107,8 @@ MissionExecutorNode::MissionExecutorNode(
         }
     };
 
-	std::string log_level = std::getenv("MISSION_EXECUTOR_LOG_LEVEL");
+	const char * log_level_env = std::getenv("MISSION_EXECUTOR_LOG_LEVEL");
+	std::string log_level = log_level_env == nullptr ? "" : log_level_env;
 
 	if (log_level != "") {
 
@@ -206,7 +248,34 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
         "MissionExecutorNode::on_activate(): Starting mission executor"
     );
 
-    mission_executor_->Start(configurator_);
+    if (!WaitForVehicleStatusMessage(*this, "/fmu/out/vehicle_status_v1", std::chrono::seconds(5))) {
+        RCLCPP_ERROR(
+            get_logger(),
+            "MissionExecutorNode::on_activate(): Cannot start mission executor because "
+            "/fmu/out/vehicle_status_v1 did not publish a fresh message. Start the PX4 ROS bridge "
+            "and verify the FMU is publishing before activating mission execution."
+        );
+        return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
+    }
+
+    try {
+        mission_executor_->Start(configurator_);
+    } catch (const std::exception & exc) {
+        RCLCPP_ERROR(
+            get_logger(),
+            "MissionExecutorNode::on_activate(): Failed to start mission executor: %s",
+            exc.what()
+        );
+        cleanup();
+        return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
+    } catch (...) {
+        RCLCPP_ERROR(
+            get_logger(),
+            "MissionExecutorNode::on_activate(): Failed to start mission executor: unknown exception"
+        );
+        cleanup();
+        return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
+    }
 
     RCLCPP_INFO(
         get_logger(), 
@@ -281,16 +350,10 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn MissionExecutorNode::on_error(
     const rclcpp_lifecycle::State & state
 ) {
-    (void)state;
-    
-    RCLCPP_FATAL(
-        get_logger(), 
-        "MissionExecutorNode::on_error(): An error occurred."
-    );
+    RCLCPP_FATAL(get_logger(), "MissionExecutorNode::on_error(): Lifecycle transition failed.");
+    cleanup();
 
-    throw std::runtime_error("An error occurred.");
-
-    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+    return rclcpp_lifecycle::LifecycleNode::on_error(state);
 
 }
 
@@ -357,7 +420,7 @@ int main(int argc, char **argv) {
         node.reset();
 
     } catch(const std::exception& e) {
-        
+        RCLCPP_FATAL(node->get_logger(), "MissionExecutorNode main loop failed: %s", e.what());
         node.reset();
 
     }
