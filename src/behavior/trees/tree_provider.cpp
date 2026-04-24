@@ -78,7 +78,7 @@ TreeProvider::TreeProvider(
 ) : rclcpp::Node(
     "behavior_tree",
     "/mission/behavior_tree",
-    rclcpp::NodeOptions()
+    rclcpp::NodeOptions().use_global_arguments(false)
 ),  tf_buffer_(tf_buffer),
     mission_specification_(mission_specification)
 {
@@ -91,7 +91,8 @@ TreeProvider::TreeProvider(
 
     // RCLCPP_INFO(get_logger(), "TreeProvider::TreeProvider(): Initializing.");
 
-	std::string log_level = std::getenv("BEHAVIOR_TREE_LOG_LEVEL");
+	const char * log_level_env = std::getenv("BEHAVIOR_TREE_LOG_LEVEL");
+	std::string log_level = log_level_env == nullptr ? "" : log_level_env;
 
 	if (log_level != "") {
 

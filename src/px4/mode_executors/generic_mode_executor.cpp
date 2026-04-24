@@ -22,7 +22,8 @@ GenericModeExecutor::GenericModeExecutor(
 ) : ModeExecutorBase(
     *mode_provider->mode_node(), 
     px4_ros2::ModeExecutorBase::Settings{.activation=px4_ros2::ModeExecutorBase::Settings::Activation::ActivateAlways}, 
-    owned_mode
+    owned_mode,
+    "/"
 ),  node_(*mode_provider->mode_node()),
     mode_executor_name_(mode_executor_name),
     mission_specification_(mission_specification),

@@ -1,0 +1,28 @@
+<root BTCPP_format="4" main_tree_to_execute="Land">
+     <BehaviorTree ID="Land">
+        <Sequence name="land_sequence">
+
+            <Action
+                ID="LogMessage"
+                name="log"
+                message="Land behavior tree started. Issuing land command."
+                log_level="0"
+            />
+
+            <Action
+                ID="ModeExecutorAction"
+                name="land"
+                action_request_type="2"
+            />
+
+            <Action
+                ID="LogMessage"
+                name="log"
+                message="Land completed. Terminating tree"
+                log_level="0"
+            />
+
+        </Sequence>
+     </BehaviorTree>
+
+ </root>

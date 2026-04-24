@@ -26,7 +26,8 @@ PowerlineOverviewProviderNode::PowerlineOverviewProviderNode(
         }
     };
 
-	std::string log_level = std::getenv("POWERLINE_OVERVIEW_PROVIDER_LOG_LEVEL");
+	const char * log_level_env = std::getenv("POWERLINE_OVERVIEW_PROVIDER_LOG_LEVEL");
+	std::string log_level = log_level_env == nullptr ? "" : log_level_env;
 
 	if (log_level != "") {
 
@@ -266,11 +267,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Powerl
     const rclcpp_lifecycle::State & state
 )
 {
-    (void)state;
-    RCLCPP_FATAL(get_logger(), "PowerlineOverviewProviderNode::on_error()");
-
-    throw std::runtime_error("PowerlineOverviewProviderNode::on_error()");
-    
+    RCLCPP_FATAL(get_logger(), "PowerlineOverviewProviderNode::on_error(): Lifecycle transition failed.");
+    return rclcpp_lifecycle::LifecycleNode::on_error(state);
 }
 
 void PowerlineOverviewProviderNode::updatePowerlineOverviewCallback(
@@ -381,6 +379,7 @@ int main(int argc, char * argv[])
     try {
         executor.spin();
     } catch (const std::exception & e) {
+        RCLCPP_FATAL(node->get_logger(), "PowerlineOverviewProviderNode main loop failed: %s", e.what());
         node.reset();
     }
 

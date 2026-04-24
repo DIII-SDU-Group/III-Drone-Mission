@@ -29,7 +29,8 @@ ModeProvider::ModeProvider(
     RCLCPP_INFO(node_->get_logger(), "ModeProvider::ModeProvider(): Initializing.");
 
     mode_node_ = std::make_shared<rclcpp::Node>(
-        "px4_mode"
+        "px4_mode",
+        rclcpp::NodeOptions().use_global_arguments(false)
     );
     auto set_logger_level = [this](int severity) {
         const rcutils_ret_t ret = rcutils_logging_set_logger_level(mode_node_->get_logger().get_name(), severity);
@@ -38,7 +39,8 @@ ModeProvider::ModeProvider(
         }
     };
 
-	std::string log_level = std::getenv("PX4_MODE_LOG_LEVEL");
+	const char * log_level_env = std::getenv("PX4_MODE_LOG_LEVEL");
+	std::string log_level = log_level_env == nullptr ? "" : log_level_env;
 
 	if (log_level != "") {
 
