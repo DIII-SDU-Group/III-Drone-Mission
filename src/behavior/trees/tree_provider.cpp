@@ -78,7 +78,7 @@ TreeProvider::TreeProvider(
 ) : rclcpp::Node(
     "behavior_tree",
     "/mission/behavior_tree",
-    rclcpp::NodeOptions()
+    rclcpp::NodeOptions().use_global_arguments(false)
 ),  tf_buffer_(tf_buffer),
     mission_specification_(mission_specification)
 {
