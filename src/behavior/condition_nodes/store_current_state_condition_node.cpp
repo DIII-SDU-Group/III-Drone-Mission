@@ -35,7 +35,7 @@ BT::PortsList StoreCurrentStateConditionNode::providedPorts() {
 BT::NodeStatus StoreCurrentStateConditionNode::onTick(const std::shared_ptr<px4_msgs::msg::VehicleOdometry> & msg) {
 
     if (!msg) {
-        RCLCPP_ERROR(logger(), "StoreCurrentStateConditionNode::onTick(): Message is null");
+        RCLCPP_WARN(logger(), "StoreCurrentStateConditionNode::onTick(): Waiting for first vehicle odometry message");
         return BT::NodeStatus::FAILURE;
     }
 

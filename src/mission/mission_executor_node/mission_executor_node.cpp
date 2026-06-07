@@ -6,7 +6,11 @@
 
 #include <chrono>
 #include <exception>
+#include <algorithm>
+#include <cctype>
+#include <cstdlib>
 
+#include <lifecycle_msgs/msg/state.hpp>
 #include <px4_msgs/msg/vehicle_status.hpp>
 
 using namespace iii_drone::configuration;
@@ -51,6 +55,56 @@ bool WaitForVehicleStatusMessage(
 
     wait_set.remove_subscription(subscription);
     return false;
+}
+
+std::string Trim(const std::string & value)
+{
+    auto begin = value.begin();
+    while (begin != value.end() && std::isspace(static_cast<unsigned char>(*begin))) {
+        ++begin;
+    }
+    auto end = value.end();
+    while (end != begin && std::isspace(static_cast<unsigned char>(*(end - 1)))) {
+        --end;
+    }
+    return std::string(begin, end);
+}
+
+bool LooksLikeExplicitPath(const std::string & value)
+{
+    return !value.empty() &&
+        (value[0] == '/' || value[0] == '~' || value[0] == '$');
+}
+
+std::string ResolveMissionSpecificationRequest(
+    const std::string & requested,
+    const std::string & default_mission_specification_file,
+    bool use_default
+) {
+    if (use_default) {
+        return default_mission_specification_file;
+    }
+
+    const std::string trimmed = Trim(requested);
+    if (trimmed.empty()) {
+        throw std::runtime_error(
+            "mission_specification_file must be set unless use_default is true"
+        );
+    }
+    if (LooksLikeExplicitPath(trimmed)) {
+        return trimmed;
+    }
+
+    if (const char * mission_specification_dir = std::getenv("MISSION_SPECIFICATION_DIR");
+        mission_specification_dir != nullptr && std::string(mission_specification_dir) != "") {
+        std::string base_dir = mission_specification_dir;
+        if (!base_dir.empty() && base_dir.back() == '/') {
+            return base_dir + trimmed;
+        }
+        return base_dir + "/" + trimmed;
+    }
+
+    return trimmed;
 }
 
 void DeclareManagedParameters(LifecycleConfigurator & configurator)
@@ -138,6 +192,21 @@ MissionExecutorNode::MissionExecutorNode(
         "write_behavior_tree_model_xml",
         std::bind(&MissionExecutorNode::writeBehaviorTreeModelXmlService, this, std::placeholders::_1, std::placeholders::_2)
     );
+    override_mission_specification_service_ = create_service<iii_drone_interfaces::srv::OverrideMissionSpecification>(
+        "override_mission_specification",
+        std::bind(&MissionExecutorNode::overrideMissionSpecificationService, this, std::placeholders::_1, std::placeholders::_2)
+    );
+    mission_status_publisher_ = create_publisher<iii_drone_interfaces::msg::MissionModeStatus>(
+        "/mission/status",
+        rclcpp::SystemDefaultsQoS()
+    );
+    mission_status_publisher_->on_activate();
+    mission_status_timer_ = create_wall_timer(
+        std::chrono::milliseconds(500),
+        [this]() {
+            publishMissionModeStatus();
+        }
+    );
 
     odometry_sub_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     get_reference_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
@@ -177,6 +246,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     );
     DeclareManagedParameters(*configurator_);
     configurator_->validate();
+    default_mission_specification_file_ = configurator_->GetParameter("/mission/mission_specification_file").as_string();
+    mission_specification_file_ = default_mission_specification_file_;
 
     // TF Buffer
     if (tf_buffer_ == nullptr) {
@@ -199,6 +270,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     );
 
     RCLCPP_INFO(get_logger(), "MissionExecutorNode::on_configure(): Configured");
+    mission_status_degraded_reason_.clear();
+    publishMissionModeStatus();
 
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 
@@ -220,6 +293,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     }
 
     cleanup();
+    publishMissionModeStatus();
 
     RCLCPP_INFO(get_logger(), "MissionExecutorNode::on_cleanup(): Cleaned up");
 
@@ -255,6 +329,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
             "/fmu/out/vehicle_status_v1 did not publish a fresh message. Start the PX4 ROS bridge "
             "and verify the FMU is publishing before activating mission execution."
         );
+        mission_status_degraded_reason_ = "PX4 vehicle status topic /fmu/out/vehicle_status_v1 is stale or unavailable";
+        publishMissionModeStatus();
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
     }
 
@@ -266,14 +342,18 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
             "MissionExecutorNode::on_activate(): Failed to start mission executor: %s",
             exc.what()
         );
+        mission_status_degraded_reason_ = exc.what();
         cleanup();
+        publishMissionModeStatus();
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
     } catch (...) {
         RCLCPP_ERROR(
             get_logger(),
             "MissionExecutorNode::on_activate(): Failed to start mission executor: unknown exception"
         );
+        mission_status_degraded_reason_ = "unknown mission executor activation failure";
         cleanup();
+        publishMissionModeStatus();
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
     }
 
@@ -281,6 +361,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
         get_logger(), 
         "MissionExecutorNode::on_activate(): Activated"
     );
+    mission_status_degraded_reason_.clear();
+    publishMissionModeStatus();
 
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 
@@ -307,6 +389,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
         "MissionExecutorNode::on_deactivate(): Deactivating mission executor"
     );
     mission_executor_->Stop();
+    publishMissionModeStatus();
 
     RCLCPP_INFO(
         get_logger(), 
@@ -333,6 +416,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     }
 
     cleanup();
+    publishMissionModeStatus();
 
     // Create and start thread detached which sleeps for 1 second, then shuts down rclcpp
     std::thread shutdown_thread([this](){
@@ -352,6 +436,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
 ) {
     RCLCPP_FATAL(get_logger(), "MissionExecutorNode::on_error(): Lifecycle transition failed.");
     cleanup();
+    publishMissionModeStatus();
 
     return rclcpp_lifecycle::LifecycleNode::on_error(state);
 
@@ -377,6 +462,77 @@ void MissionExecutorNode::writeBehaviorTreeModelXmlService(
 
 }
 
+void MissionExecutorNode::overrideMissionSpecificationService(
+    const std::shared_ptr<iii_drone_interfaces::srv::OverrideMissionSpecification::Request> request,
+    std::shared_ptr<iii_drone_interfaces::srv::OverrideMissionSpecification::Response> response
+) {
+
+    if (get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {
+        response->success = false;
+        response->message = "mission specification override rejected because mission executor lifecycle node is not active";
+        response->active_mission_specification_file = mission_specification_file_;
+        return;
+    }
+
+    if (mission_executor_ == nullptr || configurator_ == nullptr) {
+        response->success = false;
+        response->message = "mission specification override rejected because mission executor is not initialized";
+        response->active_mission_specification_file = mission_specification_file_;
+        return;
+    }
+
+    std::string requested_specification_file;
+    try {
+        requested_specification_file = ResolveMissionSpecificationRequest(
+            request->mission_specification_file,
+            default_mission_specification_file_,
+            request->use_default
+        );
+    } catch (const std::exception & exception) {
+        response->success = false;
+        response->message = exception.what();
+        response->active_mission_specification_file = mission_specification_file_;
+        return;
+    }
+
+    std::string message;
+    const bool success = mission_executor_->OverrideMissionSpecification(
+        requested_specification_file,
+        configurator_,
+        get_reference_cb_group_,
+        message
+    );
+
+    response->success = success;
+    response->message = message;
+    if (success) {
+        mission_specification_file_ = mission_executor_->mission_specification()->mission_specification_file();
+        mission_status_degraded_reason_.clear();
+    }
+    if (mission_executor_ != nullptr && mission_executor_->mission_specification() != nullptr) {
+        response->active_mission_specification_file =
+            mission_executor_->mission_specification()->mission_specification_file();
+    } else {
+        response->active_mission_specification_file = mission_specification_file_;
+    }
+    publishMissionModeStatus();
+
+    if (success) {
+        RCLCPP_INFO(
+            get_logger(),
+            "MissionExecutorNode::overrideMissionSpecificationService(): %s",
+            response->message.c_str()
+        );
+    } else {
+        RCLCPP_WARN(
+            get_logger(),
+            "MissionExecutorNode::overrideMissionSpecificationService(): %s",
+            response->message.c_str()
+        );
+    }
+
+}
+
 void MissionExecutorNode::cleanup() {
 
     RCLCPP_DEBUG(get_logger(), "MissionExecutorNode::cleanup()");
@@ -398,6 +554,90 @@ void MissionExecutorNode::cleanup() {
     }
 
     RCLCPP_DEBUG(get_logger(), "MissionExecutorNode::cleanup(): Cleaned up.");
+
+}
+
+std::vector<std::string> MissionExecutorNode::requiredMissionModes() const {
+
+    if (mission_executor_ == nullptr || mission_executor_->mission_specification() == nullptr) {
+        return {};
+    }
+    return mission_executor_->mission_specification()->mode_keys();
+
+}
+
+std::vector<std::string> MissionExecutorNode::registeredMissionModes() const {
+
+    if (mission_executor_ == nullptr || mission_executor_->mode_provider() == nullptr) {
+        return {};
+    }
+    return mission_executor_->mode_provider()->registered_mode_keys();
+
+}
+
+bool MissionExecutorNode::requiredMissionModesRegistered() const {
+
+    const auto required_modes = requiredMissionModes();
+    const auto registered_modes = registeredMissionModes();
+    if (required_modes.empty()) {
+        return false;
+    }
+    for (const auto & mode : required_modes) {
+        if (std::find(registered_modes.begin(), registered_modes.end(), mode) == registered_modes.end()) {
+            return false;
+        }
+    }
+    return true;
+
+}
+
+void MissionExecutorNode::publishMissionModeStatus() {
+
+    if (!mission_status_publisher_) {
+        return;
+    }
+
+    iii_drone_interfaces::msg::MissionModeStatus msg;
+    msg.stamp = get_clock()->now();
+    msg.active_mission_specification = mission_specification_file_;
+    msg.required_modes = requiredMissionModes();
+    msg.registered_modes = registeredMissionModes();
+    msg.required_modes_registered = requiredMissionModesRegistered();
+
+    if (mission_executor_ != nullptr && mission_executor_->mission_specification() != nullptr) {
+        msg.owned_mode = mission_executor_->mission_specification()->executor_owned_mode();
+        if (msg.active_mission_specification.empty()) {
+            msg.active_mission_specification = mission_executor_->mission_specification()->mission_specification_file();
+        }
+    }
+
+    msg.mission_active = mission_executor_ != nullptr && mission_executor_->mission_active();
+    msg.degraded_reason = mission_status_degraded_reason_;
+    msg.degraded = !mission_status_degraded_reason_.empty() ||
+        (msg.mission_active && !msg.required_modes_registered);
+    if (!mission_status_degraded_reason_.empty()) {
+        msg.degraded_reasons.push_back(mission_status_degraded_reason_);
+    }
+    if (msg.mission_active && !msg.required_modes_registered) {
+        msg.degraded_reasons.push_back("not all mission modes are registered with PX4");
+    }
+    msg.ready = mission_executor_ != nullptr && !msg.degraded;
+
+    if (msg.degraded) {
+        msg.mission_state = iii_drone_interfaces::msg::MissionModeStatus::MISSION_STATE_DEGRADED;
+        msg.mission_state_label = "degraded";
+    } else if (msg.mission_active) {
+        msg.mission_state = iii_drone_interfaces::msg::MissionModeStatus::MISSION_STATE_ACTIVE;
+        msg.mission_state_label = "active";
+    } else if (mission_executor_ != nullptr) {
+        msg.mission_state = iii_drone_interfaces::msg::MissionModeStatus::MISSION_STATE_READY;
+        msg.mission_state_label = "ready";
+    } else {
+        msg.mission_state = iii_drone_interfaces::msg::MissionModeStatus::MISSION_STATE_IDLE;
+        msg.mission_state_label = "idle";
+    }
+
+    mission_status_publisher_->publish(msg);
 
 }
 

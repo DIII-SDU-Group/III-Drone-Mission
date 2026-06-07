@@ -118,6 +118,19 @@ void ModeProvider::Stop() {
 
 }
 
+void ModeProvider::ClearGlobalBlackboard(const std::string & reason) {
+    if (!tree_provider_) {
+        RCLCPP_WARN(
+            node_->get_logger(),
+            "ModeProvider::ClearGlobalBlackboard(): Tree provider is not available. Reason: %s",
+            reason.c_str()
+        );
+        return;
+    }
+
+    tree_provider_->ClearGlobalBlackboard(reason);
+}
+
 ManeuverMode::SharedPtr ModeProvider::GetMode(const std::string& name) const {
 
     auto it = modes_.find(name);
@@ -152,6 +165,7 @@ void ModeProvider::initializeModes() {
     
         ManeuverMode::SharedPtr mode = std::make_shared<ManeuverMode>(
             *mode_node_,
+            entry.key,
             entry.mode_name,
             dt,
             is_owned_mode,
@@ -201,6 +215,43 @@ ModeProviderIterator ModeProvider::end() {
 rclcpp::Node::SharedPtr ModeProvider::mode_node() const {
 
     return mode_node_;
+
+}
+
+std::vector<std::string> ModeProvider::mode_keys() const {
+
+    std::vector<std::string> values;
+    values.reserve(modes_.size());
+    for (const auto & item : modes_) {
+        values.push_back(item.first);
+    }
+    return values;
+
+}
+
+std::vector<std::string> ModeProvider::registered_mode_keys() const {
+
+    std::vector<std::string> values;
+    for (const auto & item : modes_) {
+        if (item.second->is_registered()) {
+            values.push_back(item.first);
+        }
+    }
+    return values;
+
+}
+
+bool ModeProvider::all_modes_registered() const {
+
+    if (modes_.empty()) {
+        return false;
+    }
+    for (const auto & item : modes_) {
+        if (!item.second->is_registered()) {
+            return false;
+        }
+    }
+    return true;
 
 }
 

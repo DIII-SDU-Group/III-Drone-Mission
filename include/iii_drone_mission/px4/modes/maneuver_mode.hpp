@@ -7,7 +7,9 @@
 /*****************************************************************************/
 // Std:
 
+#include <functional>
 #include <memory>
+#include <string>
 
 /*****************************************************************************/
 // ROS2:
@@ -33,12 +35,20 @@
 /*****************************************************************************/
 // III-Drone-Interfaces:
 
+#include <iii_drone_interfaces/msg/string_stamped.hpp>
+
 #include <iii_drone_interfaces/srv/register_offboard_mode.hpp>
 
 /*****************************************************************************/
 // PX4-ROS2:
 
 #include <px4_ros2/components/mode.hpp>
+
+/*****************************************************************************/
+// PX4 messages:
+
+#include <px4_msgs/msg/vehicle_status.hpp>
+#include <px4_msgs/msg/vehicle_command.hpp>
 
 /*****************************************************************************/
 // Class:
@@ -52,6 +62,7 @@ namespace px4 {
     public:
         explicit ManeuverMode(
             rclcpp::Node & node,
+            std::string mode_key,
             std::string mode_name,
             float dt,
             bool is_owned_mode,
@@ -83,6 +94,9 @@ namespace px4 {
         void updateSetpoint(float dt) override;
 
         std::string mode_name() const;
+        std::string mode_key() const;
+        bool is_registered() const;
+        bool active() const;
 
         typedef std::shared_ptr<ManeuverMode> SharedPtr;
 
@@ -97,11 +111,17 @@ namespace px4 {
 
         std::string mode_name_;
 
+        std::string mode_key_;
+
         float dt_;
 
         bool is_owned_mode_;
 
-        bool is_registered_ = false;
+        utils::Atomic<bool> is_registered_ = false;
+
+        utils::Atomic<bool> offboard_mode_registered_ = false;
+
+        utils::Atomic<bool> active_ = false;
 
         utils::Atomic<bool> stay_alive_on_next_deactivate_ = false;
 
@@ -109,14 +129,28 @@ namespace px4 {
 
         utils::Atomic<bool> tree_completion_reported_ = false;
 
+        utils::Atomic<bool> emergency_reference_hold_active_ = false;
+
         std::function<void()> on_next_activate_callback_ = nullptr;
 
         rclcpp::Client<iii_drone_interfaces::srv::RegisterOffboardMode>::SharedPtr register_offboard_mode_client_;
 
-        void sendRegisterOffboardModeRequest(
+        rclcpp::Publisher<px4_msgs::msg::VehicleCommand>::SharedPtr vehicle_command_publisher_;
+
+        rclcpp::Publisher<iii_drone_interfaces::msg::StringStamped>::SharedPtr status_publisher_;
+
+        rclcpp::TimerBase::SharedPtr status_timer_;
+
+        bool sendRegisterOffboardModeRequest(
             bool deregister,
             bool force = false
         );
+
+        void publishHoldCommand();
+
+        void startExecutionIfReady();
+
+        void publishStatus();
 
     };
 

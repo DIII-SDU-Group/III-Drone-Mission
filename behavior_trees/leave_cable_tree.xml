@@ -8,32 +8,11 @@
                 log_level="2"
             />
 
-            <Action ID="HoverOnCable" name="hover_on_cable" 
-                  target_cable_id="{@target_cable_id}"
-                  duration_s="3." 
-                  sustain_action="true"
-                  target_upwards_velocity="2.0"
+            <Action
+                  ID="Sleep"
+                  name="pre_takeoff_wait"
+                  msec="1000"
             />
-
-            <!-- <Action ID="HoverOnCable" name="hover_on_cable_2" 
-                target_cable_id="{@target_cable_id}"
-                duration_s="10." 
-                target_upwards_velocity="2.0"
-                stop_maneuver_after_timeout_ms="9900"
-            />
-
-           <Action 
-                ID="LogMessage" 
-                name="log"
-                message="Hovering on cable completed."
-                log_level="2"
-            />
-
-            <Action 
-                  ID="GripperCommand" 
-                  name="gripper_command_open" 
-                  gripper_command="0" 
-            /> -->
 
             <Action 
                 ID="PLMapperCommand" 
@@ -42,10 +21,51 @@
                 reset="false"
             />
 
+            <RetryUntilSuccessful name="arm_on_cable_retry" num_attempts="5">
+                <Delay name="delay_arm_on_cable" delay_msec="1000">
+                    <Action 
+                        ID="ModeExecutorAction" 
+                        name="arm_on_cable" 
+                        action_request_type="3"
+                    />
+                </Delay>
+            </RetryUntilSuccessful>
+
+            <Action ID="HoverOnCable" name="pre_release_upward_thrust"
+                target_cable_id="{@target_cable_id}"
+                duration_s="7."
+                target_upwards_velocity="2.0"
+                stop_maneuver_after_timeout_ms="7000"
+            />
+
+            <Action
+                  ID="Sleep"
+                  name="pre_release_thrust_wait"
+                  msec="5000"
+            />
+
+            <Action 
+                  ID="GripperCommand" 
+                  name="gripper_command_open" 
+                  gripper_command="0" 
+            />
+
+            <Action
+                  ID="Sleep"
+                  name="wait_for_gripper_release"
+                  msec="250"
+            />
+
             <Action
                ID="CableTakeoff"
                name="cable_takeoff"
                target_cable_id="{@target_cable_id}"
+            />
+
+            <Action
+                  ID="Sleep"
+                  name="wait_for_in_flight_awareness"
+                  msec="1000"
             />
 
             <Action 
@@ -74,7 +94,15 @@
                 target_yaw="{initial_yaw}"
             />
 
-            <LoopPoint queue="{waypoints}" value="{waypoint}">
+            <Action
+                ID="SplitPointQueue"
+                name="split_return_waypoints"
+                queue="{waypoints}"
+                prefix="{blend_waypoints}"
+                last="{final_waypoint}"
+            />
+
+            <LoopPoint queue="{blend_waypoints}" value="{waypoint}">
                 <Decorator ID="Delay" name="delay_between_waypoints" delay_msec="100">
                     <Action
                         ID="FlyToPosition"
@@ -82,9 +110,18 @@
                         target_position="{waypoint}"
                         target_yaw="{initial_yaw}"
                         frame_id="world"
+                        blend_to_next="true"
                     />
                 </Decorator>
             </LoopPoint>
+
+            <Action
+                ID="FlyToPosition"
+                name="fly_to_final_initial_position"
+                target_position="{final_waypoint}"
+                target_yaw="{initial_yaw}"
+                frame_id="world"
+            />
         </Sequence>
      </BehaviorTree>
 

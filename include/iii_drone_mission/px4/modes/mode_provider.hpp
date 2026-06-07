@@ -10,6 +10,8 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 
+#include <vector>
+
 /*****************************************************************************/
 // III-Drone-Configuration:
 
@@ -65,6 +67,7 @@ namespace px4 {
 
         void Cleanup();
         void Stop();
+        void ClearGlobalBlackboard(const std::string & reason);
 
         iii_drone::px4::ManeuverMode::SharedPtr GetMode(const std::string& name) const;
 
@@ -72,6 +75,9 @@ namespace px4 {
         ModeProviderIterator end();
 
         rclcpp::Node::SharedPtr mode_node() const;
+        std::vector<std::string> mode_keys() const;
+        std::vector<std::string> registered_mode_keys() const;
+        bool all_modes_registered() const;
 
         typedef std::shared_ptr<ModeProvider> SharedPtr;
 

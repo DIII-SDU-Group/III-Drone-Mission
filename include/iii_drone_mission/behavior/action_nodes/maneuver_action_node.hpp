@@ -139,6 +139,19 @@ namespace behavior {
             int stop_maneuver_after_timeout_ms = -1
         );
 
+        void safeSetManeuverNotRunning(const char * context);
+
+        void safeSetManeuverNotRunning(
+            int stop_maneuver_after_timeout_ms,
+            const char * context
+        );
+
+        void safeSetManeuverNotRunning(
+            const iii_drone::control::Reference & reference,
+            int stop_maneuver_after_timeout_ms,
+            const char * context
+        );
+
         /**
          * @brief Callback function to get final reference for subsequent hovering given the action result.
          * If provided, the function should return the final reference for subsequent hovering,
@@ -157,6 +170,26 @@ namespace behavior {
          * @param callback The callback function.
          */
         void setGetFinalReferenceCallback(std::function<iii_drone::control::Reference(const typename BT::RosActionNode<ActionT>::WrappedResult &)> callback);
+
+        /**
+         * @brief Whether a successful action result should stop the maneuver reference stream.
+         *
+         * Most maneuver nodes are terminal on success and should stop the active maneuver
+         * reference stream. FTP blending is the exception: a successful blended segment
+         * should let the next queued/near-immediate FTP inherit a live reference path.
+         */
+        virtual bool shouldStopManeuverOnSuccessfulResult(
+            const typename BT::RosActionNode<ActionT>::WrappedResult & wr
+        ) const;
+
+        /**
+         * @brief Whether this goal may attach to an already-active maneuver reference stream.
+         *
+         * Normal maneuvers must call StartManeuver() and fail if another stream is
+         * active. Blended FTP handoff deliberately keeps the stream active across
+         * two BT nodes, so the following FTP may attach instead.
+         */
+        virtual bool shouldAttachToActiveManeuverStreamOnGoalAccepted() const;
 
         /**
          * @brief The name of the maneuver action node.

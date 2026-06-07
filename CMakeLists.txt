@@ -23,6 +23,7 @@ include(CTest)
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
 
 set(dependencies
   rclcpp
@@ -34,6 +35,7 @@ set(dependencies
   geometry_msgs
   nav_msgs
   std_msgs
+  std_srvs
 
   px4_msgs
   px4_ros2_cpp
@@ -75,6 +77,7 @@ set(III_DRONE_MISSION_HDRS
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/px4/setpoints/trajectory_setpoint.hpp"
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/port_types.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/powerline_geometry.hpp"
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/maneuver_action_node.hpp"
 
@@ -89,9 +92,16 @@ set(III_DRONE_MISSION_HDRS
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/gripper_command_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/update_powerline_overview_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/get_powerline_overview_action_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/get_pylon_overview_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/powerline_waypoint_provider_action_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/phase_waypoint_provider_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/mode_executor_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/log_message_action_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/rosbag_recording_action_nodes.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/runtime_intent_action_nodes.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/inspection_waypoint_progress_nodes.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/cable_charging_monitor_action_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/split_point_queue_action_node.hpp"
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/verify_gripper_closed_condition_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/verify_powerline_detected_condition_node.hpp"
@@ -100,6 +110,9 @@ set(III_DRONE_MISSION_HDRS
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/store_current_state_condition_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/publish_powerline_waypoints_condition_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/get_gripper_alignment_yaw_condition_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/verify_disarmed_condition_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/maneuver_action_status_nodes.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/condition_nodes/battery_recharge_condition_node.hpp"
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/trees/tree_executor.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/trees/tree_provider.hpp"
@@ -107,6 +120,9 @@ set(III_DRONE_MISSION_HDRS
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/mission_specification.hpp"
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/mission_executor.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/overview_gnss_persistence.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/rosbag_recorder_node/rosbag_recorder_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/pylon_overview_provider_node/pylon_overview_provider_node.hpp"
 
 )
 
@@ -119,6 +135,7 @@ set(III_DRONE_MISSION_SRCS
   "${PROJECT_SOURCE_DIR}/src/px4/setpoints/trajectory_setpoint.cpp"
 
   "${PROJECT_SOURCE_DIR}/src/behavior/port_types.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/powerline_geometry.cpp"
 
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/maneuver_action_node.cpp"
 
@@ -133,9 +150,16 @@ set(III_DRONE_MISSION_SRCS
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/gripper_command_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/update_powerline_overview_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/get_powerline_overview_action_node.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/get_pylon_overview_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/powerline_waypoint_provider_action_node.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/phase_waypoint_provider_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/mode_executor_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/log_message_action_node.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/rosbag_recording_action_nodes.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/runtime_intent_action_nodes.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/inspection_waypoint_progress_nodes.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/cable_charging_monitor_action_node.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/split_point_queue_action_node.cpp"
 
   "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/verify_gripper_closed_condition_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/verify_powerline_detected_condition_node.cpp"
@@ -144,6 +168,9 @@ set(III_DRONE_MISSION_SRCS
   "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/store_current_state_condition_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/publish_powerline_waypoints_condition_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/get_gripper_alignment_yaw_condition_node.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/verify_disarmed_condition_node.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/maneuver_action_status_nodes.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/condition_nodes/battery_recharge_condition_node.cpp"
 
   "${PROJECT_SOURCE_DIR}/src/behavior/trees/tree_executor.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/trees/tree_provider.cpp"
@@ -151,6 +178,7 @@ set(III_DRONE_MISSION_SRCS
   "${PROJECT_SOURCE_DIR}/src/mission/mission_specification.cpp"
 
   "${PROJECT_SOURCE_DIR}/src/mission/mission_executor.cpp"
+  "${PROJECT_SOURCE_DIR}/src/mission/overview_gnss_persistence.cpp"
 
 )
 
@@ -250,13 +278,25 @@ custom_cpp_target(powerline_overview_provider
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/powerline_overview_provider_node/powerline_overview_provider_node.hpp"
 )
 
+custom_cpp_target(pylon_overview_provider
+  "${PROJECT_SOURCE_DIR}/src/mission/pylon_overview_provider_node/pylon_overview_provider_node.cpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/pylon_overview_provider_node/pylon_overview_provider_node.hpp"
+)
+
+custom_cpp_target(rosbag_recorder
+  "${PROJECT_SOURCE_DIR}/src/mission/rosbag_recorder_node/rosbag_recorder_node.cpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/rosbag_recorder_node/rosbag_recorder_node.hpp"
+)
+
+custom_cpp_target(custom_operation
+  "${PROJECT_SOURCE_DIR}/src/operations/custom_operation_node.cpp"
+)
+
 ############
 # Install ##
 ############
 # Install Python modules
-# ament_python_install_package(${PROJECT_NAME})
-# Install Python executables
-
+ament_python_install_package(${PROJECT_NAME})
 # Export information to downstream packages
 ament_export_dependencies(${dependencies})
 

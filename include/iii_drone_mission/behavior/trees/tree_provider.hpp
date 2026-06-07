@@ -34,6 +34,7 @@
 #include <iii_drone_mission/behavior/trees/tree_executor.hpp>
 
 #include <iii_drone_mission/mission/mission_specification.hpp>
+#include <iii_drone_mission/mission/runtime_intent_buffer.hpp>
 
 /*****************************************************************************/
 // BT.CPP:
@@ -66,15 +67,20 @@ namespace behavior {
     public:
         TreeProvider(
             tf2_ros::Buffer::SharedPtr tf_buffer,
-            iii_drone::mission::MissionSpecification::SharedPtr mission_specification
+            iii_drone::mission::MissionSpecification::SharedPtr mission_specification,
+            std::shared_ptr<iii_drone::mission::RuntimeIntentBuffer> runtime_intent_buffer
         );
 
         void Configure(
             iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client
         );
         void Cleanup();
+        void SetMissionSpecification(
+            iii_drone::mission::MissionSpecification::SharedPtr mission_specification
+        );
 
         TreeExecutor::SharedPtr GetTreeExecutor(const std::string& name) const;
+        void ClearGlobalBlackboard(const std::string & reason);
 
         const BT::BehaviorTreeFactory & factory() const {
             return tree_executors_.begin()->second->factory();
@@ -91,6 +97,7 @@ namespace behavior {
         iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client_;
 
         iii_drone::mission::MissionSpecification::SharedPtr mission_specification_;
+        std::shared_ptr<iii_drone::mission::RuntimeIntentBuffer> runtime_intent_buffer_;
 
         iii_drone::configuration::Configurator<rclcpp::Node>::SharedPtr configurator_;
 

@@ -1,5 +1,18 @@
 <root BTCPP_format="4" main_tree_to_execute="ReachCable">
      <BehaviorTree ID="ReachCable">
+        <Decorator
+            ID="RosbagRecordingScope"
+            name="reach_cable_rosbag_recording_scope"
+            all_topics="false"
+            topics="/fmu/out/vehicle_status_v1,/fmu/out/vehicle_odometry,/fmu/out/vehicle_land_detected,/fmu/in/trajectory_setpoint,/control/maneuver_controller/reference,/control/maneuver_controller/reference_mode,/mission_executor/maneuver_reference_client/reference_mode,/perception/pl_mapper/powerline,/payload/charger_gripper/gripper_status,/payload/charger_gripper/sim_state,/tf,/tf_static"
+            include_hidden_topics="false"
+            stop_timeout_sec="10.0"
+        >
+            <SubTree ID="ReachCableCore"/>
+        </Decorator>
+     </BehaviorTree>
+
+     <BehaviorTree ID="ReachCableCore">
         <Sequence name="land_on_cable_top_sequence">
 
             <RetryUntilSuccessful name="store_init_state_retry_until_successful" num_attempts="3">
@@ -26,25 +39,20 @@
                 start_yaw="{start_yaw}"
             />
 
-            <!-- <Action 
-                ID="LogMessage" 
-                name="log"
-                message="Issuing land command"
-                log_level="2"
-            />
-
             <Action 
                 ID="ModeExecutorAction" 
                 name="land" 
                 action_request_type="2"
             />
 
-            <Action 
-                ID="LogMessage" 
-                name="log"
-                message="Land completed. Terminating behavior tree."
-                log_level="2"
-            /> -->
+            <RetryUntilSuccessful name="wait_disarmed_retry_until_successful" num_attempts="20">
+                <Decorator ID="Delay" name="delay_wait_disarmed" delay_msec="500">
+                    <Condition
+                        ID="VerifyDisarmed"
+                        name="verify_disarmed"
+                    />
+                </Decorator>
+            </RetryUntilSuccessful>
 
         </Sequence>
      </BehaviorTree>
@@ -54,36 +62,65 @@
             <Action
                 ID="GetPowerlineOverview"
                 name="get_powerline_overview"
-                stored_powerline="{stored_powerline}"
+                stored_powerline="{@stored_powerline}"
             />
+
+            <Fallback name="optional_get_pylon_overview_fallback">
+                <Action
+                    ID="GetPylonOverview"
+                    name="get_pylon_overview"
+                    stored_pylon_overview="{stored_pylon_overview}"
+                />
+                <AlwaysSuccess name="no_pylon_overview_available"/>
+            </Fallback>
 
             <Action
                 ID="PowerlineWaypointProvider"
                 name="fly_to_powerline_waypoint_provider"
-                stored_powerline="{stored_powerline}"
+                stored_powerline="{@stored_powerline}"
+                stored_pylon_overview="{stored_pylon_overview}"
                 start_state="{initial_state}"
                 waypoints_depart="{waypoints}"
                 waypoints_return="{@waypoints_return}"
+                waypoint_target_yaw="{waypoint_target_yaw}"
+                powerline_overview_required_line_id="{@powerline_overview_required_line_id}"
             />
 
             <Action
                 ID="PublishPowerlineWaypoints"
                 name="publish_powerline_waypoints"
                 waypoints="{waypoints}"
-                target_yaw="{initial_yaw}"
+                target_yaw="{waypoint_target_yaw}"
             />
 
-            <LoopPoint queue="{waypoints}" value="{waypoint}">
+            <Action
+                ID="SplitPointQueue"
+                name="split_depart_waypoints"
+                queue="{waypoints}"
+                prefix="{blend_waypoints}"
+                last="{final_waypoint}"
+            />
+
+            <LoopPoint queue="{blend_waypoints}" value="{waypoint}">
                 <Decorator ID="Delay" name="delay_between_waypoints" delay_msec="100">
                     <Action
                         ID="FlyToPosition"
                         name="fly_to_position"
                         target_position="{waypoint}"
-                        target_yaw="{initial_yaw}"
+                        target_yaw="{waypoint_target_yaw}"
                         frame_id="world"
+                        blend_to_next="true"
                     />
                 </Decorator>
             </LoopPoint>
+
+            <Action
+                ID="FlyToPosition"
+                name="fly_to_final_depart_waypoint"
+                target_position="{final_waypoint}"
+                target_yaw="{waypoint_target_yaw}"
+                frame_id="world"
+            />
         </Sequence>
      </BehaviorTree>
 
@@ -116,84 +153,139 @@
                             ID="VerifyPowerlineDetected" 
                             name="verify_powerline_detected" 
                             required_n_lines="2"
+                            powerline_overview="{@stored_powerline}"
+                            powerline_overview_required_line_id="{@powerline_overview_required_line_id}"
+                            line_match_distance_threshold_m="0.45"
+                            relaxed_line_match_distance_threshold_m="0.85"
+                            line_match_ambiguity_margin_m="0.35"
+                            matched_detected_line_id="{@target_cable_id}"
+                            matched_line_distance_m="{@target_cable_match_distance_m}"
                         />
                     </Decorator>
                 </RetryUntilSuccessful>
 
-                <Condition 
-                    ID="SelectTargetLine" 
-                    name="select_target_line" 
-                    target_cable_id="{@target_cable_id}"
-                />
-
-                <Condition 
-                    ID="GetGripperAlignmentYaw" 
-                    name="get_gripper_alignment_yaw" 
-                    target_yaw="{target_alignment_yaw}"
-                />
-
-                <Action
-                    ID="FlyToPosition"
-                    name="fly_to_position"
-                    target_position="{init_position}"
-                    target_yaw="{target_alignment_yaw}"
-                    frame_id="world"
-                />
-
-                <Condition 
-                    ID="TargetProvider"
-                    name="fly_to_cable_target_provider"
-                    mode="0"
-                    target_id="{@target_cable_id}"
-                    target="{fly_to_cable_target}"
-                />
-                <Action 
-                    ID="FlyToObject" 
-                    name="fly_to_cable" 
-                    target="{fly_to_cable_target}"
-                />
-
-                <Condition 
-                    ID="TargetProvider"
-                    name="hover_by_cable_target_provider"
-                    mode="1"
-                    target_id="{@target_cable_id}"
-                    target="{hover_by_cable_target}"
-                />
-                <Action 
-                    ID="HoverByObject" 
-                    name="hover_by_cable"
-                    duration_s="10."
-                    stop_maneuver_after_timeout_ms="9900"
-                    target="{hover_by_cable_target}"
-                />
-
-                <Action
-                    ID="GripperCommand"
-                    name="gripper_command_close"
-                    gripper_command="1"
-                />
-
-                <RetryUntilSuccessful name="landing_maneuver_retry_until_successful" num_attempts="3">
+                <Decorator
+                    ID="RetryUntilSuccessfulOnAborted"
+                    name="landing_maneuver_retry_until_successful_on_aborted"
+                    num_attempts="3"
+                    terminal_state="{landing_terminal_state}"
+                >
                     <Fallback name="landing_maneuver_fallback">
-                        <Action
-                            ID="CableLanding"
-                            name="cable_landing"
-                            target_cable_id="{@target_cable_id}"
-                        />
+                        <Sequence name="landing_attempt_sequence">
+                            <Condition
+                                ID="VerifyPowerlineDetected"
+                                name="verify_powerline_detected_before_landing_attempt"
+                                required_n_lines="2"
+                                powerline_overview="{@stored_powerline}"
+                                powerline_overview_required_line_id="{@powerline_overview_required_line_id}"
+                                line_match_distance_threshold_m="0.45"
+                                relaxed_line_match_distance_threshold_m="0.85"
+                                line_match_ambiguity_margin_m="0.35"
+                                matched_detected_line_id="{@target_cable_id}"
+                                matched_line_distance_m="{@target_cable_match_distance_m}"
+                            />
 
-                        <Decorator ID="ForceFailure" name="fly_back_down_under_cable_force_failure">
-                            <Decorator ID="Delay" name="delay_fly_back_down_under_cable" delay_msec="100">
-                                <Action
-                                    ID="FlyToObject"
-                                    name="fly_back_down_under_cable"
-                                    target="{fly_to_cable_target}"
+                            <Condition
+                                ID="GetGripperAlignmentYaw"
+                                name="get_gripper_alignment_yaw"
+                                target_cable_id="{@target_cable_id}"
+                                target_yaw="{target_alignment_yaw}"
+                            />
+
+                            <Action
+                                ID="FlyToPosition"
+                                name="fly_to_position"
+                                target_position="{init_position}"
+                                target_yaw="{target_alignment_yaw}"
+                                frame_id="world"
+                            />
+
+                            <Condition
+                                ID="TargetProvider"
+                                name="fly_to_cable_target_provider"
+                                mode="0"
+                                target_id="{@target_cable_id}"
+                                target="{fly_to_cable_target}"
+                            />
+                            <Action
+                                ID="FlyToObject"
+                                name="fly_to_cable"
+                                target="{fly_to_cable_target}"
+                            />
+
+                            <Condition
+                                ID="TargetProvider"
+                                name="hover_by_cable_target_provider"
+                                mode="1"
+                                target_id="{@target_cable_id}"
+                                target="{hover_by_cable_target}"
+                            />
+                            <Action
+                                ID="HoverByObject"
+                                name="hover_by_cable"
+                                duration_s="10."
+                                stop_maneuver_after_timeout_ms="9900"
+                                target="{hover_by_cable_target}"
+                            />
+
+                            <Action
+                                ID="GripperCommand"
+                                name="gripper_command_close"
+                                gripper_command="1"
+                            />
+
+                            <Action
+                                ID="CableLanding"
+                                name="cable_landing"
+                                target_cable_id="{@target_cable_id}"
+                                terminal_state="{landing_terminal_state}"
+                            />
+                        </Sequence>
+
+                        <Sequence name="cable_takeoff_after_aborted_landing_sequence">
+                            <Condition
+                                ID="StringEquals"
+                                name="landing_aborted_check"
+                                value="{landing_terminal_state}"
+                                expected="ACTION_ABORTED"
+                            />
+
+                            <Decorator ID="ForceFailure" name="cable_takeoff_retry_force_failure">
+                                <Sequence name="cable_takeoff_retry_recover_target_sequence">
+                                    <Decorator ID="Delay" name="delay_cable_takeoff_retry" delay_msec="100">
+                                        <Action
+                                            ID="CableTakeoff"
+                                            name="cable_takeoff_retry"
+                                            target_cable_id="{@target_cable_id}"
+                                        />
+                                    </Decorator>
+
+                                    <Action
+                                        ID="Sleep"
+                                        name="wait_after_cable_takeoff_retry_for_target_reacquisition"
+                                        msec="2000"
+                                    />
+                                </Sequence>
+                            </Decorator>
+                        </Sequence>
+
+                        <RetryUntilSuccessful name="verify_gripper_closed_after_landing_failure_retry_until_successful" num_attempts="10">
+                            <Decorator ID="Delay" name="delay_verify_gripper_closed_after_landing_failure" delay_msec="100">
+                                <Condition
+                                    ID="VerifyGripperClosed"
+                                    name="verify_gripper_closed_after_landing_failure"
                                 />
                             </Decorator>
-                        </Decorator>
+                        </RetryUntilSuccessful>
                     </Fallback>
 
-                </RetryUntilSuccessful>
+                </Decorator>
+
+                <Action
+                    ID="Sleep"
+                    name="wait_for_on_cable_awareness"
+                    msec="500"
+                />
 
                 <Action
                     ID="PLMapperCommand"
@@ -227,4 +319,3 @@
         </Sequence>
     </BehaviorTree>
  </root>
-

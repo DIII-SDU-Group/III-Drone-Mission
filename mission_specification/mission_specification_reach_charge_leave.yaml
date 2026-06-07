@@ -1,0 +1,29 @@
+executor_owned_mode: "reach_cable"
+
+intent_services:
+  - service_name: "/mission/cable_charging/stay_on_cable"
+    flag_name: "charging.stay_on_cable"
+    type: "bool"
+    valid_modes: ["cable_charging"]
+  - service_name: "/mission/cable_charging/interrupt_recharging_now"
+    flag_name: "charging.interrupt_requested"
+    type: "bool"
+    valid_modes: ["cable_charging"]
+
+entries:
+  - key: "reach_cable"
+    mode_name: "Reach Cable"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/reach_cable_tree.xml"
+    allow_activate_when_disarmed: true
+    next_mode: "cable_charging"
+
+  - key: "cable_charging"
+    mode_name: "Cable Charging"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/cable_charging_tree.xml"
+    allow_activate_when_disarmed: true
+    next_mode: "leave_cable"
+
+  - key: "leave_cable"
+    mode_name: "Leave Cable"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/leave_cable_tree.xml"
+    allow_activate_when_disarmed: true

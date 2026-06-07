@@ -4,8 +4,10 @@
 
 #include <iii_drone_mission/px4/modes/maneuver_mode.hpp>
 
+#include <chrono>
 #include <exception>
 #include <future>
+#include <sstream>
 
 using namespace iii_drone::px4;
 using namespace iii_drone::control;
@@ -19,6 +21,7 @@ using namespace iii_drone::behavior;
 
 ManeuverMode::ManeuverMode(
     rclcpp::Node & node,
+    std::string mode_key,
     std::string mode_name,
     float dt,
     bool is_owned_mode,
@@ -31,6 +34,7 @@ ManeuverMode::ManeuverMode(
         ),
         "/"
 ),  mode_name_(mode_name),
+    mode_key_(mode_key),
     is_owned_mode_(is_owned_mode) { 
 
     traj_setpoint_ = std::make_shared<iii_drone::px4::TrajectorySetpoint>(*this);
@@ -40,6 +44,22 @@ ManeuverMode::ManeuverMode(
     register_offboard_mode_client_ = node.create_client<iii_drone_interfaces::srv::RegisterOffboardMode>(
         "/control/maneuver_controller/register_offboard_mode",
         rclcpp::ServicesQoS()
+    );
+
+    vehicle_command_publisher_ = node.create_publisher<px4_msgs::msg::VehicleCommand>(
+        "/fmu/in/vehicle_command",
+        rclcpp::SystemDefaultsQoS()
+    );
+
+    status_publisher_ = node.create_publisher<iii_drone_interfaces::msg::StringStamped>(
+        "/mission/modes/" + mode_key_ + "/status",
+        rclcpp::SystemDefaultsQoS()
+    );
+    status_timer_ = node.create_wall_timer(
+        std::chrono::milliseconds(500),
+        [this]() {
+            publishStatus();
+        }
     );
 
 }
@@ -70,6 +90,8 @@ void ManeuverMode::Register(
     sendRegisterOffboardModeRequest(false);
 
     is_registered_ = true;
+    publishStatus();
+    startExecutionIfReady();
 
     RCLCPP_INFO(node().get_logger(), "ManeuverMode::Register(): Mode %s registered", mode_name_.c_str());
 
@@ -107,12 +129,14 @@ void ManeuverMode::Unregister(bool force) {
     }
 
     is_registered_ = false;
+    active_ = false;
+    publishStatus();
 
     RCLCPP_INFO(node().get_logger(), "ManeuverMode::Unregister(): Mode %s deregistered", mode_name_.c_str());
     
 }
 
-void ManeuverMode::sendRegisterOffboardModeRequest(
+bool ManeuverMode::sendRegisterOffboardModeRequest(
     bool deregister,
     bool force
 ) {
@@ -127,14 +151,14 @@ void ManeuverMode::sendRegisterOffboardModeRequest(
     while (!register_offboard_mode_client_->wait_for_service(std::chrono::seconds(1))) {
         if (!rclcpp::ok()) {
             RCLCPP_ERROR(node().get_logger(), "ManeuverMode::sendRegisterOffboardModeRequest(): Interrupted while waiting for the service. Exiting.");
-            return;
+            return false;
         }
         RCLCPP_DEBUG(node().get_logger(), "ManeuverMode::sendRegisterOffboardModeRequest(): Service not available, waiting again...");
 
         if (++cnt >= max_attempts) {
             if (force) {
                 RCLCPP_WARN(node().get_logger(), "ManeuverMode::sendRegisterOffboardModeRequest(): Service not available after %d attempts, continuing", max_attempts);
-                return;
+                return false;
             } else {
                 RCLCPP_FATAL(node().get_logger(), "ManeuverMode::sendRegisterOffboardModeRequest(): Service not available after %d attempts, exiting", max_attempts);
                 throw std::runtime_error("ManeuverMode::sendRegisterOffboardModeRequest(): Service not available after max attempts");
@@ -184,7 +208,7 @@ void ManeuverMode::sendRegisterOffboardModeRequest(
                 deregister ? "deregister" : "register",
                 mode_name_.c_str()
             );
-            return;
+            return false;
         }
 
         RCLCPP_FATAL(
@@ -196,31 +220,37 @@ void ManeuverMode::sendRegisterOffboardModeRequest(
         throw std::runtime_error("ManeuverMode::sendRegisterOffboardModeRequest(): Failed to register mode as offboard mode");
     }
 
+    offboard_mode_registered_ = !deregister;
+    return true;
+
+}
+
+void ManeuverMode::publishHoldCommand() {
+
+    if (!vehicle_command_publisher_) {
+        return;
+    }
+
+    px4_msgs::msg::VehicleCommand command;
+    command.timestamp = static_cast<uint64_t>(node().get_clock()->now().nanoseconds() / 1000);
+    command.command = px4_msgs::msg::VehicleCommand::VEHICLE_CMD_SET_NAV_STATE;
+    command.param1 = static_cast<float>(px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_AUTO_LOITER);
+    command.target_system = 1;
+    command.target_component = 1;
+    command.source_system = 1;
+    command.source_component = 1;
+    command.from_external = true;
+    vehicle_command_publisher_->publish(command);
+
 }
 
 void ManeuverMode::onActivate() {
 
     RCLCPP_DEBUG(node().get_logger(), "ManeuverMode::onActivate(): Activating mode %s", mode_name_.c_str());
 
-    if (!tree_executor_->running()) {
-
-        RCLCPP_INFO(node().get_logger(), "ManeuverMode::onActivate(): Starting mode %s", mode_name_.c_str());
-
-        maneuver_reference_client_->SetReferenceModeHover();
-
-        setSetpointUpdateRate(1./dt_);
-
-        tree_completion_reported_ = false;
-
-        tree_executor_->StartExecution();
-
-        stop_controls_ = false;
-    
-    } else {
-
-        RCLCPP_WARN(node().get_logger(), "ManeuverMode::onActivate(): Resuming mode %s", mode_name_.c_str());
-
-    }
+    active_ = true;
+    publishStatus();
+    startExecutionIfReady();
 
     if (on_next_activate_callback_) {
 
@@ -232,7 +262,106 @@ void ManeuverMode::onActivate() {
 
 }
 
+void ManeuverMode::startExecutionIfReady() {
+
+    if (!active_) {
+        return;
+    }
+
+    if (!tree_executor_ || !maneuver_reference_client_) {
+        RCLCPP_WARN(
+            node().get_logger(),
+            "ManeuverMode::startExecutionIfReady(): Mode %s activated before execution dependencies were registered; deferring tree start.",
+            mode_name_.c_str()
+        );
+        return;
+
+    }
+
+    if (!tree_executor_->running()) {
+
+        RCLCPP_INFO(node().get_logger(), "ManeuverMode::startExecutionIfReady(): Starting mode %s", mode_name_.c_str());
+
+        try {
+            if (!offboard_mode_registered_) {
+                throw std::runtime_error(
+                    "ManeuverMode::startExecutionIfReady(): Mode has no confirmed maneuver-controller offboard registration"
+                );
+            }
+        } catch (const std::exception & exception) {
+            RCLCPP_ERROR(
+                node().get_logger(),
+                "ManeuverMode::startExecutionIfReady(): Cannot start mode %s: %s. "
+                "Holding current reference and reporting mode failure.",
+                mode_name_.c_str(),
+                exception.what()
+            );
+            emergency_reference_hold_active_ = true;
+            tree_completion_reported_ = true;
+            stop_controls_ = false;
+            maneuver_reference_client_->SetReferenceModeHover(true);
+            publishHoldCommand();
+            publishStatus();
+            completed(px4_ros2::Result::ModeFailureOther);
+            return;
+        }
+
+        maneuver_reference_client_->SetReferenceModeHover();
+
+        setSetpointUpdateRate(1./dt_);
+
+        tree_completion_reported_ = false;
+        emergency_reference_hold_active_ = false;
+
+        try {
+            tree_executor_->StartExecution();
+            publishStatus();
+
+            stop_controls_ = false;
+        } catch (const std::exception & exception) {
+            RCLCPP_ERROR(
+                node().get_logger(),
+                "ManeuverMode::startExecutionIfReady(): Failed to start behavior tree for mode %s: %s. "
+                "Holding current reference and reporting mode failure without terminating mission_executor.",
+                mode_name_.c_str(),
+                exception.what()
+            );
+            emergency_reference_hold_active_ = true;
+            tree_completion_reported_ = true;
+            stop_controls_ = false;
+            maneuver_reference_client_->SetReferenceModeHover(true);
+            publishHoldCommand();
+            publishStatus();
+            completed(px4_ros2::Result::ModeFailureOther);
+        } catch (...) {
+            RCLCPP_ERROR(
+                node().get_logger(),
+                "ManeuverMode::startExecutionIfReady(): Failed to start behavior tree for mode %s with unknown exception. "
+                "Holding current reference and reporting mode failure without terminating mission_executor.",
+                mode_name_.c_str()
+            );
+            emergency_reference_hold_active_ = true;
+            tree_completion_reported_ = true;
+            stop_controls_ = false;
+            maneuver_reference_client_->SetReferenceModeHover(true);
+            publishHoldCommand();
+            publishStatus();
+            completed(px4_ros2::Result::ModeFailureOther);
+        }
+    
+    } else {
+
+        RCLCPP_WARN(node().get_logger(), "ManeuverMode::startExecutionIfReady(): Resuming mode %s", mode_name_.c_str());
+
+    }
+
+}
+
 void ManeuverMode::onDeactivate() { 
+
+    active_ = false;
+    emergency_reference_hold_active_ = false;
+    publishStatus();
 
     if (!stay_alive_on_next_deactivate_) {
 
@@ -300,6 +429,10 @@ void ManeuverMode::StopExecution() {
 
     on_next_activate_callback_ = nullptr;
 
+    active_ = false;
+    emergency_reference_hold_active_ = false;
+    publishStatus();
+
 }
 
 void ManeuverMode::updateSetpoint(float dt) { 
@@ -311,11 +444,13 @@ void ManeuverMode::updateSetpoint(float dt) {
             [this]() {
                 RCLCPP_ERROR(
                     node().get_logger(), 
-                    "ManeuverMode::updateSetpoint(): Reference not available for mode %s, halting behavior tree execution", 
+                    "ManeuverMode::updateSetpoint(): Reference not available for mode %s, entering emergency hover hold and halting behavior tree execution", 
                     mode_name_.c_str()
                 );
+                emergency_reference_hold_active_ = true;
                 tree_executor_->StopExecution(false);
-                maneuver_reference_client_->SetReferenceModeHover();
+                maneuver_reference_client_->SetReferenceModeHover(true);
+                publishHoldCommand();
             }
         );
 
@@ -324,6 +459,16 @@ void ManeuverMode::updateSetpoint(float dt) {
     }
 
     if (tree_executor_->finished() && !tree_completion_reported_) {
+
+        if (emergency_reference_hold_active_) {
+            RCLCPP_ERROR(
+                node().get_logger(),
+                "ManeuverMode::updateSetpoint(): Tree finished after reference outage in mode %s; keeping PX4 mode alive with hover setpoints until explicit deactivation",
+                mode_name_.c_str()
+            );
+            tree_completion_reported_ = true;
+            return;
+        }
 
         tree_completion_reported_ = true;
         const bool tree_success = tree_executor_->success();
@@ -342,3 +487,49 @@ void ManeuverMode::updateSetpoint(float dt) {
 }
 
 std::string ManeuverMode::mode_name() const { return mode_name_; }
+
+std::string ManeuverMode::mode_key() const { return mode_key_; }
+
+bool ManeuverMode::is_registered() const { return is_registered_; }
+
+bool ManeuverMode::active() const { return active_; }
+
+void ManeuverMode::publishStatus() {
+
+    if (!status_publisher_) {
+        return;
+    }
+
+    bool tree_running = false;
+    bool tree_finished = false;
+    bool tree_success = false;
+
+    if (tree_executor_) {
+        tree_running = tree_executor_->running();
+        tree_finished = tree_executor_->finished();
+        if (tree_finished) {
+            tree_success = tree_executor_->success();
+        }
+    }
+
+    std::ostringstream payload;
+    payload << "{"
+        << "\"mode_key\":\"" << mode_key_ << "\","
+        << "\"mode_name\":\"" << mode_name_ << "\","
+        << "\"mode_id\":" << static_cast<int>(id()) << ","
+        << "\"active\":" << (active_ ? "true" : "false") << ","
+        << "\"registered\":" << (is_registered_ ? "true" : "false") << ","
+        << "\"tree_running\":" << (tree_running ? "true" : "false") << ","
+        << "\"tree_finished\":" << (tree_finished ? "true" : "false") << ","
+        << "\"tree_success\":" << (tree_success ? "true" : "false") << ","
+        << "\"emergency_reference_hold_active\":" << (emergency_reference_hold_active_ ? "true" : "false")
+        << "}";
+
+    static rclcpp::Clock system_clock(RCL_SYSTEM_TIME);
+
+    iii_drone_interfaces::msg::StringStamped msg;
+    msg.stamp = system_clock.now();
+    msg.data = payload.str();
+    status_publisher_->publish(msg);
+
+}

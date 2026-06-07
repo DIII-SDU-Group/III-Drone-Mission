@@ -20,14 +20,16 @@ TreeExecutor::TreeExecutor(
     tf2_ros::Buffer::SharedPtr tf_buffer,
     Configurator<rclcpp::Node>::SharedPtr configurator,
     rclcpp::Node * node,
-    BT::Blackboard::Ptr global_blackboard
+    BT::Blackboard::Ptr global_blackboard,
+    std::shared_ptr<iii_drone::mission::RuntimeIntentBuffer> runtime_intent_buffer
 ) : tree_name_(tree_name),
     tree_xml_file_(tree_xml_file),
     maneuver_reference_client_(maneuver_reference_client),
     tf_buffer_(tf_buffer),
     configurator_(configurator),
     node_(node),
-    global_blackboard_(global_blackboard)
+    global_blackboard_(global_blackboard),
+    runtime_intent_buffer_(runtime_intent_buffer)
 {
 
     wordexp_t wordexp_result;
@@ -70,10 +72,6 @@ void TreeExecutor::Deinitialize() {
 }
 
 void TreeExecutor::StartExecution() {
-
-    RCLCPP_DEBUG(node_->get_logger(), "TreeExecutor::FinalizeInitialization(): Creating tree for %s.", tree_name_.c_str());
-
-    tree_ = factory_.createTreeFromFile(tree_xml_file_, local_blackboard_);
 
     running_ = true;
     finished_ = false;
@@ -118,22 +116,87 @@ void TreeExecutor::execute() {
     std::chrono::milliseconds tick_period(tick_period_ms);
 
     BT::NodeStatus status = BT::NodeStatus::RUNNING;
+    bool execution_exception = false;
+    bool tree_created = false;
 
-    status = tree_.tickOnce(); 
-    
-    while (running_ && status == BT::NodeStatus::RUNNING) {
+    try {
 
-        tree_.sleep(tick_period);
+        RCLCPP_DEBUG(node_->get_logger(), "TreeExecutor::execute(): Creating tree for %s.", tree_name_.c_str());
+
+        tree_ = factory_.createTreeFromFile(tree_xml_file_, local_blackboard_);
+        tree_created = true;
 
         status = tree_.tickOnce(); 
 
+        while (running_ && status == BT::NodeStatus::RUNNING) {
+
+            tree_.sleep(tick_period);
+
+            status = tree_.tickOnce(); 
+
+        }
+
+    } catch (const std::exception & e) {
+
+        execution_exception = true;
+        status = BT::NodeStatus::FAILURE;
+
+        RCLCPP_ERROR(
+            node_->get_logger(),
+            "TreeExecutor::execute(): Tree %s threw during execution: %s",
+            tree_name_.c_str(),
+            e.what()
+        );
+
+    } catch (...) {
+
+        execution_exception = true;
+        status = BT::NodeStatus::FAILURE;
+
+        RCLCPP_ERROR(
+            node_->get_logger(),
+            "TreeExecutor::execute(): Tree %s threw an unknown exception during execution.",
+            tree_name_.c_str()
+        );
+
     }
 
-    tree_.haltTree();
+    if (tree_created) {
+
+        try {
+
+            tree_.haltTree();
+
+        } catch (const std::exception & e) {
+
+            execution_exception = true;
+            status = BT::NodeStatus::FAILURE;
+
+            RCLCPP_ERROR(
+                node_->get_logger(),
+                "TreeExecutor::execute(): Tree %s threw during halt: %s",
+                tree_name_.c_str(),
+                e.what()
+            );
+
+        } catch (...) {
+
+            execution_exception = true;
+            status = BT::NodeStatus::FAILURE;
+
+            RCLCPP_ERROR(
+                node_->get_logger(),
+                "TreeExecutor::execute(): Tree %s threw an unknown exception during halt.",
+                tree_name_.c_str()
+            );
+
+        }
+
+    }
 
     finished_ = true;
 
-    success_ = status == BT::NodeStatus::SUCCESS && running_;
+    success_ = !execution_exception && status == BT::NodeStatus::SUCCESS && running_;
 
     running_ = false;
 
@@ -296,7 +359,8 @@ void TreeExecutor::registerNodes() {
 
         factory_.registerNodeType<VerifyPowerlineDetectedConditionNode>(
             "VerifyPowerlineDetected",
-            params
+            params,
+            tf_buffer_
         );
     }
 
@@ -364,6 +428,20 @@ void TreeExecutor::registerNodes() {
     }
 
     {
+        BT::RosNodeParams params;
+
+        params.nh = node;
+        params.default_port_value = "/mission/pylon_overview_provider/get_pylon_overview";
+        params.server_timeout = server_timeout;
+        params.wait_for_server_timeout = wait_for_server_timeout;
+
+        factory_.registerNodeType<GetPylonOverviewActionNode>(
+            "GetPylonOverview",
+            params
+        );
+    }
+
+    {
         factory_.registerNodeType<PowerlineWaypointProviderActionNode>(
             "PowerlineWaypointProvider",
             tf_buffer_,
@@ -373,8 +451,22 @@ void TreeExecutor::registerNodes() {
     }
 
     {
+        factory_.registerNodeType<PhaseWaypointProviderActionNode>(
+            "PhaseWaypointProvider",
+            node_,
+            configurator_->GetConfiguration("phase_waypoint_provider_action_node")
+        );
+    }
+
+    {
         factory_.registerNodeType<BT::LoopNode<iii_drone::types::point_t>>(
             "LoopPoint"
+        );
+    }
+
+    {
+        factory_.registerNodeType<SplitPointQueueActionNode>(
+            "SplitPointQueue"
         );
     }
 
@@ -398,6 +490,35 @@ void TreeExecutor::registerNodes() {
 
         factory_.registerNodeType<VerifyGripperClosedConditionNode>(
             "VerifyGripperClosed",
+            params
+        );
+    }
+
+    {
+        factory_.registerNodeType<ShouldRechargeBatteryLowConditionNode>(
+            "ShouldRechargeBatteryLow",
+            node,
+            configurator_->GetConfiguration("battery_recharge_condition_node")
+        );
+    }
+
+    {
+        factory_.registerNodeType<CableChargingMonitorActionNode>(
+            "CableChargingMonitor",
+            node,
+            configurator_->GetConfiguration("cable_charging_monitor_action_node"),
+            global_blackboard_
+        );
+    }
+
+    {
+        BT::RosNodeParams params;
+
+        params.nh = node;
+        params.default_port_value = "/fmu/out/vehicle_status_v1";
+
+        factory_.registerNodeType<VerifyDisarmedConditionNode>(
+            "VerifyDisarmed",
             params
         );
     }
@@ -433,6 +554,115 @@ void TreeExecutor::registerNodes() {
         factory_.registerNodeType<LogMessageActionNode>(
             "LogMessage",
             node
+        );
+    }
+
+    {
+        factory_.registerNodeType<ApplyPendingIntentUpdatesActionNode>(
+            "ApplyPendingIntentUpdates",
+            runtime_intent_buffer_,
+            global_blackboard_,
+            node
+        );
+    }
+
+    {
+        factory_.registerNodeType<SetBlackboardBoolActionNode>(
+            "SetBlackboardBool",
+            global_blackboard_
+        );
+    }
+
+    {
+        factory_.registerNodeType<BlackboardBoolConditionNode>(
+            "BlackboardBool",
+            global_blackboard_
+        );
+    }
+
+    {
+        factory_.registerNodeType<SetBlackboardStringActionNode>(
+            "SetBlackboardString",
+            global_blackboard_
+        );
+    }
+
+    {
+        factory_.registerNodeType<BlackboardStringEqualsConditionNode>(
+            "BlackboardStringEquals",
+            global_blackboard_
+        );
+    }
+
+    {
+        factory_.registerNodeType<InitializeInspectionWaypointsActionNode>(
+            "InitializeInspectionWaypoints",
+            global_blackboard_
+        );
+    }
+
+    {
+        factory_.registerNodeType<GetCurrentInspectionWaypointActionNode>(
+            "GetCurrentInspectionWaypoint",
+            global_blackboard_
+        );
+    }
+
+    {
+        factory_.registerNodeType<AdvanceInspectionWaypointActionNode>(
+            "AdvanceInspectionWaypoint",
+            global_blackboard_
+        );
+    }
+
+    {
+        BT::RosNodeParams params;
+
+        params.nh = node;
+        params.default_port_value = "/mission/rosbag_recorder/start_recording";
+        params.server_timeout = server_timeout;
+        params.wait_for_server_timeout = wait_for_server_timeout;
+
+        factory_.registerNodeType<StartRosbagRecordingActionNode>(
+            "StartRosbagRecording",
+            params
+        );
+    }
+
+    {
+        BT::RosNodeParams params;
+
+        params.nh = node;
+        params.default_port_value = "/mission/rosbag_recorder/stop_recording";
+        params.server_timeout = server_timeout;
+        params.wait_for_server_timeout = wait_for_server_timeout;
+
+        factory_.registerNodeType<StopRosbagRecordingActionNode>(
+            "StopRosbagRecording",
+            params
+        );
+    }
+
+    {
+        factory_.registerNodeType<RosbagRecordingScopeDecorator>(
+            "RosbagRecordingScope",
+            node,
+            "/mission/rosbag_recorder/start_recording",
+            "/mission/rosbag_recorder/stop_recording",
+            server_timeout,
+            wait_for_server_timeout
+        );
+    }
+
+    {
+        factory_.registerNodeType<StringEqualsConditionNode>(
+            "StringEquals"
+        );
+    }
+
+    {
+        factory_.registerNodeType<RetryUntilSuccessfulOnAbortedDecorator>(
+            "RetryUntilSuccessfulOnAborted"
         );
     }
 

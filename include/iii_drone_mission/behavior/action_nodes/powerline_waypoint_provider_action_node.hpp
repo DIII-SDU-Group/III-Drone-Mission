@@ -7,7 +7,9 @@
 /*****************************************************************************/
 // Std:
 
+#include <atomic>
 #include <deque>
+#include <limits>
 #include <vector>
 
 /*****************************************************************************/
@@ -32,12 +34,15 @@
 
 #include <iii_drone_core/control/state.hpp>
 
+#include <iii_drone_core/utils/math.hpp>
 #include <iii_drone_core/utils/types.hpp>
 
 /*****************************************************************************/
 // III-Drone-Interfaces:
 
 #include <iii_drone_interfaces/msg/powerline.hpp>
+#include <iii_drone_interfaces/msg/combined_drone_awareness.hpp>
+#include <iii_drone_interfaces/msg/pylon_overview.hpp>
 
 /*****************************************************************************/
 // III-Drone-Mission:
@@ -82,11 +87,22 @@ namespace behavior {
         BT::NodeStatus tick() override;
 
     private:
+        int lineIdForPoint(
+            const iii_drone::adapters::PowerlineAdapter & powerline_adapter,
+            const iii_drone::types::point_t & point
+        ) const;
+
+        double minimumWaypointZ() const;
+
         tf2_ros::Buffer::SharedPtr tf_buffer_;
 
         rclcpp::Node * node_;
 
         iii_drone::configuration::Configuration::SharedPtr configuration_;
+
+        rclcpp::Subscription<iii_drone_interfaces::msg::CombinedDroneAwareness>::SharedPtr combined_drone_awareness_sub_;
+
+        std::atomic<double> latest_ground_altitude_estimate_{std::numeric_limits<double>::quiet_NaN()};
 
         // std::shared_ptr<std::deque<iii_drone::types::point_t>> applyLinearInterpolation(
         //     std::shared_ptr<std::deque<iii_drone::types::point_t>> points

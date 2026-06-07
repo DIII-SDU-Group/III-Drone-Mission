@@ -70,6 +70,12 @@ namespace behavior {
         static BT::PortsList providedPorts();
 
     private:
+        bool shouldStopManeuverOnSuccessfulResult(
+            const typename BT::RosActionNode<iii_drone_interfaces::action::FlyToPosition>::WrappedResult & wr
+        ) const override;
+
+        bool shouldAttachToActiveManeuverStreamOnGoalAccepted() const override;
+
         /**
          * @brief Gets the final hover reference from the wrapped result.
          * 
@@ -78,6 +84,8 @@ namespace behavior {
          * @return The final hover reference.
          */
         iii_drone::control::Reference getFinalReference(const typename BT::RosActionNode<iii_drone_interfaces::action::FlyToPosition>::WrappedResult & wr) const;
+
+        bool current_goal_blend_to_next_ = false;
 
     };
 
