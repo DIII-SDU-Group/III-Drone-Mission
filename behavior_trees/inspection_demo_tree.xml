@@ -22,6 +22,7 @@
                         ID="StoreCurrentState"
                         name="store_inspection_start_state"
                         current_state="{start_state}"
+                        current_position="{start_position}"
                         current_yaw="{start_yaw}"
                     />
                 </Decorator>
@@ -32,43 +33,51 @@
                 stored_powerline="{stored_powerline}"
                 stored_pylon_overview="{stored_pylon_overview}"
                 start_state="{start_state}"
+                resume_valid="{inspection_resume_valid}"
+                resume_selected_route="{inspection_resume_selected_route}"
+                resume_waypoint_index="{inspection_resume_waypoint_index}"
+                resume_loop_start_index="{inspection_resume_loop_start_index}"
+                resume_route_offset="{inspection_resume_route_offset}"
+                resume_position="{inspection_resume_position}"
                 waypoints="{generated_waypoints}"
+                loop_start_index="{inspection_loop_start_index}"
+                loop_route_offset="{inspection_loop_route_offset}"
                 waypoint_target_yaw="{waypoint_target_yaw}"
-                selected_phase="{selected_phase}"
-            />
-
-            <InitializeInspectionWaypoints
-                name="initialize_inspection_waypoints"
-                waypoints="{generated_waypoints}"
+                selected_route="{selected_route}"
             />
 
             <ReactiveFallback name="inspection_or_recharge_reactive_fallback">
                 <SubTree ID="ShouldRechargeNow"/>
 
-                <KeepRunningUntilFailure name="consume_inspection_waypoints">
-                    <Sequence name="fly_current_inspection_waypoint">
-                        <GetCurrentInspectionWaypoint
-                            name="get_current_inspection_waypoint"
-                            waypoint="{current_waypoint}"
-                            waypoint_index="{waypoint_index}"
-                            waypoint_count="{waypoint_count}"
-                            has_next_waypoint="{has_next_waypoint}"
-                        />
+                <Sequence name="align_then_follow_inspection_path">
+                    <Action
+                        ID="FlyToPosition"
+                        name="align_yaw_with_powerline"
+                        frame_id="world"
+                        target_position="{start_position}"
+                        target_yaw="{waypoint_target_yaw}"
+                    />
 
+                    <KeepRunningUntilFailure name="follow_inspection_path_until_recharge">
                         <Action
-                            ID="FlyToPosition"
-                            name="fly_to_current_inspection_waypoint"
-                            target_position="{current_waypoint}"
-                            target_yaw="{waypoint_target_yaw}"
+                            ID="FollowWaypointPath"
+                            name="follow_repeating_inspection_path"
                             frame_id="world"
-                            blend_to_next="{has_next_waypoint}"
+                            waypoints="{generated_waypoints}"
+                            repeat_from_index="{inspection_loop_start_index}"
+                            selected_route="{selected_route}"
+                            loop_route_offset="{inspection_loop_route_offset}"
+                            target_yaw="{waypoint_target_yaw}"
+                            repeat="true"
+                            resume_valid="{inspection_resume_valid}"
+                            resume_selected_route="{inspection_resume_selected_route}"
+                            resume_waypoint_index="{inspection_resume_waypoint_index}"
+                            resume_loop_start_index="{inspection_resume_loop_start_index}"
+                            resume_route_offset="{inspection_resume_route_offset}"
+                            resume_position="{inspection_resume_position}"
                         />
-
-                        <AdvanceInspectionWaypoint
-                            name="advance_inspection_waypoint"
-                        />
-                    </Sequence>
-                </KeepRunningUntilFailure>
+                    </KeepRunningUntilFailure>
+                </Sequence>
             </ReactiveFallback>
         </Sequence>
     </BehaviorTree>

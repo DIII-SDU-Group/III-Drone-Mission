@@ -41,7 +41,9 @@ PortsList FlyToPositionManeuverActionNode::providedPorts() {
         InputPort<std::string>("frame_id"),
         InputPort<point_t>("target_position"),
         InputPort<float>("target_yaw"),
-        InputPort<bool>("blend_to_next", false, "Return action success at the reached threshold and let the next FTP blend from the streamed reference")
+        InputPort<bool>("blend_to_next", false, "Return action success at the reached threshold and let the next FTP blend from the streamed reference"),
+        InputPort<bool>("ignore_altitude", false, "Bypass the minimum target altitude check"),
+        InputPort<float>("completion_position_tolerance_m", 0.0F, "Override terminal position tolerance; zero uses the configured default")
     });
 
 }
@@ -59,6 +61,8 @@ bool FlyToPositionManeuverActionNode::setGoal(Goal & goal) {
     getInput("target_position", position);
     getInput("target_yaw", goal.target_yaw);
     getInput("blend_to_next", goal.blend_to_next);
+    getInput("ignore_altitude", goal.ignore_altitude);
+    getInput("completion_position_tolerance_m", goal.completion_position_tolerance_m);
     current_goal_blend_to_next_ = goal.blend_to_next;
 
     goal.target_position = pointMsgFromPoint(position);
@@ -85,7 +89,10 @@ bool FlyToPositionManeuverActionNode::shouldStopManeuverOnSuccessfulResult(
 
 bool FlyToPositionManeuverActionNode::shouldAttachToActiveManeuverStreamOnGoalAccepted() const {
 
-    return current_goal_blend_to_next_;
+    // An active stream exists only when the preceding maneuver deliberately
+    // preserved it for a blended successor. The current goal's blend_to_next
+    // controls its outgoing handoff, not whether it accepts the incoming one.
+    return true;
 
 }
 

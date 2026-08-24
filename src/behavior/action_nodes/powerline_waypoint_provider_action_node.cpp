@@ -177,6 +177,63 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
 
     vector_t powerline_direction = powerline_axes->direction;
 
+    pl_geom::PowerlineAxes corridor_axes = *powerline_axes;
+    std::optional<point_t> pylon_a;
+    std::optional<point_t> pylon_b;
+    iii_drone_interfaces::msg::PylonOverview stored_pylon_overview;
+    if (getInput("stored_pylon_overview", stored_pylon_overview) &&
+        stored_pylon_overview.pylons.size() == 2) {
+        point_t first_pylon;
+        first_pylon << stored_pylon_overview.pylons.at(0).x,
+            stored_pylon_overview.pylons.at(0).y, 0.0;
+        point_t second_pylon;
+        second_pylon << stored_pylon_overview.pylons.at(1).x,
+            stored_pylon_overview.pylons.at(1).y, 0.0;
+
+        const double max_direction_mismatch = configuration_->HasParameter(
+            "/inspection_demo/max_pylon_powerline_direction_mismatch_rad"
+        ) ? configuration_->GetParameter(
+            "/inspection_demo/max_pylon_powerline_direction_mismatch_rad"
+        ).as_double() : 0.35;
+        const auto pylon_aligned_axes = pl_geom::ComputePylonAlignedAxes(
+            powerline_direction,
+            first_pylon,
+            second_pylon
+        );
+        if (pylon_aligned_axes) {
+            corridor_axes = *pylon_aligned_axes;
+            pylon_a = first_pylon;
+            pylon_b = second_pylon;
+            if (!pl_geom::PylonSpanMatchesPowerlineDirection(
+                    first_pylon,
+                    second_pylon,
+                    powerline_axes->direction_no_z,
+                    max_direction_mismatch
+                )) {
+                RCLCPP_WARN(
+                    node_->get_logger(),
+                    "PowerlineWaypointProviderActionNode::tick(): Stored mapper direction differs from pylon span by more than %.3f rad; using pylon corridor direction for approach",
+                    max_direction_mismatch
+                );
+            }
+            RCLCPP_INFO(
+                node_->get_logger(),
+                "PowerlineWaypointProviderActionNode::tick(): Using pylon span as corridor axis [%.3f, %.3f, %.3f] instead of local mapper direction [%.3f, %.3f, %.3f]",
+                corridor_axes.direction[0],
+                corridor_axes.direction[1],
+                corridor_axes.direction[2],
+                powerline_axes->direction[0],
+                powerline_axes->direction[1],
+                powerline_axes->direction[2]
+            );
+        } else {
+            RCLCPP_WARN(
+                node_->get_logger(),
+                "PowerlineWaypointProviderActionNode::tick(): Pylon span is degenerate; retaining stored mapper direction for approach"
+            );
+        }
+    }
+
     RCLCPP_DEBUG(
         node_->get_logger(),
         "PowerlineWaypointProviderActionNode::tick(): Powerline direction:\n[%f, %f, %f]",
@@ -196,7 +253,7 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
         node_->get_logger(),
         "PowerlineWaypointProviderActionNode::tick(): Getting powerline normal."
     );
-    vector_t powerline_normal = powerline_axes->cross_corridor;
+    vector_t powerline_normal = corridor_axes.cross_corridor;
 
     RCLCPP_DEBUG(
         node_->get_logger(),
@@ -269,7 +326,7 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
         middle_line_point[0], middle_line_point[1], middle_line_point[2]
     );
 
-    vector_t powerline_normal_no_z = powerline_axes->cross_corridor_no_z;
+    vector_t powerline_normal_no_z = corridor_axes.cross_corridor_no_z;
 
     const auto classified_points = pl_geom::SplitByLargestLateralGap(powerline_points, powerline_normal_no_z);
     if (!classified_points) {
@@ -554,7 +611,7 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
 
     // Create waypoints
     // Get the xy distance from the middle line point to the start position along the powerline direction:
-    vector_t powerline_direction_no_z = powerline_axes->direction_no_z;
+    vector_t powerline_direction_no_z = corridor_axes.direction_no_z;
     auto align_waypoint_to_start_span = [&](point_t waypoint) {
         point_t waypoint_xy = waypoint;
         waypoint_xy[2] = 0;
@@ -587,20 +644,9 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
     point_t under_cable_target_line_point = positive_direction_is_higher ? positive_direction_furthest_point : negative_direction_furthest_point;
     bool force_above_corridor_route = false;
 
-    iii_drone_interfaces::msg::PylonOverview stored_pylon_overview;
-    if (getInput("stored_pylon_overview", stored_pylon_overview) && stored_pylon_overview.pylons.size() == 2) {
-        point_t pylon_a;
-        pylon_a[0] = stored_pylon_overview.pylons.at(0).x;
-        pylon_a[1] = stored_pylon_overview.pylons.at(0).y;
-        pylon_a[2] = 0.0;
-
-        point_t pylon_b;
-        pylon_b[0] = stored_pylon_overview.pylons.at(1).x;
-        pylon_b[1] = stored_pylon_overview.pylons.at(1).y;
-        pylon_b[2] = 0.0;
-
-        const double pylon_a_along = pylon_a.dot(powerline_direction_no_z);
-        const double pylon_b_along = pylon_b.dot(powerline_direction_no_z);
+    if (pylon_a && pylon_b) {
+        const double pylon_a_along = pylon_a->dot(powerline_direction_no_z);
+        const double pylon_b_along = pylon_b->dot(powerline_direction_no_z);
         const double start_along = start_state_pos_no_z.dot(powerline_direction_no_z);
         const double min_pylon_along = std::min(pylon_a_along, pylon_b_along);
         const double max_pylon_along = std::max(pylon_a_along, pylon_b_along);

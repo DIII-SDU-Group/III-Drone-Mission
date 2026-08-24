@@ -74,6 +74,12 @@ namespace behavior {
             const typename BT::RosActionNode<iii_drone_interfaces::action::FlyToPosition>::WrappedResult & wr
         ) const override;
 
+        /**
+         * @brief FTP accepts a stream intentionally preserved by its predecessor.
+         *
+         * blend_to_next describes this goal's outgoing handoff and must not be
+         * used to decide whether an incoming handoff is accepted.
+         */
         bool shouldAttachToActiveManeuverStreamOnGoalAccepted() const override;
 
         /**

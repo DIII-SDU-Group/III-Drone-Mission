@@ -15,6 +15,27 @@
             <input_port name="frame_id" type="std::string"/>
             <input_port name="target_position" type="Eigen::Matrix&lt;float, 3, 1, 0, 3, 1&gt;"/>
             <input_port name="blend_to_next" type="bool" default="false"/>
+            <input_port name="ignore_altitude" type="bool" default="false"/>
+            <input_port name="completion_position_tolerance_m" type="float" default="0.0"/>
+        </Action>
+        <Action ID="FollowWaypointPath">
+            <input_port name="frame_id" type="std::string"/>
+            <input_port name="waypoints"/>
+            <input_port name="repeat_from_index" type="int"/>
+            <input_port name="target_yaw" type="float"/>
+            <input_port name="repeat" type="bool" default="true"/>
+            <input_port name="blend_radius_m" type="float" default="0.0"/>
+            <input_port name="nominal_speed_m_s" type="float" default="0.0"/>
+            <input_port name="max_acceleration_m_s2" type="float" default="0.0"/>
+            <input_port name="max_jerk_m_s3" type="float" default="0.0"/>
+            <input_port name="selected_route" type="std::string"/>
+            <input_port name="loop_route_offset" type="int" default="0"/>
+            <output_port name="resume_valid" type="bool"/>
+            <output_port name="resume_selected_route" type="std::string"/>
+            <output_port name="resume_waypoint_index" type="int"/>
+            <output_port name="resume_loop_start_index" type="int"/>
+            <output_port name="resume_route_offset" type="int"/>
+            <output_port name="resume_position"/>
         </Action>
         <Action ID="GetPowerlineOverview">
             <output_port name="stored_powerline" type="iii_drone_interfaces::msg::Powerline_&lt;std::allocator&lt;void&gt; &gt;"/>
@@ -52,6 +73,7 @@
             <input_port name="all_topics" type="bool" default="true"/>
             <input_port name="topics" type="std::string" default=""/>
             <input_port name="include_hidden_topics" type="bool" default="true"/>
+            <input_port name="owner" type="std::string" default="behavior_tree"/>
         </Action>
         <Action ID="StopRosbagRecording">
             <input_port name="recording_id" type="std::string" default=""/>
@@ -63,6 +85,7 @@
             <input_port name="all_topics" type="bool" default="true"/>
             <input_port name="topics" type="std::string" default=""/>
             <input_port name="include_hidden_topics" type="bool" default="true"/>
+            <input_port name="owner" type="std::string" default="behavior_tree"/>
             <input_port name="stop_timeout_sec" type="double" default="10"/>
         </Decorator>
         <Action ID="PowerlineWaypointProvider">
@@ -97,6 +120,8 @@
         <Condition ID="VerifyPowerlineDetected">
             <input_port name="required_n_lines" type="unsigned int"/>
             <input_port name="powerline_overview" type="iii_drone_interfaces::msg::Powerline_&lt;std::allocator&lt;void&gt; &gt;"/>
+            <input_port name="stored_pylon_overview" type="iii_drone_interfaces::msg::PylonOverview_&lt;std::allocator&lt;void&gt; &gt;"/>
+            <input_port name="max_pylon_direction_mismatch_rad" type="double" default="0.35"/>
             <input_port name="powerline_overview_required_line_id" type="int" default="-1"/>
             <input_port name="line_match_distance_threshold_m" type="double"/>
             <input_port name="relaxed_line_match_distance_threshold_m" type="double"/>

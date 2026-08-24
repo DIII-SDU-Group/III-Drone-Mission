@@ -162,6 +162,10 @@ PowerlineOverviewProviderNode::PowerlineOverviewProviderNode(
         "stored_powerline_status",
         10
     );
+    overview_status_pub_ = create_publisher<iii_drone_interfaces::msg::PowerlineOverviewStatus>(
+        "overview_status",
+        10
+    );
 
     stored_powerline_status_timer_ = create_wall_timer(
         std::chrono::seconds(1),
@@ -178,6 +182,22 @@ PowerlineOverviewProviderNode::PowerlineOverviewProviderNode(
             }
 
             stored_powerline_status_pub_->publish(status_msg);
+            iii_drone_interfaces::msg::PowerlineOverviewStatus overview_status;
+            overview_status.stamp = status_msg.stamp;
+            overview_status.valid = has_stored_powerline_;
+            overview_status.overview_in_frame = has_stored_powerline_;
+            overview_status.overview_gnss_only = !has_stored_powerline_ && has_persisted_gnss_powerline_;
+            overview_status.overview_source = overview_source_;
+            overview_status.persistence_file_present = has_persisted_gnss_powerline_;
+            if (has_stored_powerline_) {
+                overview_status.overview = stored_powerline_.Load();
+                overview_status.line_count = static_cast<uint32_t>(overview_status.overview.lines.size());
+            } else {
+                overview_status.degraded_reason = overview_status.overview_gnss_only
+                    ? "GNSS powerline data cannot be reprojected into the active world frame"
+                    : "no powerline overview is stored";
+            }
+            overview_status_pub_->publish(overview_status);
 
         }
     );
@@ -207,6 +227,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Powerl
     gnss_persistence_path_ = get_parameter("gnss_persistence_path").as_string();
     has_persisted_gnss_powerline_ = std::filesystem::exists(gnss_persistence_path_);
     has_stored_powerline_ = false;
+    overview_source_ = has_persisted_gnss_powerline_ ? "gnss_only_unavailable" : "none";
 
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
@@ -534,6 +555,7 @@ void PowerlineOverviewProviderNode::updatePowerlineOverviewCallback(
             }
             stored_powerline_adapter_ = powerline_adapter;
             has_stored_powerline_ = true;
+            overview_source_ = "live_mapper_store";
 
             response->success = true;
 
@@ -577,12 +599,10 @@ void PowerlineOverviewProviderNode::getPowerlineOverviewCallback(
     (void)request;
     RCLCPP_INFO(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback()");
 
-    const bool had_in_frame_overview = has_stored_powerline_;
     const bool had_gnss_on_disk = has_persisted_gnss_powerline_ || std::filesystem::exists(gnss_persistence_path_);
-    bool loaded_from_gnss = false;
 
     if (!has_stored_powerline_) {
-        loaded_from_gnss = loadPersistedPowerlineOverviewToMemory();
+        loadPersistedPowerlineOverviewToMemory();
     }
 
     if (!has_stored_powerline_) {
@@ -600,9 +620,7 @@ void PowerlineOverviewProviderNode::getPowerlineOverviewCallback(
     response->success = true;
     response->overview_in_frame = true;
     response->overview_gnss_only = false;
-    response->overview_source = had_in_frame_overview
-        ? "memory_world"
-        : (loaded_from_gnss ? "loaded_gnss_to_world" : "memory_world");
+    response->overview_source = overview_source_;
 
     RCLCPP_INFO(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback() - Stored powerline sent");
 
@@ -676,6 +694,7 @@ bool PowerlineOverviewProviderNode::loadPersistedPowerlineOverviewToMemory()
     stored_powerline_ = loaded_powerline.value();
     stored_powerline_adapter_ = adapter;
     has_stored_powerline_ = true;
+    overview_source_ = "loaded_gnss_to_world";
     has_persisted_gnss_powerline_ = true;
     RCLCPP_INFO(
         get_logger(),

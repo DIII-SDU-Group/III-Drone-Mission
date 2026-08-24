@@ -367,7 +367,13 @@ void ManeuverMode::onDeactivate() {
 
         RCLCPP_INFO(node().get_logger(), "ManeuverMode::onDeactivate(): Full deactivation of mode %s", mode_name_.c_str());
 
-        tree_executor_->StopExecution();
+        // PX4 expects external-mode arming-check replies every 300 ms. Halting
+        // a tree may wait several seconds for a kinematically safe action
+        // cancellation, so never join that worker from the PX4 mode callback.
+        tree_executor_->StopExecution(false);
+        // PX4 has taken control, so a client-local reference-loss stop can no
+        // longer be completed here. Clear its latch for the next activation.
+        maneuver_reference_client_->SetReferenceModeHover(true);
 
     } else {
 
@@ -425,7 +431,9 @@ void ManeuverMode::StopExecution() {
 
     RCLCPP_INFO(node().get_logger(), "ManeuverMode::StopExecution(): Stopping execution for mode %s", mode_name_.c_str());
 
-    tree_executor_->StopExecution();
+    // Signal cancellation here and let the tree worker complete its safe stop
+    // without starving PX4 external-mode registration callbacks.
+    tree_executor_->StopExecution(false);
 
     on_next_activate_callback_ = nullptr;
 
@@ -490,9 +498,34 @@ std::string ManeuverMode::mode_name() const { return mode_name_; }
 
 std::string ManeuverMode::mode_key() const { return mode_key_; }
 
+uint8_t ManeuverMode::mode_id() const { return static_cast<uint8_t>(id()); }
+
 bool ManeuverMode::is_registered() const { return is_registered_; }
 
 bool ManeuverMode::active() const { return active_; }
+
+bool ManeuverMode::tree_running() const {
+    return tree_executor_ != nullptr && tree_executor_->running();
+}
+
+bool ManeuverMode::tree_finished() const {
+    return tree_executor_ != nullptr && tree_executor_->finished();
+}
+
+bool ManeuverMode::tree_success() const {
+    return tree_executor_ != nullptr && tree_executor_->finished() && tree_executor_->success();
+}
+
+bool ManeuverMode::emergency_reference_hold_active() const {
+    return emergency_reference_hold_active_;
+}
+
+std::string ManeuverMode::degraded_reason() const {
+    if (emergency_reference_hold_active_) {
+        return "emergency reference hold is active";
+    }
+    return "";
+}
 
 void ManeuverMode::publishStatus() {
 

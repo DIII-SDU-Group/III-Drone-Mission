@@ -8,6 +8,8 @@
 // Std:
 
 #include <memory>
+#include <atomic>
+#include <mutex>
 #include <thread>
 #include <fstream>
 #include <string>
@@ -28,6 +30,8 @@
 #include <iii_drone_interfaces/srv/write_behavior_tree_model_xml.hpp>
 #include <iii_drone_interfaces/srv/override_mission_specification.hpp>
 #include <iii_drone_interfaces/msg/mission_mode_status.hpp>
+#include <iii_drone_interfaces/srv/get_powerline_overview.hpp>
+#include <iii_drone_interfaces/srv/get_pylon_overview.hpp>
 
 /*****************************************************************************/
 // III-Drone-Configuration:
@@ -97,6 +101,13 @@ namespace mission {
         rclcpp::Service<iii_drone_interfaces::srv::OverrideMissionSpecification>::SharedPtr override_mission_specification_service_;
         rclcpp_lifecycle::LifecyclePublisher<iii_drone_interfaces::msg::MissionModeStatus>::SharedPtr mission_status_publisher_;
         rclcpp::TimerBase::SharedPtr mission_status_timer_;
+        rclcpp::Client<iii_drone_interfaces::srv::GetPowerlineOverview>::SharedPtr powerline_overview_client_;
+        rclcpp::Client<iii_drone_interfaces::srv::GetPylonOverview>::SharedPtr pylon_overview_client_;
+        iii_drone_interfaces::srv::GetPowerlineOverview::Response::SharedPtr powerline_overview_response_;
+        iii_drone_interfaces::srv::GetPylonOverview::Response::SharedPtr pylon_overview_response_;
+        std::atomic<bool> powerline_overview_request_pending_{false};
+        std::atomic<bool> pylon_overview_request_pending_{false};
+        mutable std::mutex inspection_overview_mutex_;
         std::string mission_status_degraded_reason_;
         std::string default_mission_specification_file_;
         std::string mission_specification_file_;
@@ -117,6 +128,8 @@ namespace mission {
 
         void cleanup();
         void publishMissionModeStatus();
+        void refreshInspectionOverviewCaches();
+        void populateInspectionStartEligibility(iii_drone_interfaces::msg::MissionModeStatus & msg);
         std::vector<std::string> requiredMissionModes() const;
         std::vector<std::string> registeredMissionModes() const;
         bool requiredMissionModesRegistered() const;

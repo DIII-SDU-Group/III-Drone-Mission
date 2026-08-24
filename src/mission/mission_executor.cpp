@@ -83,6 +83,19 @@ MissionExecutor::~MissionExecutor() {
 
 }
 
+std::optional<iii_drone::types::point_t> MissionExecutor::currentPosition() const {
+    try {
+        return vehicle_odometry_adapter_history_->operator()().ToState().position();
+    } catch (const std::runtime_error &) {
+        return std::nullopt;
+    }
+}
+
+iii_drone::configuration::Configuration::SharedPtr
+MissionExecutor::phaseWaypointConfiguration() const {
+    return tree_provider_ ? tree_provider_->phaseWaypointConfiguration() : nullptr;
+}
+
 void MissionExecutor::Configure(
     iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator,
     rclcpp::CallbackGroup::SharedPtr get_reference_cb_group
@@ -342,6 +355,25 @@ void MissionExecutor::registerIntentServices() {
 
     unregisterIntentServices();
 
+    {
+        std::lock_guard<std::mutex> lock(intent_status_mutex_);
+        intent_statuses_.clear();
+        for (const auto & intent_service : mission_specification_->intent_services()) {
+            iii_drone_interfaces::msg::MissionIntentStatus status;
+            status.service_name = intent_service.service_name;
+            status.flag_name = intent_service.flag_name;
+            status.intent_key = intent_service.flag_name == "inspection_demo.manual_recharge_requested"
+                ? "trigger_recharge_now"
+                : intent_service.flag_name == "charging.stay_on_cable"
+                    ? "stay_on_cable"
+                    : intent_service.flag_name == "charging.interrupt_requested"
+                        ? "interrupt_recharging_now"
+                        : intent_service.flag_name;
+            status.lifecycle = "cleared";
+            intent_statuses_[intent_service.service_name] = status;
+        }
+    }
+
     for (const auto & intent_service : mission_specification_->intent_services()) {
         RCLCPP_INFO(
             node_->get_logger(),
@@ -356,9 +388,20 @@ void MissionExecutor::registerIntentServices() {
                 const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
                 std::shared_ptr<std_srvs::srv::SetBool::Response> response
             ) {
+                const int64_t now_nanoseconds = node_->get_clock()->now().nanoseconds();
+                builtin_interfaces::msg::Time stamp;
+                stamp.sec = static_cast<int32_t>(now_nanoseconds / 1000000000LL);
+                stamp.nanosec = static_cast<uint32_t>(now_nanoseconds % 1000000000LL);
                 if (!intentServiceValidForCurrentMode(intent_service)) {
                     response->success = false;
                     response->message = "runtime intent service is not valid for active mode '" + activeModeKey() + "'";
+                    {
+                        std::lock_guard<std::mutex> lock(intent_status_mutex_);
+                        auto & status = intent_statuses_[intent_service.service_name];
+                        status.stamp = stamp;
+                        status.lifecycle = "rejected";
+                        status.detail = response->message;
+                    }
                     RCLCPP_WARN(
                         node_->get_logger(),
                         "MissionExecutor::runtimeIntentServiceCallback(): Rejected %s: %s",
@@ -368,11 +411,6 @@ void MissionExecutor::registerIntentServices() {
                     return;
                 }
 
-                const int64_t now_nanoseconds = node_->get_clock()->now().nanoseconds();
-                builtin_interfaces::msg::Time stamp;
-                stamp.sec = static_cast<int32_t>(now_nanoseconds / 1000000000LL);
-                stamp.nanosec = static_cast<uint32_t>(now_nanoseconds % 1000000000LL);
-
                 const uint64_t sequence_id = runtime_intent_buffer_->Enqueue(
                     intent_service.flag_name,
                     request->data,
@@ -380,6 +418,15 @@ void MissionExecutor::registerIntentServices() {
                 );
                 response->success = true;
                 response->message = "runtime intent enqueued seq=" + std::to_string(sequence_id);
+                {
+                    std::lock_guard<std::mutex> lock(intent_status_mutex_);
+                    auto & status = intent_statuses_[intent_service.service_name];
+                    status.stamp = stamp;
+                    status.value = request->data;
+                    status.sequence_id = sequence_id;
+                    status.lifecycle = request->data ? "acknowledged_onboard" : "cleared";
+                    status.detail = response->message;
+                }
                 RCLCPP_INFO(
                     node_->get_logger(),
                     "MissionExecutor::runtimeIntentServiceCallback(): Enqueued runtime intent seq=%llu flag=%s value=%s via %s",
@@ -397,6 +444,16 @@ void MissionExecutor::unregisterIntentServices() {
 
     intent_services_.clear();
 
+}
+
+std::vector<iii_drone_interfaces::msg::MissionIntentStatus> MissionExecutor::intentStatuses() const {
+    std::lock_guard<std::mutex> lock(intent_status_mutex_);
+    std::vector<iii_drone_interfaces::msg::MissionIntentStatus> statuses;
+    statuses.reserve(intent_statuses_.size());
+    for (const auto & item : intent_statuses_) {
+        statuses.push_back(item.second);
+    }
+    return statuses;
 }
 
 bool MissionExecutor::intentServiceValidForCurrentMode(const mission_intent_service_t & intent_service) const {

@@ -49,6 +49,23 @@ int main(int argc, char **argv) {
     configurator->DeclareParameter("/mission/wait_for_maneuver_start_timeout_ms", rclcpp::ParameterType::PARAMETER_INTEGER);
     configurator->DeclareParameter("/control/dt", rclcpp::ParameterType::PARAMETER_DOUBLE);
     configurator->DeclareParameter("/mission/get_reference_timeout_ms", rclcpp::ParameterType::PARAMETER_INTEGER);
+    configurator->DeclareParameter("/mission/reference_loss_timeout_ms", rclcpp::ParameterType::PARAMETER_INTEGER);
+    configurator->DeclareParameter("/mission/reference_rebase_timeout_ms", rclcpp::ParameterType::PARAMETER_INTEGER);
+    configurator->DeclareParameter("/control/maneuver_controller/maneuver_execution_period_ms", rclcpp::ParameterType::PARAMETER_INTEGER);
+    configurator->DeclareParameter("/control/maneuver_controller/reference_stream_timeout_ms", rclcpp::ParameterType::PARAMETER_INTEGER);
+    configurator->DeclareParameter("/mission/reference_continuity_position_tolerance_m", rclcpp::ParameterType::PARAMETER_DOUBLE);
+    configurator->DeclareParameter("/mission/reference_continuity_velocity_tolerance_m_s", rclcpp::ParameterType::PARAMETER_DOUBLE);
+    configurator->DeclareParameter("/mission/reference_continuity_acceleration_tolerance_m_s2", rclcpp::ParameterType::PARAMETER_DOUBLE);
+    configurator->DeclareParameter("/mission/reference_continuity_yaw_tolerance_rad", rclcpp::ParameterType::PARAMETER_DOUBLE);
+    configurator->DeclareParameter("/mission/reference_continuity_yaw_rate_tolerance_rad_s", rclcpp::ParameterType::PARAMETER_DOUBLE);
+    configurator->DeclareParameter("/mission/reference_continuity_yaw_acceleration_tolerance_rad_s2", rclcpp::ParameterType::PARAMETER_DOUBLE);
+    configurator->DeclareParameter("/control/maneuver_controller/controlled_cancel_max_deceleration_m_s2", rclcpp::ParameterType::PARAMETER_DOUBLE);
+    configurator->DeclareParameter("/control/maneuver_controller/controlled_cancel_max_jerk_m_s3", rclcpp::ParameterType::PARAMETER_DOUBLE);
+    configurator->DeclareParameter("/control/maneuver_controller/controlled_cancel_max_yaw_deceleration_rad_s2", rclcpp::ParameterType::PARAMETER_DOUBLE);
+    configurator->DeclareParameter("/control/maneuver_controller/controlled_cancel_max_yaw_jerk_rad_s3", rclcpp::ParameterType::PARAMETER_DOUBLE);
+    configurator->DeclareParameter("/control/maneuver_controller/controlled_cancel_velocity_threshold_m_s", rclcpp::ParameterType::PARAMETER_DOUBLE);
+    configurator->DeclareParameter("/control/maneuver_controller/controlled_cancel_yaw_rate_threshold_rad_s", rclcpp::ParameterType::PARAMETER_DOUBLE);
+    configurator->DeclareParameter("/control/maneuver_controller/controlled_cancel_settle_time_s", rclcpp::ParameterType::PARAMETER_DOUBLE);
     configurator->DeclareParameter("/mission/manual_stick_input_threshold", rclcpp::ParameterType::PARAMETER_DOUBLE);
     configurator->DeclareParameter("/mission/mission_done_select_mode", rclcpp::ParameterType::PARAMETER_STRING);
     configurator->CreateConfiguration("maneuver_reference_client", {
@@ -56,6 +73,23 @@ int main(int argc, char **argv) {
         iii_drone::configuration::configuration_entry_t("/mission/max_failed_attempts_during_maneuver", rclcpp::ParameterType::PARAMETER_INTEGER),
         iii_drone::configuration::configuration_entry_t("/mission/wait_for_maneuver_start_timeout_ms", rclcpp::ParameterType::PARAMETER_INTEGER),
         iii_drone::configuration::configuration_entry_t("/mission/get_reference_timeout_ms", rclcpp::ParameterType::PARAMETER_INTEGER),
+        iii_drone::configuration::configuration_entry_t("/mission/reference_loss_timeout_ms", rclcpp::ParameterType::PARAMETER_INTEGER),
+        iii_drone::configuration::configuration_entry_t("/mission/reference_rebase_timeout_ms", rclcpp::ParameterType::PARAMETER_INTEGER),
+        iii_drone::configuration::configuration_entry_t("/control/maneuver_controller/maneuver_execution_period_ms", rclcpp::ParameterType::PARAMETER_INTEGER),
+        iii_drone::configuration::configuration_entry_t("/control/maneuver_controller/reference_stream_timeout_ms", rclcpp::ParameterType::PARAMETER_INTEGER),
+        iii_drone::configuration::configuration_entry_t("/mission/reference_continuity_position_tolerance_m", rclcpp::ParameterType::PARAMETER_DOUBLE),
+        iii_drone::configuration::configuration_entry_t("/mission/reference_continuity_velocity_tolerance_m_s", rclcpp::ParameterType::PARAMETER_DOUBLE),
+        iii_drone::configuration::configuration_entry_t("/mission/reference_continuity_acceleration_tolerance_m_s2", rclcpp::ParameterType::PARAMETER_DOUBLE),
+        iii_drone::configuration::configuration_entry_t("/mission/reference_continuity_yaw_tolerance_rad", rclcpp::ParameterType::PARAMETER_DOUBLE),
+        iii_drone::configuration::configuration_entry_t("/mission/reference_continuity_yaw_rate_tolerance_rad_s", rclcpp::ParameterType::PARAMETER_DOUBLE),
+        iii_drone::configuration::configuration_entry_t("/mission/reference_continuity_yaw_acceleration_tolerance_rad_s2", rclcpp::ParameterType::PARAMETER_DOUBLE),
+        iii_drone::configuration::configuration_entry_t("/control/maneuver_controller/controlled_cancel_max_deceleration_m_s2", rclcpp::ParameterType::PARAMETER_DOUBLE),
+        iii_drone::configuration::configuration_entry_t("/control/maneuver_controller/controlled_cancel_max_jerk_m_s3", rclcpp::ParameterType::PARAMETER_DOUBLE),
+        iii_drone::configuration::configuration_entry_t("/control/maneuver_controller/controlled_cancel_max_yaw_deceleration_rad_s2", rclcpp::ParameterType::PARAMETER_DOUBLE),
+        iii_drone::configuration::configuration_entry_t("/control/maneuver_controller/controlled_cancel_max_yaw_jerk_rad_s3", rclcpp::ParameterType::PARAMETER_DOUBLE),
+        iii_drone::configuration::configuration_entry_t("/control/maneuver_controller/controlled_cancel_velocity_threshold_m_s", rclcpp::ParameterType::PARAMETER_DOUBLE),
+        iii_drone::configuration::configuration_entry_t("/control/maneuver_controller/controlled_cancel_yaw_rate_threshold_rad_s", rclcpp::ParameterType::PARAMETER_DOUBLE),
+        iii_drone::configuration::configuration_entry_t("/control/maneuver_controller/controlled_cancel_settle_time_s", rclcpp::ParameterType::PARAMETER_DOUBLE),
     });
     configurator->CreateConfiguration("mode_provider", {
         iii_drone::configuration::configuration_entry_t("/control/dt", rclcpp::ParameterType::PARAMETER_DOUBLE),

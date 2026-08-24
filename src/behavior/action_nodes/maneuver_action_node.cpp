@@ -5,6 +5,7 @@
 #include <iii_drone_mission/behavior/action_nodes/maneuver_action_node.hpp>
 
 #include <iii_drone_interfaces/action/fly_to_position.hpp>
+#include <iii_drone_interfaces/action/follow_waypoint_path.hpp>
 #include <iii_drone_interfaces/action/fly_to_object.hpp>
 #include <iii_drone_interfaces/action/cable_landing.hpp>
 #include <iii_drone_interfaces/action/cable_takeoff.hpp>
@@ -317,6 +318,15 @@ bool ManeuverActionNode<ActionT>::setManeuverRunning() {
                 "ManeuverActionNode::setManeuverRunning(): %s: Attaching to active maneuver reference stream",
                 name_.c_str()
             );
+            if (!maneuver_reference_client_->PrepareManeuverStreamHandoff()) {
+                RCLCPP_ERROR(
+                    node_ptr_->get_logger(),
+                    "ManeuverActionNode::setManeuverRunning(): %s: "
+                    "Failed to prepare blended reference stream handoff",
+                    name_.c_str()
+                );
+                return false;
+            }
         } else {
             if (active_stream) {
                 RCLCPP_DEBUG(
@@ -516,6 +526,7 @@ bool ManeuverActionNode<ActionT>::shouldAttachToActiveManeuverStreamOnGoalAccept
 /*****************************************************************************/
 
 template class iii_drone::behavior::ManeuverActionNode<iii_drone_interfaces::action::FlyToPosition>;
+template class iii_drone::behavior::ManeuverActionNode<iii_drone_interfaces::action::FollowWaypointPath>;
 template class iii_drone::behavior::ManeuverActionNode<iii_drone_interfaces::action::FlyToObject>;
 template class iii_drone::behavior::ManeuverActionNode<iii_drone_interfaces::action::CableLanding>;
 template class iii_drone::behavior::ManeuverActionNode<iii_drone_interfaces::action::CableTakeoff>;

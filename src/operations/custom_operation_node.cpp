@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <geometry_msgs/msg/point.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -27,6 +28,7 @@
 #include <iii_drone_interfaces/action/custom_operation.hpp>
 #include <iii_drone_interfaces/action/fly_to_object.hpp>
 #include <iii_drone_interfaces/action/fly_to_position.hpp>
+#include <iii_drone_interfaces/action/follow_waypoint_path.hpp>
 #include <iii_drone_interfaces/action/hover.hpp>
 #include <iii_drone_interfaces/action/hover_by_object.hpp>
 #include <iii_drone_interfaces/action/hover_on_cable.hpp>
@@ -115,6 +117,47 @@ public:
         } catch (const YAML::Exception & error) {
             throw std::runtime_error("argument '" + key + "' must be boolean: " + error.what());
         }
+    }
+
+    std::vector<iii_drone_interfaces::msg::Waypoint> waypoints() const {
+        const auto nodes = root_["waypoints"];
+        if (!nodes || !nodes.IsSequence() || nodes.size() < 1) {
+            throw std::runtime_error("argument 'waypoints' must be a non-empty array");
+        }
+
+        std::vector<iii_drone_interfaces::msg::Waypoint> result;
+        result.reserve(nodes.size());
+        for (std::size_t index = 0; index < nodes.size(); ++index) {
+            const auto node = nodes[index];
+            if (!node.IsMap()) {
+                throw std::runtime_error("waypoints[" + std::to_string(index) + "] must be an object");
+            }
+            const auto position = node["position"] && node["position"].IsMap()
+                ? node["position"]
+                : node;
+            try {
+                iii_drone_interfaces::msg::Waypoint waypoint;
+                waypoint.position.x = position["x"].as<double>();
+                waypoint.position.y = position["y"].as<double>();
+                waypoint.position.z = position["z"].as<double>();
+                waypoint.yaw = node["yaw"] ? node["yaw"].as<float>() : 0.0F;
+                waypoint.transition_mode = node["transition_mode"]
+                    ? node["transition_mode"].as<uint8_t>()
+                    : iii_drone_interfaces::msg::Waypoint::TRANSITION_BLEND;
+                waypoint.blend_radius_m = node["blend_radius_m"]
+                    ? node["blend_radius_m"].as<float>()
+                    : 0.0F;
+                waypoint.speed_limit_m_s = node["speed_limit_m_s"]
+                    ? node["speed_limit_m_s"].as<float>()
+                    : 0.0F;
+                result.push_back(waypoint);
+            } catch (const YAML::Exception & error) {
+                throw std::runtime_error(
+                    "invalid waypoints[" + std::to_string(index) + "]: " + error.what()
+                );
+            }
+        }
+        return result;
     }
 
     double nestedDouble(
@@ -270,6 +313,7 @@ public:
         operation_callback_group_ = node.create_callback_group(rclcpp::CallbackGroupType::Reentrant, false);
 
         fly_to_position_client_ = createManeuverClient<iii_drone_interfaces::action::FlyToPosition>("fly_to_position");
+        follow_waypoint_path_client_ = createManeuverClient<iii_drone_interfaces::action::FollowWaypointPath>("follow_waypoint_path");
         cable_aware_fly_to_position_client_ = createManeuverClient<iii_drone_interfaces::action::CableAwareFlyToPosition>("cable_aware_fly_to_position");
         fly_to_object_client_ = createManeuverClient<iii_drone_interfaces::action::FlyToObject>("fly_to_object");
         hover_client_ = createManeuverClient<iii_drone_interfaces::action::Hover>("hover");
@@ -316,6 +360,9 @@ public:
         runShutdownStep("clear maneuver queue", [this]() { clearManeuverQueue("custom operation deactivated"); });
         runShutdownStep("finish operation as canceled", [this]() { finishOperationAsCanceled(); });
         runShutdownStep("stop maneuver reference client", [this]() { stopManeuverReferenceClient(); });
+        runShutdownStep("reset maneuver reference client", [this]() {
+            maneuver_reference_client_->SetReferenceModeHover(true);
+        });
     }
 
     void updateSetpoint(float dt) override {
@@ -402,6 +449,7 @@ private:
     rclcpp::Client<iii_drone_interfaces::srv::RegisterOffboardMode>::SharedPtr register_offboard_mode_client_;
     rclcpp_action::Server<CustomOperation>::SharedPtr operation_server_;
     rclcpp_action::Client<iii_drone_interfaces::action::FlyToPosition>::SharedPtr fly_to_position_client_;
+    rclcpp_action::Client<iii_drone_interfaces::action::FollowWaypointPath>::SharedPtr follow_waypoint_path_client_;
     rclcpp_action::Client<iii_drone_interfaces::action::CableAwareFlyToPosition>::SharedPtr cable_aware_fly_to_position_client_;
     rclcpp_action::Client<iii_drone_interfaces::action::FlyToObject>::SharedPtr fly_to_object_client_;
     rclcpp_action::Client<iii_drone_interfaces::action::Hover>::SharedPtr hover_client_;
@@ -435,6 +483,23 @@ private:
         );
         configurator_->DeclareParameter("/control/dt", double_t);
         configurator_->DeclareParameter("/mission/get_reference_timeout_ms", int_t);
+        configurator_->DeclareParameter("/mission/reference_loss_timeout_ms", int_t);
+        configurator_->DeclareParameter("/mission/reference_rebase_timeout_ms", int_t);
+        configurator_->DeclareParameter("/control/maneuver_controller/maneuver_execution_period_ms", int_t);
+        configurator_->DeclareParameter("/control/maneuver_controller/reference_stream_timeout_ms", int_t);
+        configurator_->DeclareParameter("/mission/reference_continuity_position_tolerance_m", double_t);
+        configurator_->DeclareParameter("/mission/reference_continuity_velocity_tolerance_m_s", double_t);
+        configurator_->DeclareParameter("/mission/reference_continuity_acceleration_tolerance_m_s2", double_t);
+        configurator_->DeclareParameter("/mission/reference_continuity_yaw_tolerance_rad", double_t);
+        configurator_->DeclareParameter("/mission/reference_continuity_yaw_rate_tolerance_rad_s", double_t);
+        configurator_->DeclareParameter("/mission/reference_continuity_yaw_acceleration_tolerance_rad_s2", double_t);
+        configurator_->DeclareParameter("/control/maneuver_controller/controlled_cancel_max_deceleration_m_s2", double_t);
+        configurator_->DeclareParameter("/control/maneuver_controller/controlled_cancel_max_jerk_m_s3", double_t);
+        configurator_->DeclareParameter("/control/maneuver_controller/controlled_cancel_max_yaw_deceleration_rad_s2", double_t);
+        configurator_->DeclareParameter("/control/maneuver_controller/controlled_cancel_max_yaw_jerk_rad_s3", double_t);
+        configurator_->DeclareParameter("/control/maneuver_controller/controlled_cancel_velocity_threshold_m_s", double_t);
+        configurator_->DeclareParameter("/control/maneuver_controller/controlled_cancel_yaw_rate_threshold_rad_s", double_t);
+        configurator_->DeclareParameter("/control/maneuver_controller/controlled_cancel_settle_time_s", double_t);
         configurator_->DeclareParameter("/mission/use_nans_when_hovering", bool_t);
         configurator_->DeclareParameter("/mission/max_failed_attempts_during_maneuver", int_t);
         configurator_->DeclareParameter("/mission/wait_for_maneuver_start_timeout_ms", int_t);
@@ -444,6 +509,23 @@ private:
             ConfigurationEntry("/mission/max_failed_attempts_during_maneuver", int_t),
             ConfigurationEntry("/mission/wait_for_maneuver_start_timeout_ms", int_t),
             ConfigurationEntry("/mission/get_reference_timeout_ms", int_t),
+            ConfigurationEntry("/mission/reference_loss_timeout_ms", int_t),
+            ConfigurationEntry("/mission/reference_rebase_timeout_ms", int_t),
+            ConfigurationEntry("/control/maneuver_controller/maneuver_execution_period_ms", int_t),
+            ConfigurationEntry("/control/maneuver_controller/reference_stream_timeout_ms", int_t),
+            ConfigurationEntry("/mission/reference_continuity_position_tolerance_m", double_t),
+            ConfigurationEntry("/mission/reference_continuity_velocity_tolerance_m_s", double_t),
+            ConfigurationEntry("/mission/reference_continuity_acceleration_tolerance_m_s2", double_t),
+            ConfigurationEntry("/mission/reference_continuity_yaw_tolerance_rad", double_t),
+            ConfigurationEntry("/mission/reference_continuity_yaw_rate_tolerance_rad_s", double_t),
+            ConfigurationEntry("/mission/reference_continuity_yaw_acceleration_tolerance_rad_s2", double_t),
+            ConfigurationEntry("/control/maneuver_controller/controlled_cancel_max_deceleration_m_s2", double_t),
+            ConfigurationEntry("/control/maneuver_controller/controlled_cancel_max_jerk_m_s3", double_t),
+            ConfigurationEntry("/control/maneuver_controller/controlled_cancel_max_yaw_deceleration_rad_s2", double_t),
+            ConfigurationEntry("/control/maneuver_controller/controlled_cancel_max_yaw_jerk_rad_s3", double_t),
+            ConfigurationEntry("/control/maneuver_controller/controlled_cancel_velocity_threshold_m_s", double_t),
+            ConfigurationEntry("/control/maneuver_controller/controlled_cancel_yaw_rate_threshold_rad_s", double_t),
+            ConfigurationEntry("/control/maneuver_controller/controlled_cancel_settle_time_s", double_t),
         });
 
         const double control_dt_s = configurator_->GetParameter("/control/dt").as_double();
@@ -543,14 +625,15 @@ private:
     }
 
     rclcpp_action::CancelResponse handleOperationCancel(const std::shared_ptr<CustomOperationGoalHandle>) {
-        RCLCPP_INFO(node_.get_logger(), "CustomOperationMode::handleOperationCancel(): Cancelling active operation.");
+        RCLCPP_INFO(
+            node_.get_logger(),
+            "CustomOperationMode::handleOperationCancel(): Forwarding cancellation and retaining maneuver reference control until the maneuver stops."
+        );
         {
             std::lock_guard<std::mutex> lock(operation_mutex_);
             cancel_requested_ = true;
         }
         cancelForwardedGoal();
-        stopManeuverReferenceClient();
-        finishOperationAsCanceled();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -580,6 +663,12 @@ private:
                     goal_handle,
                     fly_to_position_client_,
                     makeFlyToPositionGoal(goal->arguments_json)
+                );
+            } else if (operation == "follow_waypoint_path") {
+                dispatchTyped<iii_drone_interfaces::action::FollowWaypointPath>(
+                    goal_handle,
+                    follow_waypoint_path_client_,
+                    makeFollowWaypointPathGoal(goal->arguments_json)
                 );
             } else if (operation == "cable_aware_fly_to_position") {
                 dispatchTyped<iii_drone_interfaces::action::CableAwareFlyToPosition>(
@@ -719,14 +808,25 @@ private:
                     }
                     maneuver_reference_active_.store(true);
 
-                    std::lock_guard<std::mutex> lock(operation_mutex_);
-                    cancel_forwarded_goal_ = [client, forwarded_goal_handle]() {
+                    bool cancel_pending = false;
+                    {
+                        std::lock_guard<std::mutex> lock(operation_mutex_);
+                        cancel_forwarded_goal_ = [client, forwarded_goal_handle]() {
+                            try {
+                                client->async_cancel_goal(forwarded_goal_handle);
+                            } catch (const std::exception &) {
+                                // Goal cancellation is best-effort; terminal callbacks handle cleanup.
+                            }
+                        };
+                        cancel_pending = cancel_requested_;
+                    }
+                    if (cancel_pending) {
                         try {
                             client->async_cancel_goal(forwarded_goal_handle);
                         } catch (const std::exception &) {
                             // Goal cancellation is best-effort; terminal callbacks handle cleanup.
                         }
-                    };
+                    }
                 } catch (const std::exception & error) {
                     if (forwarded_goal_handle) {
                         try {
@@ -807,6 +907,7 @@ private:
         goal.target_position = pointFromArgs(parsed);
         goal.target_yaw = static_cast<float>(parsed.doubleValue("yaw", 0.0));
         goal.blend_to_next = parsed.boolValue("blend_to_next", false);
+        goal.ignore_altitude = parsed.boolValue("ignore_altitude", false);
         return goal;
     }
 
@@ -816,6 +917,28 @@ private:
         goal.frame_id = parsed.stringValue("frame_id", "world");
         goal.target_position = pointFromArgs(parsed);
         goal.target_yaw = static_cast<float>(parsed.doubleValue("yaw", 0.0));
+        goal.ignore_altitude = parsed.boolValue("ignore_altitude", false);
+        return goal;
+    }
+
+    iii_drone_interfaces::action::FollowWaypointPath::Goal makeFollowWaypointPathGoal(
+        const std::string & args
+    ) {
+        const OperationArgs parsed(args);
+        iii_drone_interfaces::action::FollowWaypointPath::Goal goal;
+        goal.frame_id = parsed.stringValue("frame_id", "world");
+        goal.waypoints = parsed.waypoints();
+        goal.repeat = parsed.boolValue("repeat", false);
+        const int repeat_from_index = parsed.intValue("repeat_from_index", 0);
+        if (repeat_from_index < 0) {
+            throw std::runtime_error("argument 'repeat_from_index' must be non-negative");
+        }
+        goal.repeat_from_index = static_cast<uint32_t>(repeat_from_index);
+        goal.nominal_speed_m_s = static_cast<float>(parsed.doubleValue("nominal_speed_m_s", 0.0));
+        goal.max_acceleration_m_s2 = static_cast<float>(
+            parsed.doubleValue("max_acceleration_m_s2", 0.0)
+        );
+        goal.max_jerk_m_s3 = static_cast<float>(parsed.doubleValue("max_jerk_m_s3", 0.0));
         return goal;
     }
 
@@ -1036,6 +1159,14 @@ int main(int argc, char * argv[]) {
         "Registering CustomOperation mode; PX4/micro-ROS readiness is enforced by system supervision."
     );
     auto mode = std::make_shared<CustomOperationMode>(*node);
+
+    // ModeBase constructs the PX4 registration endpoints immediately, but DDS
+    // matching is asynchronous. If the request is sent before the volatile
+    // reply reader has matched PX4's reply writer, PX4 accepts the mode while
+    // this process waits forever for the already-sent reply. Allow discovery
+    // to settle before the first request; subsequent retry handling remains
+    // unchanged for genuine registration failures.
+    rclcpp::sleep_for(std::chrono::seconds(10));
 
     bool registered = false;
     for (int attempt = 1; attempt <= 12; ++attempt) {

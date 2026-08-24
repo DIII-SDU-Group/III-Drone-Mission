@@ -51,6 +51,17 @@ namespace powerline_geometry {
         const iii_drone::types::vector_t & powerline_direction
     );
 
+    std::optional<PowerlineAxes> ComputePylonAlignedAxes(
+        const iii_drone::types::vector_t & powerline_direction,
+        const iii_drone::types::point_t & pylon_a,
+        const iii_drone::types::point_t & pylon_b
+    );
+
+    std::optional<double> ComputePowerlineAlignedYaw(
+        const iii_drone::types::vector_t & powerline_direction,
+        double current_yaw
+    );
+
     std::optional<iii_drone::types::point_t> SelectHighestPoint(
         const std::vector<iii_drone::types::point_t> & points
     );

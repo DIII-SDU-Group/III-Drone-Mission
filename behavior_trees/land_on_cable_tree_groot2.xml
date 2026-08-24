@@ -134,6 +134,9 @@
                   type="std::string"/>
       <input_port name="target_position"
                   type="Eigen::Matrix&lt;float, 3, 1, 0, 3, 1&gt;"/>
+      <input_port name="ignore_altitude"
+                  type="bool"
+                  default="false"/>
     </Action>
     <Action ID="GetPowerlineOverview">
       <output_port name="stored_powerline"

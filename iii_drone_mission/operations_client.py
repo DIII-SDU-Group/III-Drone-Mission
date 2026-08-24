@@ -98,6 +98,7 @@ class OperationsClient:
         z: float,
         yaw: float,
         blend_to_next: bool = False,
+        ignore_altitude: bool = False,
         timeout_sec: Optional[float] = None,
     ) -> OperationResult:
         return self._send_goal(
@@ -109,6 +110,7 @@ class OperationsClient:
                 "z": float(z),
                 "yaw": float(yaw),
                 "blend_to_next": bool(blend_to_next),
+                "ignore_altitude": bool(ignore_altitude),
             },
             timeout_sec=timeout_sec,
         )
@@ -121,11 +123,19 @@ class OperationsClient:
         y: float,
         z: float,
         yaw: float,
+        ignore_altitude: bool = False,
         timeout_sec: Optional[float] = None,
     ) -> OperationResult:
         return self._send_goal(
             action_name="cable_aware_fly_to_position",
-            arguments={"frame_id": frame_id, "x": float(x), "y": float(y), "z": float(z), "yaw": float(yaw)},
+            arguments={
+                "frame_id": frame_id,
+                "x": float(x),
+                "y": float(y),
+                "z": float(z),
+                "yaw": float(yaw),
+                "ignore_altitude": bool(ignore_altitude),
+            },
             timeout_sec=timeout_sec,
         )
 

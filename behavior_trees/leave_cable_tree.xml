@@ -121,6 +121,7 @@
                 target_position="{final_waypoint}"
                 target_yaw="{initial_yaw}"
                 frame_id="world"
+                completion_position_tolerance_m="0.2"
             />
         </Sequence>
      </BehaviorTree>

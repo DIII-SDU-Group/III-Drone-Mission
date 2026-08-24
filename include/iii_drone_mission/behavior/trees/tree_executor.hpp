@@ -9,6 +9,7 @@
 
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <wordexp.h>
 
@@ -41,6 +42,7 @@
 #include <iii_drone_mission/behavior/action_nodes/hover_by_object_maneuver_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/fly_to_object_maneuver_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/fly_to_position_maneuver_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/follow_waypoint_path_maneuver_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/cable_landing_maneuver_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/cable_takeoff_maneuver_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/pl_mapper_command_action_node.hpp>
@@ -141,6 +143,7 @@ namespace behavior {
         std::shared_ptr<iii_drone::mission::RuntimeIntentBuffer> runtime_intent_buffer_;
 
         std::thread execute_thread_;
+        mutable std::mutex execute_thread_mutex_;
 
         iii_drone::utils::Atomic<bool> running_ = false;
         iii_drone::utils::Atomic<bool> finished_ = false;

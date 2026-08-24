@@ -79,6 +79,8 @@ namespace rosbag_recorder_node {
         std::string recording_id_;
         std::filesystem::path output_dir_;
         std::string started_at_;
+        std::string owner_;
+        std::string last_error_;
 
         void startRecordingCallback(
             const std::shared_ptr<rmw_request_id_t> request_header,
@@ -101,7 +103,7 @@ namespace rosbag_recorder_node {
         bool isRecording();
         bool stopRecording(double timeout_sec, std::string & message, bool & was_running);
         void clearRecordingState();
-        std::string makeRecordingId() const;
+        std::string makeRecordingId(const std::string & prefix) const;
         std::string sanitizeRecordingId(const std::string & recording_id) const;
         std::uint64_t outputSizeBytes() const;
         void fillStatus(iii_drone_interfaces::srv::GetRosbagRecordingStatus::Response & response);

@@ -26,6 +26,7 @@
 // III-Drone-Interfaces:
 
 #include <iii_drone_interfaces/msg/powerline.hpp>
+#include <iii_drone_interfaces/msg/pylon_overview.hpp>
 #include <iii_drone_interfaces/msg/single_line.hpp>
 
 /*****************************************************************************/
@@ -73,6 +74,7 @@ namespace behavior {
         BT::NodeStatus verifyLineMatchesPowerlineOverview(
             const iii_drone_interfaces::msg::Powerline & detected_powerline,
             const iii_drone_interfaces::msg::Powerline & powerline_overview,
+            const iii_drone::types::vector_t & comparison_direction,
             int powerline_overview_required_line_id,
             double line_match_distance_threshold_m,
             double relaxed_line_match_distance_threshold_m,

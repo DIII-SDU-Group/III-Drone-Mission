@@ -10,7 +10,9 @@
 #include <memory>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
+#include <vector>
 
 /*****************************************************************************/
 // ROS2:
@@ -29,6 +31,7 @@
 // III-Drone-Core:
 
 #include <iii_drone_core/utils/history.hpp>
+#include <iii_drone_core/utils/types.hpp>
 
 #include <iii_drone_core/control/maneuver/maneuver_reference_client.hpp>
 
@@ -57,6 +60,7 @@
 #include <px4_ros2/components/mode.hpp>
 
 #include <iii_drone_mission/px4/modes/maneuver_mode.hpp>
+#include <iii_drone_interfaces/msg/mission_intent_status.hpp>
 
 #include <std_srvs/srv/set_bool.hpp>
 
@@ -117,6 +121,10 @@ namespace mission {
             return runtime_intent_buffer_;
         }
 
+        std::optional<iii_drone::types::point_t> currentPosition() const;
+        iii_drone::configuration::Configuration::SharedPtr phaseWaypointConfiguration() const;
+        std::vector<iii_drone_interfaces::msg::MissionIntentStatus> intentStatuses() const;
+
     private:
         rclcpp_lifecycle::LifecycleNode * node_;
 
@@ -146,6 +154,8 @@ namespace mission {
 
         std::shared_ptr<RuntimeIntentBuffer> runtime_intent_buffer_;
         std::map<std::string, rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr> intent_services_;
+        mutable std::mutex intent_status_mutex_;
+        std::map<std::string, iii_drone_interfaces::msg::MissionIntentStatus> intent_statuses_;
 
         void registerIntentServices();
         void unregisterIntentServices();

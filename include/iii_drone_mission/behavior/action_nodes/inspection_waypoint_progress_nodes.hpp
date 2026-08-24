@@ -10,6 +10,12 @@
 #include <iii_drone_core/utils/types.hpp>
 
 /*****************************************************************************/
+// Std:
+
+#include <cstddef>
+#include <optional>
+
+/*****************************************************************************/
 // III-Drone-Mission:
 
 #include <iii_drone_mission/behavior/port_types.hpp>
@@ -26,6 +32,18 @@
 
 namespace iii_drone {
 namespace behavior {
+
+    std::optional<int> NextInspectionWaypointIndex(
+        int current_index,
+        std::size_t waypoint_count,
+        int loop_start_index
+    );
+
+    std::optional<bool> InspectionWaypointShouldBlendToNext(
+        int current_index,
+        std::size_t waypoint_count,
+        int loop_start_index
+    );
 
     class InitializeInspectionWaypointsActionNode : public BT::SyncActionNode {
     public:

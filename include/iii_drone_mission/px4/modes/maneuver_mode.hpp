@@ -8,6 +8,7 @@
 // Std:
 
 #include <functional>
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -95,8 +96,14 @@ namespace px4 {
 
         std::string mode_name() const;
         std::string mode_key() const;
+        uint8_t mode_id() const;
         bool is_registered() const;
         bool active() const;
+        bool tree_running() const;
+        bool tree_finished() const;
+        bool tree_success() const;
+        bool emergency_reference_hold_active() const;
+        std::string degraded_reason() const;
 
         typedef std::shared_ptr<ManeuverMode> SharedPtr;
 

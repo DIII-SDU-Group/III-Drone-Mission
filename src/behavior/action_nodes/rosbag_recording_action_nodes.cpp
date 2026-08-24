@@ -52,7 +52,8 @@ PortsList StartRosbagRecordingActionNode::providedPorts() {
         InputPort<std::string>("output_dir", std::string(""), "Output directory. Empty uses the recorder artifact root."),
         InputPort<bool>("all_topics", true, "Record all topics."),
         InputPort<std::string>("topics", std::string(""), "Comma-separated topic list used when all_topics is false."),
-        InputPort<bool>("include_hidden_topics", true, "Record hidden topics.")
+        InputPort<bool>("include_hidden_topics", true, "Record hidden topics."),
+        InputPort<std::string>("owner", std::string("behavior_tree"), "Logical recording owner.")
     });
 }
 
@@ -61,6 +62,7 @@ bool StartRosbagRecordingActionNode::setRequest(Request::SharedPtr & request) {
     getInput("output_dir", request->output_dir);
     getInput("all_topics", request->all_topics);
     getInput("include_hidden_topics", request->include_hidden_topics);
+    getInput("owner", request->owner);
 
     std::string topics_csv;
     getInput("topics", topics_csv);
@@ -153,13 +155,13 @@ PortsList RosbagRecordingScopeDecorator::providedPorts() {
         InputPort<bool>("all_topics", true, "Record all topics."),
         InputPort<std::string>("topics", std::string(""), "Comma-separated topic list used when all_topics is false."),
         InputPort<bool>("include_hidden_topics", true, "Record hidden topics."),
+        InputPort<std::string>("owner", std::string("behavior_tree"), "Logical recording owner."),
         InputPort<double>("stop_timeout_sec", 10.0, "Graceful stop timeout in seconds.")
     };
 }
 
 NodeStatus RosbagRecordingScopeDecorator::tick() {
-    if (!recording_started_) {
-        stopActiveRecording(false);
+    if (!recording_scope_initialized_) {
         if (!startRecording()) {
             return NodeStatus::FAILURE;
         }
@@ -169,7 +171,9 @@ NodeStatus RosbagRecordingScopeDecorator::tick() {
     const NodeStatus child_status = child_node_->executeTick();
 
     if (isStatusCompleted(child_status)) {
-        const bool stopped = stopActiveRecording(true);
+        const bool stopped = !owns_recording_ || stopActiveRecording(true);
+        recording_scope_initialized_ = false;
+        owns_recording_ = false;
         resetChild();
         return stopped ? child_status : NodeStatus::FAILURE;
     }
@@ -178,9 +182,11 @@ NodeStatus RosbagRecordingScopeDecorator::tick() {
 }
 
 void RosbagRecordingScopeDecorator::halt() {
-    if (recording_started_) {
+    if (recording_scope_initialized_ && owns_recording_) {
         stopActiveRecording(false);
     }
+    recording_scope_initialized_ = false;
+    owns_recording_ = false;
     DecoratorNode::halt();
 }
 
@@ -209,7 +215,7 @@ bool RosbagRecordingScopeDecorator::stopActiveRecording(bool require_success) {
     }
 
     const auto response = future.get();
-    recording_started_ = false;
+    owns_recording_ = false;
 
     if (!response->success) {
         RCLCPP_ERROR(
@@ -237,6 +243,7 @@ bool RosbagRecordingScopeDecorator::startRecording() {
     getInput("output_dir", request->output_dir);
     getInput("all_topics", request->all_topics);
     getInput("include_hidden_topics", request->include_hidden_topics);
+    getInput("owner", request->owner);
     std::string topics_csv;
     getInput("topics", topics_csv);
     request->topics = splitTopicList(topics_csv);
@@ -260,10 +267,12 @@ bool RosbagRecordingScopeDecorator::startRecording() {
         return false;
     }
 
-    recording_started_ = true;
+    recording_scope_initialized_ = true;
+    owns_recording_ = !response->was_running;
     RCLCPP_INFO(
         node_->get_logger(),
-        "RosbagRecordingScopeDecorator::startRecording(): recording '%s' at %s",
+        "RosbagRecordingScopeDecorator::startRecording(): %s recording '%s' at %s",
+        owns_recording_ ? "started" : "reusing",
         response->recording_id.c_str(),
         response->output_dir.c_str()
     );

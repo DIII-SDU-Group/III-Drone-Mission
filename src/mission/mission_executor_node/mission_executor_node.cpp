@@ -3,12 +3,19 @@
 /*****************************************************************************/
 
 #include <iii_drone_mission/mission/mission_executor_node/mission_executor_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/phase_waypoint_provider_action_node.hpp>
+
+#include <iii_drone_core/adapters/powerline_adapter.hpp>
 
 #include <chrono>
 #include <exception>
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
 
 #include <lifecycle_msgs/msg/state.hpp>
 #include <px4_msgs/msg/vehicle_status.hpp>
@@ -21,6 +28,46 @@ namespace {
 using LifecycleConfigurator = Configurator<rclcpp_lifecycle::LifecycleNode>;
 using ParameterType = rclcpp::ParameterType;
 using ConfigurationEntry = iii_drone::configuration::configuration_entry_t;
+
+std::string ContentHash(const std::string & path)
+{
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) {
+        return "";
+    }
+    uint64_t hash = 1469598103934665603ULL;
+    char byte = 0;
+    while (stream.get(byte)) {
+        hash ^= static_cast<unsigned char>(byte);
+        hash *= 1099511628211ULL;
+    }
+    std::ostringstream output;
+    output << "fnv1a64:" << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return output.str();
+}
+
+std::string ConfigurationProfile()
+{
+    if (const char * profile = std::getenv("III_DRONE_PROFILE"); profile != nullptr && *profile != '\0') {
+        return profile;
+    }
+    if (const char * simulation = std::getenv("SIMULATION"); simulation != nullptr) {
+        return std::string(simulation) == "true" ? "sim" : "real";
+    }
+    return "unknown";
+}
+
+bool SamePath(const std::string & first, const std::string & second)
+{
+    if (first.empty() || second.empty()) {
+        return false;
+    }
+    std::error_code first_error;
+    std::error_code second_error;
+    const auto canonical_first = std::filesystem::weakly_canonical(first, first_error);
+    const auto canonical_second = std::filesystem::weakly_canonical(second, second_error);
+    return !first_error && !second_error && canonical_first == canonical_second;
+}
 
 bool WaitForVehicleStatusMessage(
     rclcpp_lifecycle::LifecycleNode & node,
@@ -120,6 +167,23 @@ void DeclareManagedParameters(LifecycleConfigurator & configurator)
     configurator.DeclareParameter("/mission/wait_for_maneuver_start_timeout_ms", int_t);
     configurator.DeclareParameter("/control/dt", double_t);
     configurator.DeclareParameter("/mission/get_reference_timeout_ms", int_t);
+    configurator.DeclareParameter("/mission/reference_loss_timeout_ms", int_t);
+    configurator.DeclareParameter("/mission/reference_rebase_timeout_ms", int_t);
+    configurator.DeclareParameter("/control/maneuver_controller/maneuver_execution_period_ms", int_t);
+    configurator.DeclareParameter("/control/maneuver_controller/reference_stream_timeout_ms", int_t);
+    configurator.DeclareParameter("/mission/reference_continuity_position_tolerance_m", double_t);
+    configurator.DeclareParameter("/mission/reference_continuity_velocity_tolerance_m_s", double_t);
+    configurator.DeclareParameter("/mission/reference_continuity_acceleration_tolerance_m_s2", double_t);
+    configurator.DeclareParameter("/mission/reference_continuity_yaw_tolerance_rad", double_t);
+    configurator.DeclareParameter("/mission/reference_continuity_yaw_rate_tolerance_rad_s", double_t);
+    configurator.DeclareParameter("/mission/reference_continuity_yaw_acceleration_tolerance_rad_s2", double_t);
+    configurator.DeclareParameter("/control/maneuver_controller/controlled_cancel_max_deceleration_m_s2", double_t);
+    configurator.DeclareParameter("/control/maneuver_controller/controlled_cancel_max_jerk_m_s3", double_t);
+    configurator.DeclareParameter("/control/maneuver_controller/controlled_cancel_max_yaw_deceleration_rad_s2", double_t);
+    configurator.DeclareParameter("/control/maneuver_controller/controlled_cancel_max_yaw_jerk_rad_s3", double_t);
+    configurator.DeclareParameter("/control/maneuver_controller/controlled_cancel_velocity_threshold_m_s", double_t);
+    configurator.DeclareParameter("/control/maneuver_controller/controlled_cancel_yaw_rate_threshold_rad_s", double_t);
+    configurator.DeclareParameter("/control/maneuver_controller/controlled_cancel_settle_time_s", double_t);
     configurator.DeclareParameter("/mission/manual_stick_input_threshold", double_t);
     configurator.DeclareParameter("/mission/mission_done_select_mode", string_t);
 
@@ -128,6 +192,23 @@ void DeclareManagedParameters(LifecycleConfigurator & configurator)
         ConfigurationEntry("/mission/max_failed_attempts_during_maneuver", int_t),
         ConfigurationEntry("/mission/wait_for_maneuver_start_timeout_ms", int_t),
         ConfigurationEntry("/mission/get_reference_timeout_ms", int_t),
+        ConfigurationEntry("/mission/reference_loss_timeout_ms", int_t),
+        ConfigurationEntry("/mission/reference_rebase_timeout_ms", int_t),
+        ConfigurationEntry("/control/maneuver_controller/maneuver_execution_period_ms", int_t),
+        ConfigurationEntry("/control/maneuver_controller/reference_stream_timeout_ms", int_t),
+        ConfigurationEntry("/mission/reference_continuity_position_tolerance_m", double_t),
+        ConfigurationEntry("/mission/reference_continuity_velocity_tolerance_m_s", double_t),
+        ConfigurationEntry("/mission/reference_continuity_acceleration_tolerance_m_s2", double_t),
+        ConfigurationEntry("/mission/reference_continuity_yaw_tolerance_rad", double_t),
+        ConfigurationEntry("/mission/reference_continuity_yaw_rate_tolerance_rad_s", double_t),
+        ConfigurationEntry("/mission/reference_continuity_yaw_acceleration_tolerance_rad_s2", double_t),
+        ConfigurationEntry("/control/maneuver_controller/controlled_cancel_max_deceleration_m_s2", double_t),
+        ConfigurationEntry("/control/maneuver_controller/controlled_cancel_max_jerk_m_s3", double_t),
+        ConfigurationEntry("/control/maneuver_controller/controlled_cancel_max_yaw_deceleration_rad_s2", double_t),
+        ConfigurationEntry("/control/maneuver_controller/controlled_cancel_max_yaw_jerk_rad_s3", double_t),
+        ConfigurationEntry("/control/maneuver_controller/controlled_cancel_velocity_threshold_m_s", double_t),
+        ConfigurationEntry("/control/maneuver_controller/controlled_cancel_yaw_rate_threshold_rad_s", double_t),
+        ConfigurationEntry("/control/maneuver_controller/controlled_cancel_settle_time_s", double_t),
     });
     configurator.CreateConfiguration("mode_provider", {
         ConfigurationEntry("/control/dt", double_t),
@@ -201,6 +282,12 @@ MissionExecutorNode::MissionExecutorNode(
         rclcpp::SystemDefaultsQoS()
     );
     mission_status_publisher_->on_activate();
+    powerline_overview_client_ = create_client<iii_drone_interfaces::srv::GetPowerlineOverview>(
+        "/mission/powerline_overview_provider/get_powerline_overview"
+    );
+    pylon_overview_client_ = create_client<iii_drone_interfaces::srv::GetPylonOverview>(
+        "/mission/pylon_overview_provider/get_pylon_overview"
+    );
     mission_status_timer_ = create_wall_timer(
         std::chrono::milliseconds(500),
         [this]() {
@@ -259,10 +346,15 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     mission_executor_ = std::make_shared<MissionExecutor>(
         this, 
         tf_buffer_,
-        configurator_->GetParameter("/mission/mission_specification_file").as_string(),
+        default_mission_specification_file_,
         odometry_sub_callback_group_,
         executor_handle_
     );
+    // MissionSpecification resolves shell variables and '~'. Publish and compare
+    // the resolved path so canonical identity is not falsely degraded.
+    default_mission_specification_file_ =
+        mission_executor_->mission_specification()->mission_specification_file();
+    mission_specification_file_ = default_mission_specification_file_;
 
     mission_executor_->Configure(
         configurator_,
@@ -599,13 +691,44 @@ void MissionExecutorNode::publishMissionModeStatus() {
 
     iii_drone_interfaces::msg::MissionModeStatus msg;
     msg.stamp = get_clock()->now();
+    refreshInspectionOverviewCaches();
+    populateInspectionStartEligibility(msg);
     msg.active_mission_specification = mission_specification_file_;
+    msg.canonical_mission_specification = default_mission_specification_file_;
+    msg.active_mission_specification_hash = ContentHash(mission_specification_file_);
+    msg.canonical_mission_specification_loaded = SamePath(
+        mission_specification_file_,
+        default_mission_specification_file_
+    );
+    msg.configuration_profile = ConfigurationProfile();
+    msg.mission_specification_load_error = mission_status_degraded_reason_;
     msg.required_modes = requiredMissionModes();
     msg.registered_modes = registeredMissionModes();
     msg.required_modes_registered = requiredMissionModesRegistered();
 
     if (mission_executor_ != nullptr && mission_executor_->mission_specification() != nullptr) {
         msg.owned_mode = mission_executor_->mission_specification()->executor_owned_mode();
+        msg.intents = mission_executor_->intentStatuses();
+        const auto mode_provider = mission_executor_->mode_provider();
+        if (mode_provider != nullptr) {
+            for (const auto & mode : *mode_provider) {
+                iii_drone_interfaces::msg::MissionModeRegistryEntry entry;
+                entry.stamp = msg.stamp;
+                entry.mode_key = mode->mode_key();
+                entry.display_name = mode->mode_name();
+                entry.mode_id = mode->mode_id();
+                entry.mode_id_valid = mode->is_registered();
+                entry.registered = mode->is_registered();
+                entry.active = mode->active();
+                entry.tree_running = mode->tree_running();
+                entry.tree_finished = mode->tree_finished();
+                entry.tree_success = mode->tree_success();
+                entry.tree_success_valid = entry.tree_finished;
+                entry.degraded_reason = mode->degraded_reason();
+                entry.degraded = !entry.degraded_reason.empty();
+                msg.modes.push_back(entry);
+            }
+        }
         if (msg.active_mission_specification.empty()) {
             msg.active_mission_specification = mission_executor_->mission_specification()->mission_specification_file();
         }
@@ -639,6 +762,126 @@ void MissionExecutorNode::publishMissionModeStatus() {
 
     mission_status_publisher_->publish(msg);
 
+}
+
+void MissionExecutorNode::refreshInspectionOverviewCaches() {
+    if (
+        powerline_overview_client_ &&
+        powerline_overview_client_->service_is_ready() &&
+        !powerline_overview_request_pending_.exchange(true)
+    ) {
+        auto request = std::make_shared<iii_drone_interfaces::srv::GetPowerlineOverview::Request>();
+        powerline_overview_client_->async_send_request(
+            request,
+            [this](rclcpp::Client<iii_drone_interfaces::srv::GetPowerlineOverview>::SharedFuture future) {
+                try {
+                    std::lock_guard<std::mutex> lock(inspection_overview_mutex_);
+                    powerline_overview_response_ = future.get();
+                } catch (const std::exception & exc) {
+                    RCLCPP_WARN(get_logger(), "Failed to refresh powerline overview: %s", exc.what());
+                }
+                powerline_overview_request_pending_ = false;
+            }
+        );
+    }
+    if (
+        pylon_overview_client_ &&
+        pylon_overview_client_->service_is_ready() &&
+        !pylon_overview_request_pending_.exchange(true)
+    ) {
+        auto request = std::make_shared<iii_drone_interfaces::srv::GetPylonOverview::Request>();
+        pylon_overview_client_->async_send_request(
+            request,
+            [this](rclcpp::Client<iii_drone_interfaces::srv::GetPylonOverview>::SharedFuture future) {
+                try {
+                    std::lock_guard<std::mutex> lock(inspection_overview_mutex_);
+                    pylon_overview_response_ = future.get();
+                } catch (const std::exception & exc) {
+                    RCLCPP_WARN(get_logger(), "Failed to refresh pylon overview: %s", exc.what());
+                }
+                pylon_overview_request_pending_ = false;
+            }
+        );
+    }
+}
+
+void MissionExecutorNode::populateInspectionStartEligibility(
+    iii_drone_interfaces::msg::MissionModeStatus & msg
+) {
+    auto & output = msg.inspection_start_eligibility;
+    output.stamp = msg.stamp;
+    if (mission_executor_ == nullptr) {
+        output.failure_reasons.push_back("mission executor is unavailable");
+        return;
+    }
+    const auto position = mission_executor_->currentPosition();
+    if (!position) {
+        output.failure_reasons.push_back("vehicle odometry has not been received");
+        return;
+    }
+
+    iii_drone_interfaces::srv::GetPowerlineOverview::Response::SharedPtr powerline;
+    iii_drone_interfaces::srv::GetPylonOverview::Response::SharedPtr pylons;
+    {
+        std::lock_guard<std::mutex> lock(inspection_overview_mutex_);
+        powerline = powerline_overview_response_;
+        pylons = pylon_overview_response_;
+    }
+    if (!powerline || !powerline->success) {
+        output.failure_reasons.push_back("stored powerline overview is unavailable");
+        return;
+    }
+    if (!pylons || !pylons->success || !pylons->valid || pylons->stored_pylon_overview.pylons.size() != 2) {
+        output.failure_reasons.push_back("exactly two valid stored pylons are required");
+        return;
+    }
+    const auto configuration = mission_executor_->phaseWaypointConfiguration();
+    if (!configuration) {
+        output.failure_reasons.push_back("inspection geometry configuration is unavailable");
+        return;
+    }
+
+    try {
+        iii_drone::adapters::PowerlineAdapter powerline_adapter(powerline->stored_powerline);
+        iii_drone::types::point_t pylon_a;
+        pylon_a << pylons->stored_pylon_overview.pylons.at(0).x,
+            pylons->stored_pylon_overview.pylons.at(0).y, 0.0;
+        iii_drone::types::point_t pylon_b;
+        pylon_b << pylons->stored_pylon_overview.pylons.at(1).x,
+            pylons->stored_pylon_overview.pylons.at(1).y, 0.0;
+        const auto eligibility = iii_drone::behavior::EvaluateCorridorInspectionStart(
+            powerline_adapter.GetPoints(),
+            powerline_adapter.projection_plane().normal,
+            pylon_a,
+            pylon_b,
+            *position,
+            configuration->GetParameter("/inspection_demo/inspection_clearance_m").as_double(),
+            configuration->GetParameter("/inspection_demo/pylon_end_clearance_m").as_double(),
+            configuration->GetParameter("/inspection_demo/pylon_structure_extent_m").as_double(),
+            configuration->GetParameter("/inspection_demo/pylon_span_margin_m").as_double(),
+            configuration->GetParameter(
+                "/inspection_demo/max_pylon_powerline_direction_mismatch_rad"
+            ).as_double()
+        );
+        output.evaluable = eligibility.evaluable;
+        output.eligible = eligibility.eligible;
+        output.side = eligibility.side;
+        output.measured_lateral_clearance_m = eligibility.measured_lateral_clearance_m;
+        output.required_lateral_clearance_m = eligibility.required_lateral_clearance_m;
+        output.between_pylons = eligibility.between_pylons;
+        output.distance_from_start_boundary_m = eligibility.distance_from_start_boundary_m;
+        output.distance_to_end_boundary_m = eligibility.distance_to_end_boundary_m;
+        output.pylon_span_margin_m = eligibility.pylon_span_margin_m;
+        output.ingress_point_valid = eligibility.ingress_point_valid;
+        output.ingress_point.x = eligibility.ingress_point[0];
+        output.ingress_point.y = eligibility.ingress_point[1];
+        output.ingress_point.z = eligibility.ingress_point[2];
+        output.failure_reasons = eligibility.failure_reasons;
+    } catch (const std::exception & exc) {
+        output.failure_reasons.push_back(
+            std::string("inspection eligibility evaluation failed: ") + exc.what()
+        );
+    }
 }
 
 int main(int argc, char **argv) {

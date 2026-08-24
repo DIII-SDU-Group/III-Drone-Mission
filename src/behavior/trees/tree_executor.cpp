@@ -4,6 +4,8 @@
 
 #include <iii_drone_mission/behavior/trees/tree_executor.hpp>
 
+#include <stdexcept>
+
 using namespace iii_drone::behavior;
 using namespace iii_drone::configuration;
 using namespace iii_drone::types;
@@ -73,6 +75,24 @@ void TreeExecutor::Deinitialize() {
 
 void TreeExecutor::StartExecution() {
 
+    std::lock_guard<std::mutex> lock(execute_thread_mutex_);
+
+    if (running_) {
+        throw std::runtime_error(
+            "TreeExecutor::StartExecution(): Tree " + tree_name_ + " is already running"
+        );
+    }
+
+    if (execute_thread_.joinable()) {
+        if (!finished_) {
+            throw std::runtime_error(
+                "TreeExecutor::StartExecution(): Previous execution of " + tree_name_ +
+                " is still stopping"
+            );
+        }
+        execute_thread_.join();
+    }
+
     running_ = true;
     finished_ = false;
     success_ = false;
@@ -84,6 +104,8 @@ void TreeExecutor::StartExecution() {
 }
 
 void TreeExecutor::StopExecution(bool wait) {
+
+    std::lock_guard<std::mutex> lock(execute_thread_mutex_);
 
     running_ = false;
 
@@ -288,6 +310,19 @@ void TreeExecutor::registerNodes() {
 
         factory_.registerNodeType<FlyToPositionManeuverActionNode>(
             "FlyToPosition",
+            params,
+            maneuver_reference_client_
+        );
+    }
+
+    {
+        BT::RosNodeParams params;
+        params.nh = node;
+        params.default_port_value = "/control/maneuver_controller/follow_waypoint_path";
+        params.server_timeout = server_timeout;
+        params.wait_for_server_timeout = wait_for_server_timeout;
+        factory_.registerNodeType<FollowWaypointPathManeuverActionNode>(
+            "FollowWaypointPath",
             params,
             maneuver_reference_client_
         );

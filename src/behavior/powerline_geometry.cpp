@@ -81,6 +81,55 @@ std::optional<PowerlineAxes> iii_drone::behavior::powerline_geometry::ComputeAxe
     };
 }
 
+std::optional<PowerlineAxes> iii_drone::behavior::powerline_geometry::ComputePylonAlignedAxes(
+    const vector_t & powerline_direction,
+    const point_t & pylon_a,
+    const point_t & pylon_b
+) {
+    const auto powerline_axes = ComputeAxes(powerline_direction);
+    if (!powerline_axes) {
+        return std::nullopt;
+    }
+
+    vector_t pylon_direction = xyOnly(pylon_b - pylon_a);
+    if (pylon_direction.norm() < 1e-6) {
+        return std::nullopt;
+    }
+    if (pylon_direction.dot(powerline_axes->direction_no_z) < 0.0) {
+        pylon_direction *= -1.0;
+    }
+    return ComputeAxes(pylon_direction);
+}
+
+std::optional<double> iii_drone::behavior::powerline_geometry::ComputePowerlineAlignedYaw(
+    const vector_t & powerline_direction,
+    double current_yaw
+) {
+    const auto axes = ComputeAxes(powerline_direction);
+    if (!axes) {
+        return std::nullopt;
+    }
+
+    const double direction_yaw = std::atan2(
+        axes->direction_no_z[1],
+        axes->direction_no_z[0]
+    );
+    const auto shortest_error = [current_yaw](double target_yaw) {
+        return std::atan2(
+            std::sin(target_yaw - current_yaw),
+            std::cos(target_yaw - current_yaw)
+        );
+    };
+
+    const double forward_error = shortest_error(direction_yaw);
+    const double reverse_error = shortest_error(direction_yaw + M_PI);
+    return current_yaw + (
+        std::abs(forward_error) <= std::abs(reverse_error)
+            ? forward_error
+            : reverse_error
+    );
+}
+
 std::optional<point_t> iii_drone::behavior::powerline_geometry::SelectHighestPoint(
     const std::vector<point_t> & points
 ) {

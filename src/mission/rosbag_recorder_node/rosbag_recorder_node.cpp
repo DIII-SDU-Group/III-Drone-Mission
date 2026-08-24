@@ -189,11 +189,12 @@ void RosbagRecorderNode::startRecordingCallback(
     (void)request_header;
 
     if (isRecording()) {
-        response->success = false;
-        response->message = "rosbag recording already active";
+        response->success = true;
+        response->message = "reusing active rosbag recording";
         response->recording_id = recording_id_;
         response->output_dir = output_dir_.string();
         response->pid = static_cast<std::uint32_t>(child_pid_);
+        response->was_running = true;
         return;
     }
 
@@ -203,18 +204,16 @@ void RosbagRecorderNode::startRecordingCallback(
         return;
     }
 
-    recording_id_ = sanitizeRecordingId(request->recording_id.empty() ? makeRecordingId() : request->recording_id);
-    output_dir_ = request->output_dir.empty() ? artifact_root_ / recording_id_ : std::filesystem::path(request->output_dir);
-    started_at_ = nowString();
-
-    if (std::filesystem::exists(output_dir_)) {
-        response->success = false;
-        response->message = "output directory already exists";
-        response->recording_id = recording_id_;
-        response->output_dir = output_dir_.string();
-        clearRecordingState();
-        return;
+    const auto prefix = request->recording_id.empty() ? (request->owner.empty() ? "recording" : request->owner) : request->recording_id;
+    const auto base_recording_id = makeRecordingId(prefix);
+    recording_id_ = base_recording_id;
+    for (std::size_t suffix = 2; std::filesystem::exists(artifact_root_ / recording_id_); ++suffix) {
+        recording_id_ = base_recording_id + "_" + std::to_string(suffix);
     }
+    output_dir_ = artifact_root_ / recording_id_;
+    started_at_ = nowString();
+    owner_ = request->owner.empty() ? "unknown" : request->owner;
+    last_error_.clear();
 
     const auto log_dir = log_root_ / recording_id_;
     try {
@@ -223,6 +222,7 @@ void RosbagRecorderNode::startRecordingCallback(
     } catch (const std::filesystem::filesystem_error & e) {
         response->success = false;
         response->message = std::string("failed to create recording directories: ") + e.what();
+        last_error_ = response->message;
         response->recording_id = recording_id_;
         response->output_dir = output_dir_.string();
         clearRecordingState();
@@ -247,6 +247,7 @@ void RosbagRecorderNode::startRecordingCallback(
     if (child_pid_ < 0) {
         response->success = false;
         response->message = "fork failed";
+        last_error_ = response->message;
         clearRecordingState();
         return;
     }
@@ -272,6 +273,7 @@ void RosbagRecorderNode::startRecordingCallback(
     if (::waitpid(child_pid_, &status, WNOHANG) == child_pid_) {
         response->success = false;
         response->message = "ros2 bag process exited immediately";
+        last_error_ = response->message;
         clearRecordingState();
         return;
     }
@@ -281,6 +283,7 @@ void RosbagRecorderNode::startRecordingCallback(
     response->recording_id = recording_id_;
     response->output_dir = output_dir_.string();
     response->pid = static_cast<std::uint32_t>(child_pid_);
+    response->was_running = false;
 
     RCLCPP_INFO(
         get_logger(),
@@ -390,8 +393,8 @@ void RosbagRecorderNode::clearRecordingState() {
     started_at_.clear();
 }
 
-std::string RosbagRecorderNode::makeRecordingId() const {
-    return "reach_cable_" + nowString();
+std::string RosbagRecorderNode::makeRecordingId(const std::string & prefix) const {
+    return sanitizeRecordingId(prefix) + "_" + nowString();
 }
 
 std::string RosbagRecorderNode::sanitizeRecordingId(const std::string & recording_id) const {
@@ -404,7 +407,7 @@ std::string RosbagRecorderNode::sanitizeRecordingId(const std::string & recordin
             sanitized.push_back('_');
         }
     }
-    return sanitized.empty() ? makeRecordingId() : sanitized;
+    return sanitized.empty() ? "recording" : sanitized;
 }
 
 std::uint64_t RosbagRecorderNode::outputSizeBytes() const {
@@ -425,9 +428,19 @@ void RosbagRecorderNode::fillStatus(iii_drone_interfaces::srv::GetRosbagRecordin
     response.recording = isRecording();
     response.recording_id = recording_id_;
     response.output_dir = output_dir_.string();
+    response.artifact_root = artifact_root_.string();
     response.pid = child_pid_ > 0 ? static_cast<std::uint32_t>(child_pid_) : 0;
     response.started_at = started_at_;
     response.size_bytes = outputSizeBytes();
+    try {
+        const auto probe = output_dir_.empty() ? artifact_root_ : output_dir_.parent_path();
+        response.free_space_bytes = std::filesystem::space(probe).available;
+    } catch (const std::filesystem::filesystem_error & error) {
+        response.free_space_bytes = 0;
+        last_error_ = std::string("failed to query rosbag free space: ") + error.what();
+    }
+    response.owner = owner_;
+    response.error = last_error_;
     response.message = response.recording ? "recording active" : "no active recording";
 }
 

@@ -89,7 +89,8 @@ namespace behavior {
         rclcpp::Client<iii_drone_interfaces::srv::StopRosbagRecording>::SharedPtr stop_client_;
         std::chrono::milliseconds server_timeout_;
         std::chrono::milliseconds wait_for_server_timeout_;
-        bool recording_started_ = false;
+        bool recording_scope_initialized_ = false;
+        bool owns_recording_ = false;
 
         bool stopActiveRecording(bool require_success);
         bool startRecording();

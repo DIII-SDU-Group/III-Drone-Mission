@@ -3,6 +3,7 @@
 /*****************************************************************************/
 
 #include <iii_drone_mission/behavior/condition_nodes/verify_powerline_detected_condition_node.hpp>
+#include <iii_drone_mission/behavior/powerline_geometry.hpp>
 
 #include <limits>
 
@@ -31,6 +32,12 @@ PortsList VerifyPowerlineDetectedConditionNode::providedPorts() {
     return providedBasicPorts({
         InputPort<unsigned int>("required_n_lines"),
         InputPort<iii_drone_interfaces::msg::Powerline>("powerline_overview"),
+        InputPort<iii_drone_interfaces::msg::PylonOverview>("stored_pylon_overview"),
+        InputPort<double>(
+            "max_pylon_direction_mismatch_rad",
+            0.35,
+            "Maximum accepted angle between stored mapper and pylon span directions."
+        ),
         InputPort<int>("powerline_overview_required_line_id"),
         InputPort<double>("line_match_distance_threshold_m"),
         InputPort<double>("relaxed_line_match_distance_threshold_m"),
@@ -148,6 +155,7 @@ bool VerifyPowerlineDetectedConditionNode::transformLinePointToFrame(
 NodeStatus VerifyPowerlineDetectedConditionNode::verifyLineMatchesPowerlineOverview(
     const iii_drone_interfaces::msg::Powerline & detected_powerline,
     const iii_drone_interfaces::msg::Powerline & powerline_overview,
+    const vector_t & comparison_direction,
     int powerline_overview_required_line_id,
     double line_match_distance_threshold_m,
     double relaxed_line_match_distance_threshold_m,
@@ -167,11 +175,6 @@ NodeStatus VerifyPowerlineDetectedConditionNode::verifyLineMatchesPowerlineOverv
         return NodeStatus::FAILURE;
     }
 
-    const vector_t powerline_direction(
-        powerline_overview.projection_plane.normal.x,
-        powerline_overview.projection_plane.normal.y,
-        powerline_overview.projection_plane.normal.z
-    );
     const std::string overview_frame_id = powerline_overview.lines.empty() ?
         std::string() :
         powerline_overview.lines.front().header.frame_id;
@@ -194,9 +197,9 @@ NodeStatus VerifyPowerlineDetectedConditionNode::verifyLineMatchesPowerlineOverv
         overview_line_point[2],
         overview_frame_id.c_str(),
         line_match_distance_threshold_m,
-        powerline_direction[0],
-        powerline_direction[1],
-        powerline_direction[2]
+        comparison_direction[0],
+        comparison_direction[1],
+        comparison_direction[2]
     );
 
     double best_distance = std::numeric_limits<double>::infinity();
@@ -210,7 +213,7 @@ NodeStatus VerifyPowerlineDetectedConditionNode::verifyLineMatchesPowerlineOverv
         const double distance = distanceInPlaneOrthogonalToDirection(
             overview_line_point,
             detected_line_point,
-            powerline_direction
+            comparison_direction
         );
         double nearest_other_overview_distance = std::numeric_limits<double>::infinity();
         int nearest_other_overview_line_id = -1;
@@ -226,7 +229,7 @@ NodeStatus VerifyPowerlineDetectedConditionNode::verifyLineMatchesPowerlineOverv
             const double other_distance = distanceInPlaneOrthogonalToDirection(
                 other_overview_line_point,
                 detected_line_point,
-                powerline_direction
+                comparison_direction
             );
             if (other_distance < nearest_other_overview_distance) {
                 nearest_other_overview_distance = other_distance;
@@ -359,9 +362,56 @@ NodeStatus VerifyPowerlineDetectedConditionNode::onTick(const std::shared_ptr<ii
         int matched_detected_line_id = -1;
         double matched_line_distance_m = std::numeric_limits<double>::infinity();
 
+        vector_t comparison_direction(
+            powerline_overview.projection_plane.normal.x,
+            powerline_overview.projection_plane.normal.y,
+            powerline_overview.projection_plane.normal.z
+        );
+        iii_drone_interfaces::msg::PylonOverview pylon_overview;
+        if (getInput("stored_pylon_overview", pylon_overview) &&
+            pylon_overview.pylons.size() == 2) {
+            point_t pylon_a;
+            pylon_a << pylon_overview.pylons.at(0).x,
+                pylon_overview.pylons.at(0).y, 0.0;
+            point_t pylon_b;
+            pylon_b << pylon_overview.pylons.at(1).x,
+                pylon_overview.pylons.at(1).y, 0.0;
+            double max_mismatch_rad = 0.35;
+            getInput("max_pylon_direction_mismatch_rad", max_mismatch_rad);
+            const auto pylon_axes = powerline_geometry::ComputePylonAlignedAxes(
+                comparison_direction,
+                pylon_a,
+                pylon_b
+            );
+            if (pylon_axes) {
+                const auto overview_axes = powerline_geometry::ComputeAxes(comparison_direction);
+                if (overview_axes && !powerline_geometry::PylonSpanMatchesPowerlineDirection(
+                        pylon_a,
+                        pylon_b,
+                        overview_axes->direction_no_z,
+                        max_mismatch_rad
+                    )) {
+                    RCLCPP_WARN(
+                        node_ptr_->get_logger(),
+                        "VerifyPowerlineDetectedConditionNode::onTick(): %s: mapper direction differs from pylon span by more than %.3f rad; using pylon direction for live-line association",
+                        name().c_str(),
+                        max_mismatch_rad
+                    );
+                }
+                comparison_direction = pylon_axes->direction;
+            } else {
+                RCLCPP_WARN(
+                    node_ptr_->get_logger(),
+                    "VerifyPowerlineDetectedConditionNode::onTick(): %s: stored pylon span is degenerate; retaining mapper direction for live-line association",
+                    name().c_str()
+                );
+            }
+        }
+
         const NodeStatus status = verifyLineMatchesPowerlineOverview(
             *last_msg,
             powerline_overview,
+            comparison_direction,
             powerline_overview_required_line_id,
             line_match_distance_threshold_m,
             relaxed_line_match_distance_threshold_m,

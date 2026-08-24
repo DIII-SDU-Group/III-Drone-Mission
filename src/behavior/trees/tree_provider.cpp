@@ -41,7 +41,8 @@ void DeclareManagedParameters(NodeConfigurator & configurator)
     configurator.DeclareParameter("/tf/world_frame_id", string_t);
     configurator.DeclareParameter("/mission/bypass_battery_checks", bool_t);
     configurator.DeclareParameter("/inspection_demo/inspection_clearance_m", double_t);
-    configurator.DeclareParameter("/inspection_demo/pylon_low_height_above_ground_m", double_t);
+    configurator.DeclareParameter("/inspection_demo/pylon_end_clearance_m", double_t);
+    configurator.DeclareParameter("/inspection_demo/pylon_structure_extent_m", double_t);
     configurator.DeclareParameter("/inspection_demo/max_pylon_powerline_direction_mismatch_rad", double_t);
     configurator.DeclareParameter("/inspection_demo/pylon_span_margin_m", double_t);
     configurator.DeclareParameter("/inspection_demo/battery_topic_timeout_s", double_t);
@@ -82,12 +83,11 @@ void DeclareManagedParameters(NodeConfigurator & configurator)
         ConfigurationEntry("/tf/drone_frame_id", string_t),
     });
     configurator.CreateConfiguration("phase_waypoint_provider_action_node", {
-        ConfigurationEntry("/behavior/top_clearance_m", double_t),
-        ConfigurationEntry("/behavior/horizontal_clearance_m", double_t),
         ConfigurationEntry("/behavior/inside_powerline_xy_distance_threshold_m", double_t),
         ConfigurationEntry("/behavior/under_cable_clearance_m", double_t),
         ConfigurationEntry("/inspection_demo/inspection_clearance_m", double_t),
-        ConfigurationEntry("/inspection_demo/pylon_low_height_above_ground_m", double_t),
+        ConfigurationEntry("/inspection_demo/pylon_end_clearance_m", double_t),
+        ConfigurationEntry("/inspection_demo/pylon_structure_extent_m", double_t),
         ConfigurationEntry("/inspection_demo/max_pylon_powerline_direction_mismatch_rad", double_t),
         ConfigurationEntry("/inspection_demo/pylon_span_margin_m", double_t),
     });
@@ -163,6 +163,13 @@ TreeProvider::TreeProvider(
 
     RCLCPP_INFO(get_logger(), "TreeProvider::TreeProvider(): Initialized.");
 
+}
+
+Configuration::SharedPtr TreeProvider::phaseWaypointConfiguration() const {
+    if (!configurator_) {
+        return nullptr;
+    }
+    return configurator_->GetConfiguration("phase_waypoint_provider_action_node");
 }
 
 void TreeProvider::Configure(

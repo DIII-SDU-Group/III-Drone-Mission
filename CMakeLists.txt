@@ -85,6 +85,7 @@ set(III_DRONE_MISSION_HDRS
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/hover_by_object_maneuver_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/hover_on_cable_maneuver_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/fly_to_position_maneuver_action_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/follow_waypoint_path_maneuver_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/fly_to_object_maneuver_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/cable_landing_maneuver_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/cable_takeoff_maneuver_action_node.hpp"
@@ -143,6 +144,7 @@ set(III_DRONE_MISSION_SRCS
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/hover_by_object_maneuver_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/hover_on_cable_maneuver_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/fly_to_position_maneuver_action_node.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/follow_waypoint_path_maneuver_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/fly_to_object_maneuver_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/cable_landing_maneuver_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/cable_takeoff_maneuver_action_node.cpp"
@@ -313,10 +315,38 @@ if(BUILD_TESTING)
     test/mission_specification_test.cpp
   )
 
+  ament_add_gtest(iii_drone_corridor_inspection_route_test
+    test/corridor_inspection_route_test.cpp
+  )
+
+  ament_add_gtest(iii_drone_cable_axis_yaw_settler_test
+    test/cable_axis_yaw_settler_test.cpp
+  )
+  ament_add_gtest(iii_drone_overview_gnss_persistence_test
+    test/overview_gnss_persistence_test.cpp
+  )
+
   if(TARGET iii_drone_mission_specification_test)
     target_include_directories(iii_drone_mission_specification_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
     target_link_libraries(iii_drone_mission_specification_test iii_drone_mission_lib)
     ament_target_dependencies(iii_drone_mission_specification_test ${dependencies})
+  endif()
+
+  if(TARGET iii_drone_corridor_inspection_route_test)
+    target_include_directories(iii_drone_corridor_inspection_route_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+    target_link_libraries(iii_drone_corridor_inspection_route_test iii_drone_mission_lib)
+    ament_target_dependencies(iii_drone_corridor_inspection_route_test ${dependencies})
+  endif()
+  if(TARGET iii_drone_overview_gnss_persistence_test)
+    target_include_directories(iii_drone_overview_gnss_persistence_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+    target_link_libraries(iii_drone_overview_gnss_persistence_test iii_drone_mission_lib)
+    ament_target_dependencies(iii_drone_overview_gnss_persistence_test ${dependencies})
+  endif()
+
+  if(TARGET iii_drone_cable_axis_yaw_settler_test)
+    target_include_directories(iii_drone_cable_axis_yaw_settler_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+    target_link_libraries(iii_drone_cable_axis_yaw_settler_test iii_drone_mission_lib)
+    ament_target_dependencies(iii_drone_cable_axis_yaw_settler_test ${dependencies})
   endif()
 endif()
 

@@ -81,6 +81,7 @@ namespace behavior {
 
         TreeExecutor::SharedPtr GetTreeExecutor(const std::string& name) const;
         void ClearGlobalBlackboard(const std::string & reason);
+        iii_drone::configuration::Configuration::SharedPtr phaseWaypointConfiguration() const;
 
         const BT::BehaviorTreeFactory & factory() const {
             return tree_executors_.begin()->second->factory();
