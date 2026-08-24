@@ -78,6 +78,7 @@ MissionSpecification::MissionSpecification(
     rclcpp_lifecycle::LifecycleNode * node
 ) : node_(node) {
     std::string expanded_mission_specification_file = ExpandShellPath(mission_specification_file);
+    mission_specification_file_ = expanded_mission_specification_file;
     YAML::Node mission_specification_node = YAML::LoadFile(expanded_mission_specification_file);
 
     executor_owned_mode_ = mission_specification_node["executor_owned_mode"].as<std::string>();
@@ -109,6 +110,33 @@ MissionSpecification::MissionSpecification(
         }
 
         mission_specification_entries_[entry.key] = entry;
+    }
+
+    YAML::Node intent_services = mission_specification_node["intent_services"];
+    if (intent_services.IsDefined()) {
+        for (YAML::const_iterator it = intent_services.begin(); it != intent_services.end(); ++it) {
+            mission_intent_service_t intent_service;
+
+            intent_service.service_name = (*it)["service_name"].as<std::string>();
+            intent_service.flag_name = (*it)["flag_name"].as<std::string>();
+            intent_service.type = (*it)["type"].as<std::string>();
+
+            if (intent_service.type != "bool") {
+                throw std::runtime_error(
+                    "MissionSpecification::MissionSpecification(): Unsupported intent service type: "
+                    + intent_service.type
+                );
+            }
+
+            YAML::Node valid_modes = (*it)["valid_modes"];
+            if (valid_modes.IsDefined()) {
+                for (YAML::const_iterator mode_it = valid_modes.begin(); mode_it != valid_modes.end(); ++mode_it) {
+                    intent_service.valid_modes.push_back((*mode_it).as<std::string>());
+                }
+            }
+
+            intent_services_.push_back(intent_service);
+        }
     }
 
 }
@@ -144,6 +172,40 @@ MissionSpecificationIterator MissionSpecification::end() {
 std::string MissionSpecification::executor_owned_mode() const {
 
     return executor_owned_mode_;
+
+}
+
+std::string MissionSpecification::mission_specification_file() const {
+
+    return mission_specification_file_;
+
+}
+
+std::vector<mission_specification_entry_t> MissionSpecification::entries() const {
+
+    std::vector<mission_specification_entry_t> values;
+    values.reserve(mission_specification_entries_.size());
+    for (const auto & item : mission_specification_entries_) {
+        values.push_back(item.second);
+    }
+    return values;
+
+}
+
+std::vector<std::string> MissionSpecification::mode_keys() const {
+
+    std::vector<std::string> values;
+    values.reserve(mission_specification_entries_.size());
+    for (const auto & item : mission_specification_entries_) {
+        values.push_back(item.first);
+    }
+    return values;
+
+}
+
+std::vector<mission_intent_service_t> MissionSpecification::intent_services() const {
+
+    return intent_services_;
 
 }
 

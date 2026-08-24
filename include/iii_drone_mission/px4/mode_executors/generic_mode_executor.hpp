@@ -48,6 +48,8 @@
 
 #include <iii_drone_interfaces/msg/combined_drone_awareness.hpp>
 
+#include <iii_drone_interfaces/srv/clear_maneuver_queue.hpp>
+
 /*****************************************************************************/
 // PX4:
 
@@ -84,6 +86,9 @@ namespace px4 {
         void onActivate() override;
 
         void onDeactivate(DeactivateReason reason) override;
+
+        bool active() const;
+        std::string current_mode_key() const;
 
         typedef std::shared_ptr<GenericModeExecutor> SharedPtr;
 
@@ -186,6 +191,10 @@ namespace px4 {
 
         rclcpp::Subscription<iii_drone_interfaces::msg::CombinedDroneAwareness>::SharedPtr combined_drone_awareness_sub_;
         utils::History<adapters::CombinedDroneAwarenessAdapter> combined_drone_awareness_adapter_history_;
+
+        rclcpp::Client<iii_drone_interfaces::srv::ClearManeuverQueue>::SharedPtr clear_maneuver_queue_client_;
+        void clearManeuverQueue(const std::string & reason);
+        void clearGlobalBlackboard(const std::string & reason);
 
     };
 

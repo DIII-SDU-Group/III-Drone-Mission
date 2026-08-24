@@ -1,0 +1,43 @@
+<root BTCPP_format="4" main_tree_to_execute="FtpBlendLoopTest">
+    <BehaviorTree ID="FtpBlendLoopTest">
+        <KeepRunningUntilFailure name="ftp_blend_loop_forever">
+            <Sequence name="ftp_blend_four_point_loop">
+                <Action
+                    ID="FlyToPosition"
+                    name="ftp_blend_forward"
+                    target_position="11.285,7.302,4.757"
+                    target_yaw="0.849"
+                    frame_id="world"
+                    blend_to_next="true"
+                />
+
+                <Action
+                    ID="FlyToPosition"
+                    name="ftp_blend_right"
+                    target_position="11.285,9.302,4.757"
+                    target_yaw="0.849"
+                    frame_id="world"
+                    blend_to_next="true"
+                />
+
+                <Action
+                    ID="FlyToPosition"
+                    name="ftp_blend_back"
+                    target_position="9.285,9.302,4.757"
+                    target_yaw="0.849"
+                    frame_id="world"
+                    blend_to_next="true"
+                />
+
+                <Action
+                    ID="FlyToPosition"
+                    name="ftp_blend_left"
+                    target_position="9.285,7.302,4.757"
+                    target_yaw="0.849"
+                    frame_id="world"
+                    blend_to_next="true"
+                />
+            </Sequence>
+        </KeepRunningUntilFailure>
+    </BehaviorTree>
+</root>

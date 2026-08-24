@@ -7,6 +7,7 @@
 /*****************************************************************************/
 // Std:
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <thread>
@@ -27,6 +28,7 @@
 
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <px4_msgs/msg/vehicle_global_position.hpp>
 
 /*****************************************************************************/
 // III-Drone-Interfaces:
@@ -34,6 +36,7 @@
 #include <iii_drone_interfaces/srv/pl_mapper_command.hpp>
 
 #include <iii_drone_interfaces/msg/powerline.hpp>
+#include <iii_drone_interfaces/msg/powerline_overview_status.hpp>
 #include <iii_drone_interfaces/msg/string_stamped.hpp>
 
 #include <iii_drone_interfaces/srv/update_powerline_overview.hpp>
@@ -48,6 +51,8 @@
 
 #include <iii_drone_core/adapters/powerline_adapter.hpp>
 #include <iii_drone_core/adapters/point_cloud_adapter.hpp>
+
+#include <iii_drone_mission/mission/overview_gnss_persistence.hpp>
 
 /*****************************************************************************/
 // Class
@@ -97,14 +102,20 @@ namespace powerline_overview_provider_node {
         rclcpp::CallbackGroup::SharedPtr cb_group_1_;
 
         rclcpp::Subscription<iii_drone_interfaces::msg::Powerline>::SharedPtr powerline_sub_;
+        rclcpp::Subscription<px4_msgs::msg::VehicleGlobalPosition>::SharedPtr vehicle_global_position_sub_;
 
         utils::Atomic<iii_drone_interfaces::msg::Powerline> latest_powerline_;
         utils::Atomic<iii_drone_interfaces::msg::Powerline> stored_powerline_;
         utils::Atomic<iii_drone::adapters::PowerlineAdapter> stored_powerline_adapter_;
+        utils::Atomic<px4_msgs::msg::VehicleGlobalPosition> latest_global_position_;
 
         utils::Atomic<bool> has_stored_powerline_ = false;
+        bool has_persisted_gnss_powerline_ = false;
+        std::string overview_source_ = "none";
+        std::filesystem::path gnss_persistence_path_;
 
         rclcpp_lifecycle::LifecyclePublisher<iii_drone_interfaces::msg::StringStamped>::SharedPtr stored_powerline_status_pub_;
+        rclcpp_lifecycle::LifecyclePublisher<iii_drone_interfaces::msg::PowerlineOverviewStatus>::SharedPtr overview_status_pub_;
         rclcpp::TimerBase::SharedPtr stored_powerline_status_timer_;
 
         rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::PointCloud2>::SharedPtr stored_powerline_points_pub_;
@@ -128,6 +139,9 @@ namespace powerline_overview_provider_node {
             const std::shared_ptr<iii_drone_interfaces::srv::GetPowerlineOverview::Request> request,
             std::shared_ptr<iii_drone_interfaces::srv::GetPowerlineOverview::Response> response
         );
+
+        bool persistStoredPowerlineOverview(const iii_drone_interfaces::msg::Powerline & powerline);
+        bool loadPersistedPowerlineOverviewToMemory();
 
     };
 

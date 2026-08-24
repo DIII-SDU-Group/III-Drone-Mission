@@ -5,6 +5,7 @@
 #include <iii_drone_mission/behavior/action_nodes/maneuver_action_node.hpp>
 
 #include <iii_drone_interfaces/action/fly_to_position.hpp>
+#include <iii_drone_interfaces/action/follow_waypoint_path.hpp>
 #include <iii_drone_interfaces/action/fly_to_object.hpp>
 #include <iii_drone_interfaces/action/cable_landing.hpp>
 #include <iii_drone_interfaces/action/cable_takeoff.hpp>
@@ -22,6 +23,43 @@ using namespace BT;
 /*****************************************************************************/
 // Implementation:
 /*****************************************************************************/
+
+namespace {
+
+std::string actionResultCodeToString(rclcpp_action::ResultCode code) {
+    switch (code) {
+        case rclcpp_action::ResultCode::SUCCEEDED:
+            return "SUCCEEDED";
+        case rclcpp_action::ResultCode::ABORTED:
+            return "ABORTED";
+        case rclcpp_action::ResultCode::CANCELED:
+            return "CANCELED";
+        case rclcpp_action::ResultCode::UNKNOWN:
+        default:
+            return "UNKNOWN";
+    }
+}
+
+std::string actionNodeErrorCodeToString(BT::ActionNodeErrorCode error) {
+    switch (error) {
+        case BT::ActionNodeErrorCode::ACTION_ABORTED:
+            return "ACTION_ABORTED";
+        case BT::ActionNodeErrorCode::ACTION_CANCELLED:
+            return "ACTION_CANCELLED";
+        case BT::ActionNodeErrorCode::GOAL_REJECTED_BY_SERVER:
+            return "GOAL_REJECTED_BY_SERVER";
+        case BT::ActionNodeErrorCode::INVALID_GOAL:
+            return "INVALID_GOAL";
+        case BT::ActionNodeErrorCode::SEND_GOAL_TIMEOUT:
+            return "SEND_GOAL_TIMEOUT";
+        case BT::ActionNodeErrorCode::SERVER_UNREACHABLE:
+            return "SERVER_UNREACHABLE";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+}  // namespace
 
 template <typename ActionT>
 ManeuverActionNode<ActionT>::ManeuverActionNode(
@@ -49,6 +87,8 @@ void ManeuverActionNode<ActionT>::onGoalAccepted() {
         "ManeuverActionNode::onGoalAccepted(): %s: Maneuver action goal accepted",
         name_.c_str()
     );
+
+    ManeuverActionNode<ActionT>::setOutput("terminal_state", std::string("ACCEPTED"));
 
     // // Check if ActionT is CableLanding:
     // if constexpr (std::is_same<ActionT, iii_drone_interfaces::action::CableLanding>::value) {
@@ -88,26 +128,42 @@ BT::NodeStatus ManeuverActionNode<ActionT>::onResultReceived(const typename RosA
 
     if (wr.code == rclcpp_action::ResultCode::SUCCEEDED) {
 
+        ManeuverActionNode<ActionT>::setOutput("terminal_state", actionResultCodeToString(wr.code));
+
         RCLCPP_INFO(
             node_ptr_->get_logger(),
             "ManeuverActionNode::onResultReceived(): %s: Maneuver action succeeded",
             name_.c_str()
         );
 
-        if (get_final_reference_callback_) {
+        if (!shouldStopManeuverOnSuccessfulResult(wr)) {
+
+            RCLCPP_DEBUG(
+                node_ptr_->get_logger(),
+                "ManeuverActionNode::onResultReceived(): %s: Successful result keeps maneuver reference stream active",
+                name_.c_str()
+            );
+
+            maneuver_running_ = false;
+
+        } else if (get_final_reference_callback_) {
 
             Reference ref = get_final_reference_callback_(wr);
 
             ref = ref.CopyWithNans();
 
-            setManeuverNotRunning(
+            safeSetManeuverNotRunning(
                 ref,
-                stop_maneuver_after_timeout_ms
+                stop_maneuver_after_timeout_ms,
+                "successful result final-reference cleanup"
             );
 
         } else {
 
-            setManeuverNotRunning(stop_maneuver_after_timeout_ms);
+            safeSetManeuverNotRunning(
+                stop_maneuver_after_timeout_ms,
+                "successful result cleanup"
+            );
 
         }
 
@@ -115,13 +171,15 @@ BT::NodeStatus ManeuverActionNode<ActionT>::onResultReceived(const typename RosA
 
     } else {
 
+        ManeuverActionNode<ActionT>::setOutput("terminal_state", actionResultCodeToString(wr.code));
+
         RCLCPP_INFO(
             node_ptr_->get_logger(),
             "ManeuverActionNode::onResultReceived(): %s: Maneuver action failed",
             name_.c_str()
         );
 
-        setManeuverNotRunning();
+        safeSetManeuverNotRunning("failed result cleanup");
     
         return NodeStatus::FAILURE;
     }
@@ -131,16 +189,16 @@ BT::NodeStatus ManeuverActionNode<ActionT>::onResultReceived(const typename RosA
 template <typename ActionT>
 BT::NodeStatus ManeuverActionNode<ActionT>::onFailure(BT::ActionNodeErrorCode error) {
 
+    ManeuverActionNode<ActionT>::setOutput("terminal_state", actionNodeErrorCodeToString(error));
+
     RCLCPP_DEBUG(
         node_ptr_->get_logger(),
         "ManeuverActionNode::onFailure(): %s: Maneuver action failed, setting maneuver not running",
         name_.c_str()
     );
 
-    setManeuverNotRunning();
+    safeSetManeuverNotRunning("action failure cleanup");
 
-    std::string error_msg;
-    
     switch(error) {
         case ActionNodeErrorCode::ACTION_ABORTED:
             RCLCPP_WARN(
@@ -164,26 +222,26 @@ BT::NodeStatus ManeuverActionNode<ActionT>::onFailure(BT::ActionNodeErrorCode er
             );
             break;
         case ActionNodeErrorCode::INVALID_GOAL:
-            error_msg = "ManeuverActionNode::onFailure(): " + name_ + ": Maneuver invalid goal";
-            RCLCPP_FATAL(
+            RCLCPP_ERROR(
                 node_ptr_->get_logger(),
-                error_msg.c_str()
+                "ManeuverActionNode::onFailure(): %s: Maneuver invalid goal",
+                name_.c_str()
             );
-            throw std::runtime_error(error_msg);
+            break;
         case ActionNodeErrorCode::SEND_GOAL_TIMEOUT:
-            error_msg = "ManeuverActionNode::onFailure(): " + name_ + ": Maneuver send goal timeout";
-            RCLCPP_FATAL(
+            RCLCPP_ERROR(
                 node_ptr_->get_logger(),
-                error_msg.c_str()
+                "ManeuverActionNode::onFailure(): %s: Maneuver send goal timeout",
+                name_.c_str()
             );
-            throw std::runtime_error(error_msg);
+            break;
         case ActionNodeErrorCode::SERVER_UNREACHABLE:
-            error_msg = "ManeuverActionNode::onFailure(): " + name_ + ": Maneuver server unreachable";
-            RCLCPP_FATAL(
+            RCLCPP_ERROR(
                 node_ptr_->get_logger(),
-                error_msg.c_str()
+                "ManeuverActionNode::onFailure(): %s: Maneuver server unreachable",
+                name_.c_str()
             );
-            throw std::runtime_error(error_msg);
+            break;
     }
     
     return NodeStatus::FAILURE;
@@ -216,7 +274,7 @@ void ManeuverActionNode<ActionT>::onHalt() {
         name_.c_str()
     );
 
-    setManeuverNotRunning();
+    safeSetManeuverNotRunning("halt cleanup");
 
 }
 
@@ -224,7 +282,8 @@ template <typename ActionT>
 BT::PortsList ManeuverActionNode<ActionT>::providedManeuverActionNodePorts(BT::PortsList additional_ports) {
 
     BT::PortsList ports =ManeuverActionNode<ActionT>::providedBasicPorts({
-        InputPort<int>("stop_maneuver_after_timeout_ms", -1, "Stop maneuver after timeout in milliseconds, -1 for immediate stop")
+        InputPort<int>("stop_maneuver_after_timeout_ms", -1, "Stop maneuver after timeout in milliseconds, -1 for immediate stop"),
+        OutputPort<std::string>("terminal_state", "Final ROS action result or action-node error state")
     });
 
     ports.insert(additional_ports.begin(), additional_ports.end());
@@ -250,14 +309,52 @@ bool ManeuverActionNode<ActionT>::setManeuverRunning() {
             name_.c_str()
         );
 
-        if (!maneuver_reference_client_->StartManeuver()) {
-            RCLCPP_ERROR(
+        const bool active_stream = maneuver_reference_client_->IsManeuverActive();
+        const bool attach_to_active_stream = shouldAttachToActiveManeuverStreamOnGoalAccepted();
+
+        if (attach_to_active_stream && active_stream) {
+            RCLCPP_DEBUG(
                 node_ptr_->get_logger(),
-                "ManeuverActionNode::setManeuverRunning(): %s: Failed to start maneuver",
+                "ManeuverActionNode::setManeuverRunning(): %s: Attaching to active maneuver reference stream",
                 name_.c_str()
             );
-            return false;
+            if (!maneuver_reference_client_->PrepareManeuverStreamHandoff()) {
+                RCLCPP_ERROR(
+                    node_ptr_->get_logger(),
+                    "ManeuverActionNode::setManeuverRunning(): %s: "
+                    "Failed to prepare blended reference stream handoff",
+                    name_.c_str()
+                );
+                return false;
+            }
+        } else {
+            if (active_stream) {
+                RCLCPP_DEBUG(
+                    node_ptr_->get_logger(),
+                    "ManeuverActionNode::setManeuverRunning(): %s: Replacing active maneuver reference stream before starting non-attached successor",
+                    name_.c_str()
+                );
+                maneuver_reference_client_->StopManeuver();
+            }
+
+            if (!maneuver_reference_client_->StartManeuver()) {
+                RCLCPP_ERROR(
+                    node_ptr_->get_logger(),
+                    "ManeuverActionNode::setManeuverRunning(): %s: Failed to start maneuver",
+                    name_.c_str()
+                );
+                return false;
+            }
         }
+
+        if (!attach_to_active_stream && active_stream) {
+            RCLCPP_DEBUG(
+                node_ptr_->get_logger(),
+                "ManeuverActionNode::setManeuverRunning(): %s: Non-attached successor started after replacing active stream",
+                name_.c_str()
+            );
+        }
+
         maneuver_running_ = true;
 
     } else {
@@ -364,8 +461,64 @@ void ManeuverActionNode<ActionT>::setManeuverNotRunning(
 }
 
 template <typename ActionT>
+void ManeuverActionNode<ActionT>::safeSetManeuverNotRunning(const char * context) {
+    safeSetManeuverNotRunning(-1, context);
+}
+
+template <typename ActionT>
+void ManeuverActionNode<ActionT>::safeSetManeuverNotRunning(
+    int stop_maneuver_after_timeout_ms,
+    const char * context
+) {
+    try {
+        setManeuverNotRunning(stop_maneuver_after_timeout_ms);
+    } catch (const std::exception & e) {
+        RCLCPP_ERROR(
+            node_ptr_->get_logger(),
+            "ManeuverActionNode::safeSetManeuverNotRunning(): %s: Cleanup failed during %s: %s",
+            name_.c_str(),
+            context,
+            e.what()
+        );
+        maneuver_running_ = false;
+    }
+}
+
+template <typename ActionT>
+void ManeuverActionNode<ActionT>::safeSetManeuverNotRunning(
+    const Reference & reference,
+    int stop_maneuver_after_timeout_ms,
+    const char * context
+) {
+    try {
+        setManeuverNotRunning(reference, stop_maneuver_after_timeout_ms);
+    } catch (const std::exception & e) {
+        RCLCPP_ERROR(
+            node_ptr_->get_logger(),
+            "ManeuverActionNode::safeSetManeuverNotRunning(reference): %s: Cleanup failed during %s: %s",
+            name_.c_str(),
+            context,
+            e.what()
+        );
+        maneuver_running_ = false;
+    }
+}
+
+template <typename ActionT>
 void ManeuverActionNode<ActionT>::setGetFinalReferenceCallback(std::function<Reference(const typename RosActionNode<ActionT>::WrappedResult &)> callback) {
     get_final_reference_callback_ = callback;
+}
+
+template <typename ActionT>
+bool ManeuverActionNode<ActionT>::shouldStopManeuverOnSuccessfulResult(
+    const typename RosActionNode<ActionT>::WrappedResult &
+) const {
+    return true;
+}
+
+template <typename ActionT>
+bool ManeuverActionNode<ActionT>::shouldAttachToActiveManeuverStreamOnGoalAccepted() const {
+    return false;
 }
 
 /*****************************************************************************/
@@ -373,6 +526,7 @@ void ManeuverActionNode<ActionT>::setGetFinalReferenceCallback(std::function<Ref
 /*****************************************************************************/
 
 template class iii_drone::behavior::ManeuverActionNode<iii_drone_interfaces::action::FlyToPosition>;
+template class iii_drone::behavior::ManeuverActionNode<iii_drone_interfaces::action::FollowWaypointPath>;
 template class iii_drone::behavior::ManeuverActionNode<iii_drone_interfaces::action::FlyToObject>;
 template class iii_drone::behavior::ManeuverActionNode<iii_drone_interfaces::action::CableLanding>;
 template class iii_drone::behavior::ManeuverActionNode<iii_drone_interfaces::action::CableTakeoff>;

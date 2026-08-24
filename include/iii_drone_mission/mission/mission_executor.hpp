@@ -8,6 +8,11 @@
 // Std:
 
 #include <memory>
+#include <map>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <vector>
 
 /*****************************************************************************/
 // ROS2:
@@ -26,6 +31,7 @@
 // III-Drone-Core:
 
 #include <iii_drone_core/utils/history.hpp>
+#include <iii_drone_core/utils/types.hpp>
 
 #include <iii_drone_core/control/maneuver/maneuver_reference_client.hpp>
 
@@ -35,6 +41,7 @@
 // III-Drone-Mission:
 
 #include <iii_drone_mission/mission/mission_specification.hpp>
+#include <iii_drone_mission/mission/runtime_intent_buffer.hpp>
 
 #include <iii_drone_mission/behavior/trees/tree_provider.hpp>
 
@@ -53,6 +60,9 @@
 #include <px4_ros2/components/mode.hpp>
 
 #include <iii_drone_mission/px4/modes/maneuver_mode.hpp>
+#include <iii_drone_interfaces/msg/mission_intent_status.hpp>
+
+#include <std_srvs/srv/set_bool.hpp>
 
 /*****************************************************************************/
 // Class:
@@ -82,6 +92,12 @@ namespace mission {
             iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator
         );
         void Stop();
+        bool OverrideMissionSpecification(
+            const std::string & mission_specification_file,
+            iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator,
+            rclcpp::CallbackGroup::SharedPtr get_reference_cb_group,
+            std::string & message
+        );
 
         const BT::BehaviorTreeFactory & factory() const {
             return tree_provider_->factory();
@@ -96,6 +112,18 @@ namespace mission {
         iii_drone::px4::ModeProvider::SharedPtr mode_provider() const {
             return mode_provider_;
         }
+
+        bool mission_active() const {
+            return generic_mode_executor_ != nullptr && generic_mode_executor_->active();
+        }
+
+        std::shared_ptr<RuntimeIntentBuffer> runtime_intent_buffer() const {
+            return runtime_intent_buffer_;
+        }
+
+        std::optional<iii_drone::types::point_t> currentPosition() const;
+        iii_drone::configuration::Configuration::SharedPtr phaseWaypointConfiguration() const;
+        std::vector<iii_drone_interfaces::msg::MissionIntentStatus> intentStatuses() const;
 
     private:
         rclcpp_lifecycle::LifecycleNode * node_;
@@ -122,6 +150,25 @@ namespace mission {
 
         bool is_started_ = false;
         bool is_configured_ = false;
+        mutable std::mutex lifecycle_mutex_;
+
+        std::shared_ptr<RuntimeIntentBuffer> runtime_intent_buffer_;
+        std::map<std::string, rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr> intent_services_;
+        mutable std::mutex intent_status_mutex_;
+        std::map<std::string, iii_drone_interfaces::msg::MissionIntentStatus> intent_statuses_;
+
+        void registerIntentServices();
+        void unregisterIntentServices();
+        bool intentServiceValidForCurrentMode(const mission_intent_service_t & intent_service) const;
+        std::string activeModeKey() const;
+        bool rebuildWithMissionSpecification(
+            MissionSpecification::SharedPtr mission_specification,
+            bool configure_after_rebuild,
+            bool start_after_rebuild,
+            iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator,
+            rclcpp::CallbackGroup::SharedPtr get_reference_cb_group,
+            std::string & message
+        );
 
     };
 

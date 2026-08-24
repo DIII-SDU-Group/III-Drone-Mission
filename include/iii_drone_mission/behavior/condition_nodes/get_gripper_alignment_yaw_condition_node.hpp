@@ -7,6 +7,11 @@
 /*****************************************************************************/
 // Std:
 
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <deque>
+#include <optional>
 #include <vector>
 
 /*****************************************************************************/
@@ -31,6 +36,7 @@
 #include <iii_drone_core/utils/types.hpp>
 #include <iii_drone_core/utils/math.hpp>
 
+#include <iii_drone_core/adapters/powerline_adapter.hpp>
 #include <iii_drone_core/adapters/single_line_adapter.hpp>
 
 /*****************************************************************************/
@@ -57,6 +63,37 @@
 namespace iii_drone {
 namespace behavior {
 
+    class CableAxisYawSettler {
+    public:
+        std::optional<double> addSample(
+            double axis_yaw,
+            std::chrono::steady_clock::time_point received_at,
+            double window_s,
+            double max_yaw_deviation_rad,
+            std::size_t min_samples
+        );
+
+        void reset();
+
+        std::size_t sampleCount() const;
+
+        double sampleSpanSeconds() const;
+
+        double maxDeviationRadians() const;
+
+    private:
+        struct YawSample {
+            double axis_yaw;
+            std::chrono::steady_clock::time_point received_at;
+        };
+
+        double meanCableAxisYaw() const;
+
+        std::deque<YawSample> samples_;
+
+        double max_deviation_rad_ = 0.0;
+    };
+
     class GetGripperAlignmentYawConditionNode : public BT::RosTopicSubNode<iii_drone_interfaces::msg::Powerline> {
     public:
         GetGripperAlignmentYawConditionNode(
@@ -71,9 +108,17 @@ namespace behavior {
         BT::NodeStatus onTick(const std::shared_ptr<iii_drone_interfaces::msg::Powerline> & last_msg) override;
 
     private:
+        void resetSettlingState();
+
         rclcpp::Node::SharedPtr node_;
 
         std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+
+        int settling_target_cable_id_ = -1;
+
+        int64_t last_line_stamp_ns_ = -1;
+
+        CableAxisYawSettler yaw_settler_;
 
     };
 

@@ -19,11 +19,13 @@ void DeclareManagedParameters(NodeConfigurator & configurator)
     const auto int_t = ParameterType::PARAMETER_INTEGER;
     const auto double_t = ParameterType::PARAMETER_DOUBLE;
     const auto string_t = ParameterType::PARAMETER_STRING;
+    const auto bool_t = ParameterType::PARAMETER_BOOL;
 
     configurator.DeclareParameter("/behavior/server_timeout_ms", int_t);
     configurator.DeclareParameter("/behavior/wait_for_server_timeout_ms", int_t);
     configurator.DeclareParameter("/behavior/tick_period_ms", int_t);
     configurator.DeclareParameter("/behavior/target_cable_distance", double_t);
+    configurator.DeclareParameter("/control/maneuver_controller/minimum_target_altitude", double_t);
     configurator.DeclareParameter("/control/maneuver_controller/cable_takeoff_min_target_cable_distance", double_t);
     configurator.DeclareParameter("/control/maneuver_controller/cable_takeoff_max_target_cable_distance", double_t);
     configurator.DeclareParameter("/behavior/line_min_height_above_drone", double_t);
@@ -37,6 +39,18 @@ void DeclareManagedParameters(NodeConfigurator & configurator)
     configurator.DeclareParameter("/tf/drone_frame_id", string_t);
     configurator.DeclareParameter("/tf/cable_gripper_frame_id", string_t);
     configurator.DeclareParameter("/tf/world_frame_id", string_t);
+    configurator.DeclareParameter("/mission/bypass_battery_checks", bool_t);
+    configurator.DeclareParameter("/inspection_demo/inspection_clearance_m", double_t);
+    configurator.DeclareParameter("/inspection_demo/pylon_end_clearance_m", double_t);
+    configurator.DeclareParameter("/inspection_demo/pylon_structure_extent_m", double_t);
+    configurator.DeclareParameter("/inspection_demo/max_pylon_powerline_direction_mismatch_rad", double_t);
+    configurator.DeclareParameter("/inspection_demo/pylon_span_margin_m", double_t);
+    configurator.DeclareParameter("/inspection_demo/battery_topic_timeout_s", double_t);
+    configurator.DeclareParameter("/inspection_demo/battery_check_retry_count", int_t);
+    configurator.DeclareParameter("/inspection_demo/battery_check_retry_interval_s", double_t);
+    configurator.DeclareParameter("/inspection_demo/battery_voltage_threshold_v", double_t);
+    configurator.DeclareParameter("/inspection_demo/battery_voltage_debounce_s", double_t);
+    configurator.DeclareParameter("/cable_charging/minimum_stay_on_cable_s", double_t);
 
     configurator.CreateConfiguration("target_provider", {
         ConfigurationEntry("/behavior/target_cable_distance", double_t),
@@ -58,11 +72,36 @@ void DeclareManagedParameters(NodeConfigurator & configurator)
         ConfigurationEntry("/behavior/hover_on_cable_target_yaw_rate", double_t),
     });
     configurator.CreateConfiguration("powerline_waypoint_provider_action_node", {
+        ConfigurationEntry("/behavior/line_min_height_above_drone", double_t),
         ConfigurationEntry("/behavior/top_clearance_m", double_t),
         ConfigurationEntry("/behavior/horizontal_clearance_m", double_t),
         ConfigurationEntry("/behavior/inside_powerline_xy_distance_threshold_m", double_t),
         ConfigurationEntry("/behavior/under_cable_clearance_m", double_t),
+        ConfigurationEntry("/control/maneuver_controller/minimum_target_altitude", double_t),
+        ConfigurationEntry("/inspection_demo/pylon_span_margin_m", double_t),
         ConfigurationEntry("/tf/world_frame_id", string_t),
+        ConfigurationEntry("/tf/drone_frame_id", string_t),
+    });
+    configurator.CreateConfiguration("phase_waypoint_provider_action_node", {
+        ConfigurationEntry("/behavior/inside_powerline_xy_distance_threshold_m", double_t),
+        ConfigurationEntry("/behavior/under_cable_clearance_m", double_t),
+        ConfigurationEntry("/inspection_demo/inspection_clearance_m", double_t),
+        ConfigurationEntry("/inspection_demo/pylon_end_clearance_m", double_t),
+        ConfigurationEntry("/inspection_demo/pylon_structure_extent_m", double_t),
+        ConfigurationEntry("/inspection_demo/max_pylon_powerline_direction_mismatch_rad", double_t),
+        ConfigurationEntry("/inspection_demo/pylon_span_margin_m", double_t),
+    });
+    configurator.CreateConfiguration("battery_recharge_condition_node", {
+        ConfigurationEntry("/mission/bypass_battery_checks", bool_t),
+        ConfigurationEntry("/inspection_demo/battery_topic_timeout_s", double_t),
+        ConfigurationEntry("/inspection_demo/battery_check_retry_count", int_t),
+        ConfigurationEntry("/inspection_demo/battery_check_retry_interval_s", double_t),
+        ConfigurationEntry("/inspection_demo/battery_voltage_threshold_v", double_t),
+        ConfigurationEntry("/inspection_demo/battery_voltage_debounce_s", double_t),
+    });
+    configurator.CreateConfiguration("cable_charging_monitor_action_node", {
+        ConfigurationEntry("/mission/bypass_battery_checks", bool_t),
+        ConfigurationEntry("/cable_charging/minimum_stay_on_cable_s", double_t),
     });
 }
 
@@ -74,13 +113,15 @@ void DeclareManagedParameters(NodeConfigurator & configurator)
 
 TreeProvider::TreeProvider(
     tf2_ros::Buffer::SharedPtr tf_buffer,
-    MissionSpecification::SharedPtr mission_specification
+    MissionSpecification::SharedPtr mission_specification,
+    std::shared_ptr<iii_drone::mission::RuntimeIntentBuffer> runtime_intent_buffer
 ) : rclcpp::Node(
     "behavior_tree",
     "/mission/behavior_tree",
     rclcpp::NodeOptions().use_global_arguments(false)
 ),  tf_buffer_(tf_buffer),
-    mission_specification_(mission_specification)
+    mission_specification_(mission_specification),
+    runtime_intent_buffer_(runtime_intent_buffer)
 {
     auto set_logger_level = [this](int severity) {
         const rcutils_ret_t ret = rcutils_logging_set_logger_level(this->get_logger().get_name(), severity);
@@ -122,6 +163,13 @@ TreeProvider::TreeProvider(
 
     RCLCPP_INFO(get_logger(), "TreeProvider::TreeProvider(): Initialized.");
 
+}
+
+Configuration::SharedPtr TreeProvider::phaseWaypointConfiguration() const {
+    if (!configurator_) {
+        return nullptr;
+    }
+    return configurator_->GetConfiguration("phase_waypoint_provider_action_node");
 }
 
 void TreeProvider::Configure(
@@ -177,6 +225,26 @@ void TreeProvider::Cleanup() {
 
 }
 
+void TreeProvider::SetMissionSpecification(
+    MissionSpecification::SharedPtr mission_specification
+) {
+
+    if (is_configured_) {
+        throw std::runtime_error(
+            "TreeProvider::SetMissionSpecification(): Cannot replace mission specification while configured."
+        );
+    }
+
+    if (mission_specification == nullptr) {
+        throw std::runtime_error(
+            "TreeProvider::SetMissionSpecification(): mission_specification must not be null."
+        );
+    }
+
+    mission_specification_ = mission_specification;
+
+}
+
 TreeExecutor::SharedPtr TreeProvider::GetTreeExecutor(const std::string& name) const {
 
     auto it = tree_executors_.find(name);
@@ -195,6 +263,31 @@ TreeExecutor::SharedPtr TreeProvider::GetTreeExecutor(const std::string& name) c
 
 }
 
+void TreeProvider::ClearGlobalBlackboard(const std::string & reason) {
+    if (!global_blackboard_) {
+        RCLCPP_WARN(
+            get_logger(),
+            "TreeProvider::ClearGlobalBlackboard(): Global blackboard is not configured. Reason: %s",
+            reason.c_str()
+        );
+        return;
+    }
+
+    RCLCPP_INFO(
+        get_logger(),
+        "TreeProvider::ClearGlobalBlackboard(): Clearing global blackboard. Reason: %s",
+        reason.c_str()
+    );
+    const auto keys = global_blackboard_->getKeys();
+    for (const auto & key : keys) {
+        global_blackboard_->unset(std::string(key));
+    }
+
+    if (runtime_intent_buffer_) {
+        runtime_intent_buffer_->Clear();
+    }
+}
+
 void TreeProvider::initializeTreeExecutors(
 ) {
 
@@ -209,7 +302,8 @@ void TreeProvider::initializeTreeExecutors(
             tf_buffer_,
             configurator_,
             this,
-            global_blackboard_
+            global_blackboard_,
+            runtime_intent_buffer_
         );
 
         tree_executor->FinalizeInitialization();

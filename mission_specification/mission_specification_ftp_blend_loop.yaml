@@ -1,0 +1,7 @@
+executor_owned_mode: "ftp_blend_loop"
+
+entries:
+  - key: "ftp_blend_loop"
+    mode_name: "FTP Blend Loop"
+    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/ftp_blend_loop_test_tree.xml"
+    allow_activate_when_disarmed: false

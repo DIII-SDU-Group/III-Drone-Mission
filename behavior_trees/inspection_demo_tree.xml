@@ -1,0 +1,136 @@
+<root BTCPP_format="4" main_tree_to_execute="InspectionDemo">
+    <BehaviorTree ID="InspectionDemo">
+        <Sequence name="inspection_demo_top_sequence">
+            <ApplyPendingIntentUpdates
+                name="apply_pending_intents_at_start"
+            />
+
+            <Action
+                ID="GetPowerlineOverview"
+                name="get_powerline_overview"
+                stored_powerline="{stored_powerline}"
+            />
+
+            <GetPylonOverview
+                name="get_pylon_overview"
+                stored_pylon_overview="{stored_pylon_overview}"
+            />
+
+            <RetryUntilSuccessful name="store_inspection_start_state_retry_until_successful" num_attempts="10">
+                <Decorator ID="Delay" name="delay_store_inspection_start_state" delay_msec="500">
+                    <Condition
+                        ID="StoreCurrentState"
+                        name="store_inspection_start_state"
+                        current_state="{start_state}"
+                        current_position="{start_position}"
+                        current_yaw="{start_yaw}"
+                    />
+                </Decorator>
+            </RetryUntilSuccessful>
+
+            <PhaseWaypointProvider
+                name="phase_waypoint_provider"
+                stored_powerline="{stored_powerline}"
+                stored_pylon_overview="{stored_pylon_overview}"
+                start_state="{start_state}"
+                resume_valid="{inspection_resume_valid}"
+                resume_selected_route="{inspection_resume_selected_route}"
+                resume_waypoint_index="{inspection_resume_waypoint_index}"
+                resume_loop_start_index="{inspection_resume_loop_start_index}"
+                resume_route_offset="{inspection_resume_route_offset}"
+                resume_position="{inspection_resume_position}"
+                waypoints="{generated_waypoints}"
+                loop_start_index="{inspection_loop_start_index}"
+                loop_route_offset="{inspection_loop_route_offset}"
+                waypoint_target_yaw="{waypoint_target_yaw}"
+                selected_route="{selected_route}"
+            />
+
+            <ReactiveFallback name="inspection_or_recharge_reactive_fallback">
+                <SubTree ID="ShouldRechargeNow"/>
+
+                <Sequence name="align_then_follow_inspection_path">
+                    <Action
+                        ID="FlyToPosition"
+                        name="align_yaw_with_powerline"
+                        frame_id="world"
+                        target_position="{start_position}"
+                        target_yaw="{waypoint_target_yaw}"
+                    />
+
+                    <KeepRunningUntilFailure name="follow_inspection_path_until_recharge">
+                        <Action
+                            ID="FollowWaypointPath"
+                            name="follow_repeating_inspection_path"
+                            frame_id="world"
+                            waypoints="{generated_waypoints}"
+                            repeat_from_index="{inspection_loop_start_index}"
+                            selected_route="{selected_route}"
+                            loop_route_offset="{inspection_loop_route_offset}"
+                            target_yaw="{waypoint_target_yaw}"
+                            repeat="true"
+                            resume_valid="{inspection_resume_valid}"
+                            resume_selected_route="{inspection_resume_selected_route}"
+                            resume_waypoint_index="{inspection_resume_waypoint_index}"
+                            resume_loop_start_index="{inspection_resume_loop_start_index}"
+                            resume_route_offset="{inspection_resume_route_offset}"
+                            resume_position="{inspection_resume_position}"
+                        />
+                    </KeepRunningUntilFailure>
+                </Sequence>
+            </ReactiveFallback>
+        </Sequence>
+    </BehaviorTree>
+
+    <BehaviorTree ID="ShouldRechargeNow">
+        <Fallback name="manual_or_battery_recharge_fallback">
+            <Sequence name="manual_recharge_requested_sequence">
+                <ApplyPendingIntentUpdates
+                    name="apply_pending_manual_recharge_intents"
+                />
+
+                <Condition
+                    ID="BlackboardBool"
+                    name="manual_recharge_requested"
+                    flag="inspection_demo.manual_recharge_requested"
+                    expected="true"
+                />
+
+                <SetBlackboardString
+                    name="set_manual_recharge_reason"
+                    flag="inspection_demo.recharge_reason"
+                    value="manual_trigger"
+                />
+
+                <SetBlackboardBool
+                    name="set_manual_charging_bypass"
+                    flag="charging.bypass_battery_full_check"
+                    value="true"
+                />
+
+                <SetBlackboardBool
+                    name="clear_manual_recharge_request"
+                    flag="inspection_demo.manual_recharge_requested"
+                    value="false"
+                />
+            </Sequence>
+
+            <Sequence name="battery_low_recharge_sequence">
+                <ApplyPendingIntentUpdates
+                    name="apply_pending_battery_recharge_intents"
+                />
+
+                <Condition
+                    ID="ShouldRechargeBatteryLow"
+                    name="battery_low_should_recharge"
+                />
+
+                <SetBlackboardString
+                    name="set_battery_recharge_reason"
+                    flag="inspection_demo.recharge_reason"
+                    value="battery_low"
+                />
+            </Sequence>
+        </Fallback>
+    </BehaviorTree>
+</root>

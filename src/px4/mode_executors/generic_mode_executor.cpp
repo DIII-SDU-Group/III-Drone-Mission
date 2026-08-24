@@ -4,6 +4,8 @@
 
 #include <iii_drone_mission/px4/mode_executors/generic_mode_executor.hpp>
 
+#include <chrono>
+
 using namespace iii_drone::px4;
 using namespace iii_drone::mission;
 using namespace iii_drone::configuration;
@@ -66,6 +68,11 @@ GenericModeExecutor::GenericModeExecutor(
         )
     );
 
+    clear_maneuver_queue_client_ = node_.create_client<iii_drone_interfaces::srv::ClearManeuverQueue>(
+        "/control/maneuver_controller/clear_maneuver_queue",
+        rclcpp::ServicesQoS()
+    );
+
     combined_drone_awareness_sub_ = node_.create_subscription<iii_drone_interfaces::msg::CombinedDroneAwareness>(
         "/control/maneuver_controller/combined_drone_awareness",
         10,
@@ -84,6 +91,31 @@ void GenericModeExecutor::onActivate() {
 
     is_active_ = true;
     triggered_position_control_ = false;
+    constexpr int kActivationFailsafeDeferTimeoutS = 5;
+    bool failsafe_defer_enabled = false;
+    try {
+        failsafe_defer_enabled = deferFailsafesSync(true, kActivationFailsafeDeferTimeoutS);
+    } catch (const std::exception & exception) {
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::onActivate(): Failed while confirming PX4 failsafe deferral: %s. "
+            "Continuing activation because aborting here makes the external mode unresponsive.",
+            exception.what()
+        );
+    }
+    if (failsafe_defer_enabled) {
+        RCLCPP_INFO(
+            node_.get_logger(),
+            "GenericModeExecutor::onActivate(): Deferring PX4 failsafes for %d s during mission-mode handoff.",
+            kActivationFailsafeDeferTimeoutS
+        );
+    } else {
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::onActivate(): Failed to confirm PX4 failsafe deferral during mission-mode handoff."
+        );
+    }
+    clearManeuverQueue("mission sequence activated");
 
     std::string owned_mode_key = mission_specification_->executor_owned_mode();
     current_mode_ = mode_provider_->GetMode(owned_mode_key);
@@ -94,11 +126,15 @@ void GenericModeExecutor::onActivate() {
 
     if (isArmed()) {
 
+        const bool force_disarmed_activation =
+            !isArmed() && (*current_mode_entry_).allow_activate_when_disarmed;
+
         scheduleMode(
             (*current_mode_)->id(),
             [this](px4_ros2::Result result) {
                 onModeCompleted(result);
-            }
+            },
+            force_disarmed_activation
         );
 
     } else {
@@ -116,6 +152,7 @@ void GenericModeExecutor::onActivate() {
                     RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::onActivate(): Arming failed, deactivating mode executor %s", mode_executor_name_.c_str());
 
                     is_active_ = false;
+                    clearGlobalBlackboard("mission executor activation arming failed");
 
                     return;
 
@@ -137,6 +174,17 @@ void GenericModeExecutor::onActivate() {
 void GenericModeExecutor::onDeactivate(DeactivateReason reason) {
 
     is_active_ = false;
+    clearGlobalBlackboard("mission executor deactivated");
+    try {
+        deferFailsafesSync(false, 0);
+    } catch (const std::exception & exception) {
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::onDeactivate(): Failed while clearing PX4 failsafe deferral: %s",
+            exception.what()
+        );
+    }
+    clearManeuverQueue("mission sequence deactivated");
 
     switch(reason) {
         case DeactivateReason::FailsafeActivated:
@@ -147,6 +195,83 @@ void GenericModeExecutor::onDeactivate(DeactivateReason reason) {
             break;
     }
 
+}
+
+bool GenericModeExecutor::active() const {
+
+    return is_active_;
+
+}
+
+std::string GenericModeExecutor::current_mode_key() const {
+
+    const auto current_mode = current_mode_.Load();
+    if (current_mode == nullptr) {
+        return "";
+    }
+    return current_mode->mode_key();
+
+}
+
+void GenericModeExecutor::clearManeuverQueue(const std::string & reason) {
+
+    if (!clear_maneuver_queue_client_) {
+        RCLCPP_WARN(node_.get_logger(), "GenericModeExecutor::clearManeuverQueue(): Client is not initialized.");
+        return;
+    }
+
+    if (!clear_maneuver_queue_client_->wait_for_service(std::chrono::seconds(2))) {
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::clearManeuverQueue(): Service unavailable; queued maneuvers were not cleared. Reason: %s",
+            reason.c_str()
+        );
+        return;
+    }
+
+    auto request = std::make_shared<iii_drone_interfaces::srv::ClearManeuverQueue::Request>();
+    request->reason = reason;
+
+    RCLCPP_INFO(
+        node_.get_logger(),
+        "GenericModeExecutor::clearManeuverQueue(): Sending queued maneuver clear request. Reason: %s",
+        reason.c_str()
+    );
+    clear_maneuver_queue_client_->async_send_request(
+        request,
+        [this, reason](rclcpp::Client<iii_drone_interfaces::srv::ClearManeuverQueue>::SharedFuture future) {
+            auto response = future.get();
+            if (!response->success) {
+                RCLCPP_WARN(
+                    node_.get_logger(),
+                    "GenericModeExecutor::clearManeuverQueue(): Service reported failure. Reason: %s",
+                    reason.c_str()
+                );
+                return;
+            }
+
+            RCLCPP_INFO(
+                node_.get_logger(),
+                "GenericModeExecutor::clearManeuverQueue(): Cleared %u queued maneuver(s). Reason: %s",
+                response->cleared_count,
+                reason.c_str()
+            );
+        }
+    );
+
+}
+
+void GenericModeExecutor::clearGlobalBlackboard(const std::string & reason) {
+    if (!mode_provider_) {
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::clearGlobalBlackboard(): Mode provider is not available. Reason: %s",
+            reason.c_str()
+        );
+        return;
+    }
+
+    mode_provider_->ClearGlobalBlackboard(reason);
 }
 
 void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
@@ -238,11 +363,15 @@ void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
             (*current_mode_entry_).mode_name.c_str()
         );
 
+        const bool force_disarmed_activation =
+            !isArmed() && (*current_mode_entry_).allow_activate_when_disarmed;
+
         scheduleMode(
             (*current_mode_)->id(),
             [this](px4_ros2::Result result) {
                 onModeCompleted(result);
-            }
+            },
+            force_disarmed_activation
         );
 
     // }
@@ -271,6 +400,7 @@ bool GenericModeExecutor::checkScheduleAndActionValidity() {
             );
 
             is_active_ = false;
+            clearGlobalBlackboard("mission executor invalid action state: action schedule without goal handle");
 
             stopModeIfWaiting();
 
@@ -290,6 +420,7 @@ bool GenericModeExecutor::checkScheduleAndActionValidity() {
             );
 
             is_active_ = false;
+            clearGlobalBlackboard("mission executor invalid action state: goal handle without action schedule");
 
             stopModeIfWaiting();
 
@@ -341,6 +472,7 @@ bool GenericModeExecutor::checkPositionControlTriggered() {
         );
 
         is_active_ = false;
+        clearGlobalBlackboard("manual position control triggered");
 
         stopModeIfWaiting();
 
@@ -374,6 +506,7 @@ bool GenericModeExecutor::checkNextModeSucceeded(
                 mode_executor_name_.c_str()
             );
             is_active_ = false;
+            clearGlobalBlackboard("mode rejected");
             scheduleMode(
                 missionDoneSelectModeId(),
                 [](px4_ros2::Result) { }
@@ -393,6 +526,7 @@ bool GenericModeExecutor::checkNextModeSucceeded(
 
             RCLCPP_WARN(node_.get_logger(), "GenericModeExecutor::checkNextModeSucceeded(): Mode %s interrupted, deactivating mode executor %s", (*current_mode_)->mode_name().c_str(), mode_executor_name_.c_str());
             is_active_ = false;
+            clearGlobalBlackboard("mode interrupted");
             scheduleMode(
                 missionDoneSelectModeId(),
                 [](px4_ros2::Result) { }
@@ -412,6 +546,7 @@ bool GenericModeExecutor::checkNextModeSucceeded(
 
             RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::checkNextModeSucceeded(): Mode %s timed out, deactivating mode executor %s", (*current_mode_)->mode_name().c_str(), mode_executor_name_.c_str());
             is_active_ = false;
+            clearGlobalBlackboard("mode timed out");
             scheduleMode(
                 missionDoneSelectModeId(),
                 [](px4_ros2::Result) { }
@@ -431,6 +566,7 @@ bool GenericModeExecutor::checkNextModeSucceeded(
 
             RCLCPP_WARN(node_.get_logger(), "GenericModeExecutor::checkNextModeSucceeded(): Mode %s deactivated, deactivating mode executor %s", (*current_mode_)->mode_name().c_str(), mode_executor_name_.c_str());
             is_active_ = false;
+            clearGlobalBlackboard("mode deactivated");
             scheduleMode(
                 missionDoneSelectModeId(),
                 [](px4_ros2::Result) { }
@@ -450,6 +586,7 @@ bool GenericModeExecutor::checkNextModeSucceeded(
 
             RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::checkNextModeSucceeded(): Mode %s failed with result %s, deactivating mode executor %s", (*current_mode_)->mode_name().c_str(), px4_ros2::resultToString(result), mode_executor_name_.c_str());
             is_active_ = false;
+            clearGlobalBlackboard("mode failed");
             scheduleMode(
                 missionDoneSelectModeId(),
                 [](px4_ros2::Result) { }
@@ -658,12 +795,38 @@ void GenericModeExecutor::onNormalModeSuccess(bool & last_mode) {
             mode_executor_name_.c_str()
         );
 
+        if ((*current_mode_) != nullptr) {
+            RCLCPP_INFO(
+                node_.get_logger(),
+                "GenericModeExecutor::onNormalModeSuccess(): Stopping completed terminal mode %s before mission-done mode handoff.",
+                (*current_mode_)->mode_name().c_str()
+            );
+            (*current_mode_)->StopExecution();
+        }
+
+        const int mission_done_mode_id = missionDoneSelectModeId();
         scheduleMode(
-            missionDoneSelectModeId(),
-            [](px4_ros2::Result) { }
+            mission_done_mode_id,
+            [this, mission_done_mode_id](px4_ros2::Result result) {
+                if (result != px4_ros2::Result::Success) {
+                    RCLCPP_ERROR(
+                        node_.get_logger(),
+                        "GenericModeExecutor::onNormalModeSuccess(): Failed to switch to mission-done mode id %d, result=%s.",
+                        mission_done_mode_id,
+                        px4_ros2::resultToString(result)
+                    );
+                    return;
+                }
+                RCLCPP_INFO(
+                    node_.get_logger(),
+                    "GenericModeExecutor::onNormalModeSuccess(): Mission-done mode id %d activated.",
+                    mission_done_mode_id
+                );
+            }
         );
 
         is_active_ = false;
+        clearGlobalBlackboard("terminal mission completion");
 
         last_mode = true;
 

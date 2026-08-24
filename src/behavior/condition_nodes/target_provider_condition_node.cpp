@@ -89,6 +89,22 @@ NodeStatus TargetProvider::tick() {
 
     setOutput("target", target);
 
+    RCLCPP_DEBUG(
+        node_->get_logger(),
+        "TargetProvider::tick(): Provided target mode=%d id=%d type=%d reference_frame=%s translation=[%.3f, %.3f, %.3f] rotation=[%.3f, %.3f, %.3f, %.3f]",
+        mode,
+        target.target_id,
+        target.target_type,
+        target.reference_frame_id.c_str(),
+        target.target_transform.translation.x,
+        target.target_transform.translation.y,
+        target.target_transform.translation.z,
+        target.target_transform.rotation.x,
+        target.target_transform.rotation.y,
+        target.target_transform.rotation.z,
+        target.target_transform.rotation.w
+    );
+
     return NodeStatus::SUCCESS;
 
 }
@@ -135,6 +151,18 @@ bool TargetProvider::getFlyToCableTarget(
     target.target_transform = transformMsgFromTransform(
         drone_v_cable,
         drone_q_cable
+    );
+
+    RCLCPP_DEBUG(
+        node_->get_logger(),
+        "TargetProvider::getFlyToCableTarget(): target_id=%d reference_frame=%s target_cable_distance=%.3f drone_q_cable=[%.3f, %.3f, %.3f, %.3f]",
+        target_id,
+        target.reference_frame_id.c_str(),
+        configuration_->GetParameter("/behavior/target_cable_distance").as_double(),
+        drone_q_cable.x(),
+        drone_q_cable.y(),
+        drone_q_cable.z(),
+        drone_q_cable.w()
     );
 
     return true;

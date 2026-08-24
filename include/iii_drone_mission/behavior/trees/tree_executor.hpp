@@ -9,6 +9,7 @@
 
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <wordexp.h>
 
@@ -41,15 +42,23 @@
 #include <iii_drone_mission/behavior/action_nodes/hover_by_object_maneuver_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/fly_to_object_maneuver_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/fly_to_position_maneuver_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/follow_waypoint_path_maneuver_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/cable_landing_maneuver_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/cable_takeoff_maneuver_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/pl_mapper_command_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/gripper_command_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/update_powerline_overview_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/get_powerline_overview_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/get_pylon_overview_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/powerline_waypoint_provider_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/phase_waypoint_provider_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/mode_executor_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/log_message_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/rosbag_recording_action_nodes.hpp>
+#include <iii_drone_mission/behavior/action_nodes/runtime_intent_action_nodes.hpp>
+#include <iii_drone_mission/behavior/action_nodes/inspection_waypoint_progress_nodes.hpp>
+#include <iii_drone_mission/behavior/action_nodes/cable_charging_monitor_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/split_point_queue_action_node.hpp>
 
 #include <iii_drone_mission/behavior/condition_nodes/verify_powerline_detected_condition_node.hpp>
 #include <iii_drone_mission/behavior/condition_nodes/select_target_line_condition_node.hpp>
@@ -57,9 +66,13 @@
 #include <iii_drone_mission/behavior/condition_nodes/store_current_state_condition_node.hpp>
 #include <iii_drone_mission/behavior/condition_nodes/publish_powerline_waypoints_condition_node.hpp>
 #include <iii_drone_mission/behavior/condition_nodes/verify_gripper_closed_condition_node.hpp>
+#include <iii_drone_mission/behavior/condition_nodes/verify_disarmed_condition_node.hpp>
 #include <iii_drone_mission/behavior/condition_nodes/get_gripper_alignment_yaw_condition_node.hpp>
+#include <iii_drone_mission/behavior/condition_nodes/maneuver_action_status_nodes.hpp>
+#include <iii_drone_mission/behavior/condition_nodes/battery_recharge_condition_node.hpp>
 
 #include <iii_drone_mission/behavior/port_types.hpp>
+#include <iii_drone_mission/mission/runtime_intent_buffer.hpp>
 
 /*****************************************************************************/
 // BT.CPP:
@@ -87,7 +100,8 @@ namespace behavior {
             tf2_ros::Buffer::SharedPtr tf_buffer,
             iii_drone::configuration::Configurator<rclcpp::Node>::SharedPtr configurator,
             rclcpp::Node * node,
-            BT::Blackboard::Ptr global_blackboard
+            BT::Blackboard::Ptr global_blackboard,
+            std::shared_ptr<iii_drone::mission::RuntimeIntentBuffer> runtime_intent_buffer
         );
 
         ~TreeExecutor();
@@ -126,7 +140,10 @@ namespace behavior {
         BT::Blackboard::Ptr global_blackboard_;
         BT::Blackboard::Ptr local_blackboard_;
 
+        std::shared_ptr<iii_drone::mission::RuntimeIntentBuffer> runtime_intent_buffer_;
+
         std::thread execute_thread_;
+        mutable std::mutex execute_thread_mutex_;
 
         iii_drone::utils::Atomic<bool> running_ = false;
         iii_drone::utils::Atomic<bool> finished_ = false;

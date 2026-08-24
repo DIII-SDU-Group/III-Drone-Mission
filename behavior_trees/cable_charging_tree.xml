@@ -1,0 +1,35 @@
+<root BTCPP_format="4" main_tree_to_execute="CableCharging">
+     <BehaviorTree ID="CableCharging">
+        <Sequence name="cable_charging_top_sequence">
+
+            <SetBlackboardBool
+                name="clear_stale_charging_interrupt"
+                flag="charging.interrupt_requested"
+                value="false"
+            />
+
+            <ReactiveSequence name="charging_monitor_reactive_sequence">
+                <ApplyPendingIntentUpdates
+                    name="apply_pending_charging_intents"
+                />
+
+                <CableChargingMonitor
+                    name="cable_charging_monitor"
+                />
+            </ReactiveSequence>
+
+            <SetBlackboardBool
+                name="clear_consumed_charging_interrupt"
+                flag="charging.interrupt_requested"
+                value="false"
+            />
+
+            <SetBlackboardBool
+                name="clear_manual_charging_bypass"
+                flag="charging.bypass_battery_full_check"
+                value="false"
+            />
+
+        </Sequence>
+     </BehaviorTree>
+ </root>

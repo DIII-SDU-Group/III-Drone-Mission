@@ -3,10 +3,21 @@
 /*****************************************************************************/
 
 #include <iii_drone_mission/mission/mission_executor_node/mission_executor_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/phase_waypoint_provider_action_node.hpp>
+
+#include <iii_drone_core/adapters/powerline_adapter.hpp>
 
 #include <chrono>
 #include <exception>
+#include <algorithm>
+#include <cctype>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
 
+#include <lifecycle_msgs/msg/state.hpp>
 #include <px4_msgs/msg/vehicle_status.hpp>
 
 using namespace iii_drone::configuration;
@@ -17,6 +28,46 @@ namespace {
 using LifecycleConfigurator = Configurator<rclcpp_lifecycle::LifecycleNode>;
 using ParameterType = rclcpp::ParameterType;
 using ConfigurationEntry = iii_drone::configuration::configuration_entry_t;
+
+std::string ContentHash(const std::string & path)
+{
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) {
+        return "";
+    }
+    uint64_t hash = 1469598103934665603ULL;
+    char byte = 0;
+    while (stream.get(byte)) {
+        hash ^= static_cast<unsigned char>(byte);
+        hash *= 1099511628211ULL;
+    }
+    std::ostringstream output;
+    output << "fnv1a64:" << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return output.str();
+}
+
+std::string ConfigurationProfile()
+{
+    if (const char * profile = std::getenv("III_DRONE_PROFILE"); profile != nullptr && *profile != '\0') {
+        return profile;
+    }
+    if (const char * simulation = std::getenv("SIMULATION"); simulation != nullptr) {
+        return std::string(simulation) == "true" ? "sim" : "real";
+    }
+    return "unknown";
+}
+
+bool SamePath(const std::string & first, const std::string & second)
+{
+    if (first.empty() || second.empty()) {
+        return false;
+    }
+    std::error_code first_error;
+    std::error_code second_error;
+    const auto canonical_first = std::filesystem::weakly_canonical(first, first_error);
+    const auto canonical_second = std::filesystem::weakly_canonical(second, second_error);
+    return !first_error && !second_error && canonical_first == canonical_second;
+}
 
 bool WaitForVehicleStatusMessage(
     rclcpp_lifecycle::LifecycleNode & node,
@@ -53,6 +104,56 @@ bool WaitForVehicleStatusMessage(
     return false;
 }
 
+std::string Trim(const std::string & value)
+{
+    auto begin = value.begin();
+    while (begin != value.end() && std::isspace(static_cast<unsigned char>(*begin))) {
+        ++begin;
+    }
+    auto end = value.end();
+    while (end != begin && std::isspace(static_cast<unsigned char>(*(end - 1)))) {
+        --end;
+    }
+    return std::string(begin, end);
+}
+
+bool LooksLikeExplicitPath(const std::string & value)
+{
+    return !value.empty() &&
+        (value[0] == '/' || value[0] == '~' || value[0] == '$');
+}
+
+std::string ResolveMissionSpecificationRequest(
+    const std::string & requested,
+    const std::string & default_mission_specification_file,
+    bool use_default
+) {
+    if (use_default) {
+        return default_mission_specification_file;
+    }
+
+    const std::string trimmed = Trim(requested);
+    if (trimmed.empty()) {
+        throw std::runtime_error(
+            "mission_specification_file must be set unless use_default is true"
+        );
+    }
+    if (LooksLikeExplicitPath(trimmed)) {
+        return trimmed;
+    }
+
+    if (const char * mission_specification_dir = std::getenv("MISSION_SPECIFICATION_DIR");
+        mission_specification_dir != nullptr && std::string(mission_specification_dir) != "") {
+        std::string base_dir = mission_specification_dir;
+        if (!base_dir.empty() && base_dir.back() == '/') {
+            return base_dir + trimmed;
+        }
+        return base_dir + "/" + trimmed;
+    }
+
+    return trimmed;
+}
+
 void DeclareManagedParameters(LifecycleConfigurator & configurator)
 {
     const auto bool_t = ParameterType::PARAMETER_BOOL;
@@ -66,6 +167,23 @@ void DeclareManagedParameters(LifecycleConfigurator & configurator)
     configurator.DeclareParameter("/mission/wait_for_maneuver_start_timeout_ms", int_t);
     configurator.DeclareParameter("/control/dt", double_t);
     configurator.DeclareParameter("/mission/get_reference_timeout_ms", int_t);
+    configurator.DeclareParameter("/mission/reference_loss_timeout_ms", int_t);
+    configurator.DeclareParameter("/mission/reference_rebase_timeout_ms", int_t);
+    configurator.DeclareParameter("/control/maneuver_controller/maneuver_execution_period_ms", int_t);
+    configurator.DeclareParameter("/control/maneuver_controller/reference_stream_timeout_ms", int_t);
+    configurator.DeclareParameter("/mission/reference_continuity_position_tolerance_m", double_t);
+    configurator.DeclareParameter("/mission/reference_continuity_velocity_tolerance_m_s", double_t);
+    configurator.DeclareParameter("/mission/reference_continuity_acceleration_tolerance_m_s2", double_t);
+    configurator.DeclareParameter("/mission/reference_continuity_yaw_tolerance_rad", double_t);
+    configurator.DeclareParameter("/mission/reference_continuity_yaw_rate_tolerance_rad_s", double_t);
+    configurator.DeclareParameter("/mission/reference_continuity_yaw_acceleration_tolerance_rad_s2", double_t);
+    configurator.DeclareParameter("/control/maneuver_controller/controlled_cancel_max_deceleration_m_s2", double_t);
+    configurator.DeclareParameter("/control/maneuver_controller/controlled_cancel_max_jerk_m_s3", double_t);
+    configurator.DeclareParameter("/control/maneuver_controller/controlled_cancel_max_yaw_deceleration_rad_s2", double_t);
+    configurator.DeclareParameter("/control/maneuver_controller/controlled_cancel_max_yaw_jerk_rad_s3", double_t);
+    configurator.DeclareParameter("/control/maneuver_controller/controlled_cancel_velocity_threshold_m_s", double_t);
+    configurator.DeclareParameter("/control/maneuver_controller/controlled_cancel_yaw_rate_threshold_rad_s", double_t);
+    configurator.DeclareParameter("/control/maneuver_controller/controlled_cancel_settle_time_s", double_t);
     configurator.DeclareParameter("/mission/manual_stick_input_threshold", double_t);
     configurator.DeclareParameter("/mission/mission_done_select_mode", string_t);
 
@@ -74,6 +192,23 @@ void DeclareManagedParameters(LifecycleConfigurator & configurator)
         ConfigurationEntry("/mission/max_failed_attempts_during_maneuver", int_t),
         ConfigurationEntry("/mission/wait_for_maneuver_start_timeout_ms", int_t),
         ConfigurationEntry("/mission/get_reference_timeout_ms", int_t),
+        ConfigurationEntry("/mission/reference_loss_timeout_ms", int_t),
+        ConfigurationEntry("/mission/reference_rebase_timeout_ms", int_t),
+        ConfigurationEntry("/control/maneuver_controller/maneuver_execution_period_ms", int_t),
+        ConfigurationEntry("/control/maneuver_controller/reference_stream_timeout_ms", int_t),
+        ConfigurationEntry("/mission/reference_continuity_position_tolerance_m", double_t),
+        ConfigurationEntry("/mission/reference_continuity_velocity_tolerance_m_s", double_t),
+        ConfigurationEntry("/mission/reference_continuity_acceleration_tolerance_m_s2", double_t),
+        ConfigurationEntry("/mission/reference_continuity_yaw_tolerance_rad", double_t),
+        ConfigurationEntry("/mission/reference_continuity_yaw_rate_tolerance_rad_s", double_t),
+        ConfigurationEntry("/mission/reference_continuity_yaw_acceleration_tolerance_rad_s2", double_t),
+        ConfigurationEntry("/control/maneuver_controller/controlled_cancel_max_deceleration_m_s2", double_t),
+        ConfigurationEntry("/control/maneuver_controller/controlled_cancel_max_jerk_m_s3", double_t),
+        ConfigurationEntry("/control/maneuver_controller/controlled_cancel_max_yaw_deceleration_rad_s2", double_t),
+        ConfigurationEntry("/control/maneuver_controller/controlled_cancel_max_yaw_jerk_rad_s3", double_t),
+        ConfigurationEntry("/control/maneuver_controller/controlled_cancel_velocity_threshold_m_s", double_t),
+        ConfigurationEntry("/control/maneuver_controller/controlled_cancel_yaw_rate_threshold_rad_s", double_t),
+        ConfigurationEntry("/control/maneuver_controller/controlled_cancel_settle_time_s", double_t),
     });
     configurator.CreateConfiguration("mode_provider", {
         ConfigurationEntry("/control/dt", double_t),
@@ -138,6 +273,27 @@ MissionExecutorNode::MissionExecutorNode(
         "write_behavior_tree_model_xml",
         std::bind(&MissionExecutorNode::writeBehaviorTreeModelXmlService, this, std::placeholders::_1, std::placeholders::_2)
     );
+    override_mission_specification_service_ = create_service<iii_drone_interfaces::srv::OverrideMissionSpecification>(
+        "override_mission_specification",
+        std::bind(&MissionExecutorNode::overrideMissionSpecificationService, this, std::placeholders::_1, std::placeholders::_2)
+    );
+    mission_status_publisher_ = create_publisher<iii_drone_interfaces::msg::MissionModeStatus>(
+        "/mission/status",
+        rclcpp::SystemDefaultsQoS()
+    );
+    mission_status_publisher_->on_activate();
+    powerline_overview_client_ = create_client<iii_drone_interfaces::srv::GetPowerlineOverview>(
+        "/mission/powerline_overview_provider/get_powerline_overview"
+    );
+    pylon_overview_client_ = create_client<iii_drone_interfaces::srv::GetPylonOverview>(
+        "/mission/pylon_overview_provider/get_pylon_overview"
+    );
+    mission_status_timer_ = create_wall_timer(
+        std::chrono::milliseconds(500),
+        [this]() {
+            publishMissionModeStatus();
+        }
+    );
 
     odometry_sub_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     get_reference_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
@@ -177,6 +333,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     );
     DeclareManagedParameters(*configurator_);
     configurator_->validate();
+    default_mission_specification_file_ = configurator_->GetParameter("/mission/mission_specification_file").as_string();
+    mission_specification_file_ = default_mission_specification_file_;
 
     // TF Buffer
     if (tf_buffer_ == nullptr) {
@@ -188,10 +346,15 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     mission_executor_ = std::make_shared<MissionExecutor>(
         this, 
         tf_buffer_,
-        configurator_->GetParameter("/mission/mission_specification_file").as_string(),
+        default_mission_specification_file_,
         odometry_sub_callback_group_,
         executor_handle_
     );
+    // MissionSpecification resolves shell variables and '~'. Publish and compare
+    // the resolved path so canonical identity is not falsely degraded.
+    default_mission_specification_file_ =
+        mission_executor_->mission_specification()->mission_specification_file();
+    mission_specification_file_ = default_mission_specification_file_;
 
     mission_executor_->Configure(
         configurator_,
@@ -199,6 +362,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     );
 
     RCLCPP_INFO(get_logger(), "MissionExecutorNode::on_configure(): Configured");
+    mission_status_degraded_reason_.clear();
+    publishMissionModeStatus();
 
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 
@@ -220,6 +385,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     }
 
     cleanup();
+    publishMissionModeStatus();
 
     RCLCPP_INFO(get_logger(), "MissionExecutorNode::on_cleanup(): Cleaned up");
 
@@ -255,6 +421,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
             "/fmu/out/vehicle_status_v1 did not publish a fresh message. Start the PX4 ROS bridge "
             "and verify the FMU is publishing before activating mission execution."
         );
+        mission_status_degraded_reason_ = "PX4 vehicle status topic /fmu/out/vehicle_status_v1 is stale or unavailable";
+        publishMissionModeStatus();
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
     }
 
@@ -266,14 +434,18 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
             "MissionExecutorNode::on_activate(): Failed to start mission executor: %s",
             exc.what()
         );
+        mission_status_degraded_reason_ = exc.what();
         cleanup();
+        publishMissionModeStatus();
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
     } catch (...) {
         RCLCPP_ERROR(
             get_logger(),
             "MissionExecutorNode::on_activate(): Failed to start mission executor: unknown exception"
         );
+        mission_status_degraded_reason_ = "unknown mission executor activation failure";
         cleanup();
+        publishMissionModeStatus();
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::ERROR;
     }
 
@@ -281,6 +453,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
         get_logger(), 
         "MissionExecutorNode::on_activate(): Activated"
     );
+    mission_status_degraded_reason_.clear();
+    publishMissionModeStatus();
 
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 
@@ -307,6 +481,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
         "MissionExecutorNode::on_deactivate(): Deactivating mission executor"
     );
     mission_executor_->Stop();
+    publishMissionModeStatus();
 
     RCLCPP_INFO(
         get_logger(), 
@@ -333,6 +508,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     }
 
     cleanup();
+    publishMissionModeStatus();
 
     // Create and start thread detached which sleeps for 1 second, then shuts down rclcpp
     std::thread shutdown_thread([this](){
@@ -352,6 +528,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
 ) {
     RCLCPP_FATAL(get_logger(), "MissionExecutorNode::on_error(): Lifecycle transition failed.");
     cleanup();
+    publishMissionModeStatus();
 
     return rclcpp_lifecycle::LifecycleNode::on_error(state);
 
@@ -377,6 +554,77 @@ void MissionExecutorNode::writeBehaviorTreeModelXmlService(
 
 }
 
+void MissionExecutorNode::overrideMissionSpecificationService(
+    const std::shared_ptr<iii_drone_interfaces::srv::OverrideMissionSpecification::Request> request,
+    std::shared_ptr<iii_drone_interfaces::srv::OverrideMissionSpecification::Response> response
+) {
+
+    if (get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {
+        response->success = false;
+        response->message = "mission specification override rejected because mission executor lifecycle node is not active";
+        response->active_mission_specification_file = mission_specification_file_;
+        return;
+    }
+
+    if (mission_executor_ == nullptr || configurator_ == nullptr) {
+        response->success = false;
+        response->message = "mission specification override rejected because mission executor is not initialized";
+        response->active_mission_specification_file = mission_specification_file_;
+        return;
+    }
+
+    std::string requested_specification_file;
+    try {
+        requested_specification_file = ResolveMissionSpecificationRequest(
+            request->mission_specification_file,
+            default_mission_specification_file_,
+            request->use_default
+        );
+    } catch (const std::exception & exception) {
+        response->success = false;
+        response->message = exception.what();
+        response->active_mission_specification_file = mission_specification_file_;
+        return;
+    }
+
+    std::string message;
+    const bool success = mission_executor_->OverrideMissionSpecification(
+        requested_specification_file,
+        configurator_,
+        get_reference_cb_group_,
+        message
+    );
+
+    response->success = success;
+    response->message = message;
+    if (success) {
+        mission_specification_file_ = mission_executor_->mission_specification()->mission_specification_file();
+        mission_status_degraded_reason_.clear();
+    }
+    if (mission_executor_ != nullptr && mission_executor_->mission_specification() != nullptr) {
+        response->active_mission_specification_file =
+            mission_executor_->mission_specification()->mission_specification_file();
+    } else {
+        response->active_mission_specification_file = mission_specification_file_;
+    }
+    publishMissionModeStatus();
+
+    if (success) {
+        RCLCPP_INFO(
+            get_logger(),
+            "MissionExecutorNode::overrideMissionSpecificationService(): %s",
+            response->message.c_str()
+        );
+    } else {
+        RCLCPP_WARN(
+            get_logger(),
+            "MissionExecutorNode::overrideMissionSpecificationService(): %s",
+            response->message.c_str()
+        );
+    }
+
+}
+
 void MissionExecutorNode::cleanup() {
 
     RCLCPP_DEBUG(get_logger(), "MissionExecutorNode::cleanup()");
@@ -399,6 +647,241 @@ void MissionExecutorNode::cleanup() {
 
     RCLCPP_DEBUG(get_logger(), "MissionExecutorNode::cleanup(): Cleaned up.");
 
+}
+
+std::vector<std::string> MissionExecutorNode::requiredMissionModes() const {
+
+    if (mission_executor_ == nullptr || mission_executor_->mission_specification() == nullptr) {
+        return {};
+    }
+    return mission_executor_->mission_specification()->mode_keys();
+
+}
+
+std::vector<std::string> MissionExecutorNode::registeredMissionModes() const {
+
+    if (mission_executor_ == nullptr || mission_executor_->mode_provider() == nullptr) {
+        return {};
+    }
+    return mission_executor_->mode_provider()->registered_mode_keys();
+
+}
+
+bool MissionExecutorNode::requiredMissionModesRegistered() const {
+
+    const auto required_modes = requiredMissionModes();
+    const auto registered_modes = registeredMissionModes();
+    if (required_modes.empty()) {
+        return false;
+    }
+    for (const auto & mode : required_modes) {
+        if (std::find(registered_modes.begin(), registered_modes.end(), mode) == registered_modes.end()) {
+            return false;
+        }
+    }
+    return true;
+
+}
+
+void MissionExecutorNode::publishMissionModeStatus() {
+
+    if (!mission_status_publisher_) {
+        return;
+    }
+
+    iii_drone_interfaces::msg::MissionModeStatus msg;
+    msg.stamp = get_clock()->now();
+    refreshInspectionOverviewCaches();
+    populateInspectionStartEligibility(msg);
+    msg.active_mission_specification = mission_specification_file_;
+    msg.canonical_mission_specification = default_mission_specification_file_;
+    msg.active_mission_specification_hash = ContentHash(mission_specification_file_);
+    msg.canonical_mission_specification_loaded = SamePath(
+        mission_specification_file_,
+        default_mission_specification_file_
+    );
+    msg.configuration_profile = ConfigurationProfile();
+    msg.mission_specification_load_error = mission_status_degraded_reason_;
+    msg.required_modes = requiredMissionModes();
+    msg.registered_modes = registeredMissionModes();
+    msg.required_modes_registered = requiredMissionModesRegistered();
+
+    if (mission_executor_ != nullptr && mission_executor_->mission_specification() != nullptr) {
+        msg.owned_mode = mission_executor_->mission_specification()->executor_owned_mode();
+        msg.intents = mission_executor_->intentStatuses();
+        const auto mode_provider = mission_executor_->mode_provider();
+        if (mode_provider != nullptr) {
+            for (const auto & mode : *mode_provider) {
+                iii_drone_interfaces::msg::MissionModeRegistryEntry entry;
+                entry.stamp = msg.stamp;
+                entry.mode_key = mode->mode_key();
+                entry.display_name = mode->mode_name();
+                entry.mode_id = mode->mode_id();
+                entry.mode_id_valid = mode->is_registered();
+                entry.registered = mode->is_registered();
+                entry.active = mode->active();
+                entry.tree_running = mode->tree_running();
+                entry.tree_finished = mode->tree_finished();
+                entry.tree_success = mode->tree_success();
+                entry.tree_success_valid = entry.tree_finished;
+                entry.degraded_reason = mode->degraded_reason();
+                entry.degraded = !entry.degraded_reason.empty();
+                msg.modes.push_back(entry);
+            }
+        }
+        if (msg.active_mission_specification.empty()) {
+            msg.active_mission_specification = mission_executor_->mission_specification()->mission_specification_file();
+        }
+    }
+
+    msg.mission_active = mission_executor_ != nullptr && mission_executor_->mission_active();
+    msg.degraded_reason = mission_status_degraded_reason_;
+    msg.degraded = !mission_status_degraded_reason_.empty() ||
+        (msg.mission_active && !msg.required_modes_registered);
+    if (!mission_status_degraded_reason_.empty()) {
+        msg.degraded_reasons.push_back(mission_status_degraded_reason_);
+    }
+    if (msg.mission_active && !msg.required_modes_registered) {
+        msg.degraded_reasons.push_back("not all mission modes are registered with PX4");
+    }
+    msg.ready = mission_executor_ != nullptr && !msg.degraded;
+
+    if (msg.degraded) {
+        msg.mission_state = iii_drone_interfaces::msg::MissionModeStatus::MISSION_STATE_DEGRADED;
+        msg.mission_state_label = "degraded";
+    } else if (msg.mission_active) {
+        msg.mission_state = iii_drone_interfaces::msg::MissionModeStatus::MISSION_STATE_ACTIVE;
+        msg.mission_state_label = "active";
+    } else if (mission_executor_ != nullptr) {
+        msg.mission_state = iii_drone_interfaces::msg::MissionModeStatus::MISSION_STATE_READY;
+        msg.mission_state_label = "ready";
+    } else {
+        msg.mission_state = iii_drone_interfaces::msg::MissionModeStatus::MISSION_STATE_IDLE;
+        msg.mission_state_label = "idle";
+    }
+
+    mission_status_publisher_->publish(msg);
+
+}
+
+void MissionExecutorNode::refreshInspectionOverviewCaches() {
+    if (
+        powerline_overview_client_ &&
+        powerline_overview_client_->service_is_ready() &&
+        !powerline_overview_request_pending_.exchange(true)
+    ) {
+        auto request = std::make_shared<iii_drone_interfaces::srv::GetPowerlineOverview::Request>();
+        powerline_overview_client_->async_send_request(
+            request,
+            [this](rclcpp::Client<iii_drone_interfaces::srv::GetPowerlineOverview>::SharedFuture future) {
+                try {
+                    std::lock_guard<std::mutex> lock(inspection_overview_mutex_);
+                    powerline_overview_response_ = future.get();
+                } catch (const std::exception & exc) {
+                    RCLCPP_WARN(get_logger(), "Failed to refresh powerline overview: %s", exc.what());
+                }
+                powerline_overview_request_pending_ = false;
+            }
+        );
+    }
+    if (
+        pylon_overview_client_ &&
+        pylon_overview_client_->service_is_ready() &&
+        !pylon_overview_request_pending_.exchange(true)
+    ) {
+        auto request = std::make_shared<iii_drone_interfaces::srv::GetPylonOverview::Request>();
+        pylon_overview_client_->async_send_request(
+            request,
+            [this](rclcpp::Client<iii_drone_interfaces::srv::GetPylonOverview>::SharedFuture future) {
+                try {
+                    std::lock_guard<std::mutex> lock(inspection_overview_mutex_);
+                    pylon_overview_response_ = future.get();
+                } catch (const std::exception & exc) {
+                    RCLCPP_WARN(get_logger(), "Failed to refresh pylon overview: %s", exc.what());
+                }
+                pylon_overview_request_pending_ = false;
+            }
+        );
+    }
+}
+
+void MissionExecutorNode::populateInspectionStartEligibility(
+    iii_drone_interfaces::msg::MissionModeStatus & msg
+) {
+    auto & output = msg.inspection_start_eligibility;
+    output.stamp = msg.stamp;
+    if (mission_executor_ == nullptr) {
+        output.failure_reasons.push_back("mission executor is unavailable");
+        return;
+    }
+    const auto position = mission_executor_->currentPosition();
+    if (!position) {
+        output.failure_reasons.push_back("vehicle odometry has not been received");
+        return;
+    }
+
+    iii_drone_interfaces::srv::GetPowerlineOverview::Response::SharedPtr powerline;
+    iii_drone_interfaces::srv::GetPylonOverview::Response::SharedPtr pylons;
+    {
+        std::lock_guard<std::mutex> lock(inspection_overview_mutex_);
+        powerline = powerline_overview_response_;
+        pylons = pylon_overview_response_;
+    }
+    if (!powerline || !powerline->success) {
+        output.failure_reasons.push_back("stored powerline overview is unavailable");
+        return;
+    }
+    if (!pylons || !pylons->success || !pylons->valid || pylons->stored_pylon_overview.pylons.size() != 2) {
+        output.failure_reasons.push_back("exactly two valid stored pylons are required");
+        return;
+    }
+    const auto configuration = mission_executor_->phaseWaypointConfiguration();
+    if (!configuration) {
+        output.failure_reasons.push_back("inspection geometry configuration is unavailable");
+        return;
+    }
+
+    try {
+        iii_drone::adapters::PowerlineAdapter powerline_adapter(powerline->stored_powerline);
+        iii_drone::types::point_t pylon_a;
+        pylon_a << pylons->stored_pylon_overview.pylons.at(0).x,
+            pylons->stored_pylon_overview.pylons.at(0).y, 0.0;
+        iii_drone::types::point_t pylon_b;
+        pylon_b << pylons->stored_pylon_overview.pylons.at(1).x,
+            pylons->stored_pylon_overview.pylons.at(1).y, 0.0;
+        const auto eligibility = iii_drone::behavior::EvaluateCorridorInspectionStart(
+            powerline_adapter.GetPoints(),
+            powerline_adapter.projection_plane().normal,
+            pylon_a,
+            pylon_b,
+            *position,
+            configuration->GetParameter("/inspection_demo/inspection_clearance_m").as_double(),
+            configuration->GetParameter("/inspection_demo/pylon_end_clearance_m").as_double(),
+            configuration->GetParameter("/inspection_demo/pylon_structure_extent_m").as_double(),
+            configuration->GetParameter("/inspection_demo/pylon_span_margin_m").as_double(),
+            configuration->GetParameter(
+                "/inspection_demo/max_pylon_powerline_direction_mismatch_rad"
+            ).as_double()
+        );
+        output.evaluable = eligibility.evaluable;
+        output.eligible = eligibility.eligible;
+        output.side = eligibility.side;
+        output.measured_lateral_clearance_m = eligibility.measured_lateral_clearance_m;
+        output.required_lateral_clearance_m = eligibility.required_lateral_clearance_m;
+        output.between_pylons = eligibility.between_pylons;
+        output.distance_from_start_boundary_m = eligibility.distance_from_start_boundary_m;
+        output.distance_to_end_boundary_m = eligibility.distance_to_end_boundary_m;
+        output.pylon_span_margin_m = eligibility.pylon_span_margin_m;
+        output.ingress_point_valid = eligibility.ingress_point_valid;
+        output.ingress_point.x = eligibility.ingress_point[0];
+        output.ingress_point.y = eligibility.ingress_point[1];
+        output.ingress_point.z = eligibility.ingress_point[2];
+        output.failure_reasons = eligibility.failure_reasons;
+    } catch (const std::exception & exc) {
+        output.failure_reasons.push_back(
+            std::string("inspection eligibility evaluation failed: ") + exc.what()
+        );
+    }
 }
 
 int main(int argc, char **argv) {

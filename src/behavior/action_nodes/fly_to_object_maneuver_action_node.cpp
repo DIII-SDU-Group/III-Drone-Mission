@@ -29,15 +29,13 @@ FlyToObjectManeuverActionNode::FlyToObjectManeuverActionNode(
         params,
         maneuver_reference_client
 ),  tf_buffer_(tf_buffer) {
-
     setGetFinalReferenceCallback(
         std::bind(
-            &FlyToObjectManeuverActionNode::getFinalReference, 
-            this, 
+            &FlyToObjectManeuverActionNode::getFinalReference,
+            this,
             std::placeholders::_1
         )
     );
-
 }
 
 PortsList FlyToObjectManeuverActionNode::providedPorts() {
