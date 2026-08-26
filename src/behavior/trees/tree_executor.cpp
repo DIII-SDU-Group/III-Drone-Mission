@@ -3,6 +3,7 @@
 /*****************************************************************************/
 
 #include <iii_drone_mission/behavior/trees/tree_executor.hpp>
+#include <iii_drone_mission/behavior/behavior_node_registry.hpp>
 
 #include <stdexcept>
 
@@ -33,11 +34,6 @@ TreeExecutor::TreeExecutor(
     global_blackboard_(global_blackboard),
     runtime_intent_buffer_(runtime_intent_buffer)
 {
-
-    wordexp_t wordexp_result;
-    wordexp(tree_xml_file_.c_str(), &wordexp_result, 0);
-    tree_xml_file_ = wordexp_result.we_wordv[0];
-    wordfree(&wordexp_result);
 
     RCLCPP_DEBUG(node_->get_logger(), "TreeExecutor::TreeExecutor(): Initializing %s.", tree_name.c_str());
 
@@ -700,6 +696,8 @@ void TreeExecutor::registerNodes() {
             "RetryUntilSuccessfulOnAborted"
         );
     }
+
+    ValidateRuntimeBehaviorFactory(factory_);
 
 }
 

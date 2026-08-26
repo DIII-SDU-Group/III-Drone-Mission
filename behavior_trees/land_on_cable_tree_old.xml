@@ -43,7 +43,7 @@
                 waypoints_depart="{waypoints}"
             />
 
-            <Action
+            <Condition
                 ID="PublishPowerlineWaypoints"
                 name="publish_powerline_waypoints"
                 waypoints="{waypoints}"

@@ -76,7 +76,7 @@ namespace mission {
         explicit MissionExecutor(
             rclcpp_lifecycle::LifecycleNode * node,
             tf2_ros::Buffer::SharedPtr tf_buffer,
-            std::string mission_specification_file,
+            MissionSpecification::SharedPtr mission_specification,
             rclcpp::CallbackGroup::SharedPtr odometry_sub_callback_group,
             rclcpp::executors::MultiThreadedExecutor & executor
         );
@@ -92,8 +92,8 @@ namespace mission {
             iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator
         );
         void Stop();
-        bool OverrideMissionSpecification(
-            const std::string & mission_specification_file,
+        bool SelectMissionSpecification(
+            MissionSpecification::SharedPtr mission_specification,
             iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator,
             rclcpp::CallbackGroup::SharedPtr get_reference_cb_group,
             std::string & message

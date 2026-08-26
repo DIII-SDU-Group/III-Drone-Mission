@@ -10,7 +10,6 @@
 #include <string>
 #include <map>
 #include <vector>
-#include <wordexp.h>
 
 /*****************************************************************************/
 // ROS2:
@@ -19,9 +18,7 @@
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 
 /*****************************************************************************/
-// Yaml-CPP:
-
-#include <yaml-cpp/yaml.h>
+#include <iii_drone_mission/mission/mission_catalog.hpp>
 
 /*****************************************************************************/
 // Defines:
@@ -78,7 +75,8 @@ namespace mission {
     class MissionSpecification {
     public:
         MissionSpecification(
-            const std::string& mission_specification_file,
+            MissionCatalog::SharedPtr catalog,
+            const MissionCatalogEntry & catalog_entry,
             rclcpp_lifecycle::LifecycleNode * node
         );
 
@@ -88,7 +86,12 @@ namespace mission {
         MissionSpecificationIterator end();
 
         std::string executor_owned_mode() const;
-        std::string mission_specification_file() const;
+        const std::string & catalog_id() const;
+        const std::string & entry_hash() const;
+        const std::string & catalog_hash() const;
+        const std::string & classification() const;
+        const std::vector<std::string> & compatible_profiles() const;
+        const std::string & experimental_warning() const;
         std::vector<mission_specification_entry_t> entries() const;
         std::vector<std::string> mode_keys() const;
         std::vector<mission_intent_service_t> intent_services() const;
@@ -100,7 +103,13 @@ namespace mission {
         std::vector<mission_intent_service_t> intent_services_;
 
         std::string executor_owned_mode_;
-        std::string mission_specification_file_;
+        MissionCatalog::SharedPtr catalog_;
+        std::string catalog_id_;
+        std::string entry_hash_;
+        std::string catalog_hash_;
+        std::string classification_;
+        std::vector<std::string> compatible_profiles_;
+        std::string experimental_warning_;
 
         rclcpp_lifecycle::LifecycleNode * node_;
 

@@ -11,7 +11,6 @@
 #include <memory>
 #include <mutex>
 #include <thread>
-#include <wordexp.h>
 
 /*****************************************************************************/
 // ROS2:

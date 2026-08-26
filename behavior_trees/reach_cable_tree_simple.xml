@@ -68,7 +68,7 @@
                 powerline_overview_required_line_id="{@powerline_overview_required_line_id}"
             />
 
-            <Action
+            <Condition
                 ID="PublishPowerlineWaypoints"
                 name="publish_powerline_waypoints"
                 waypoints="{waypoints}"

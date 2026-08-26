@@ -18,7 +18,7 @@ using namespace iii_drone::adapters::px4;
 MissionExecutor::MissionExecutor(
     rclcpp_lifecycle::LifecycleNode * node,
     tf2_ros::Buffer::SharedPtr tf_buffer,
-    std::string mission_specification_file,
+    MissionSpecification::SharedPtr mission_specification,
     rclcpp::CallbackGroup::SharedPtr odometry_sub_callback_group,
     rclcpp::executors::MultiThreadedExecutor & executor
 ) : node_(node),
@@ -29,10 +29,10 @@ MissionExecutor::MissionExecutor(
 
     RCLCPP_INFO(node->get_logger(), "MissionExecutor::MissionExecutor(): Initializing.");
 
-    mission_specification_ = std::make_shared<MissionSpecification>(
-        mission_specification_file,
-        node
-    );
+    if (mission_specification == nullptr) {
+        throw std::runtime_error("MissionExecutor requires a catalog-backed mission specification");
+    }
+    mission_specification_ = std::move(mission_specification);
     runtime_intent_buffer_ = std::make_shared<RuntimeIntentBuffer>();
 
     // Subscription
@@ -225,8 +225,8 @@ void MissionExecutor::Stop() {
 
 }
 
-bool MissionExecutor::OverrideMissionSpecification(
-    const std::string & mission_specification_file,
+bool MissionExecutor::SelectMissionSpecification(
+    MissionSpecification::SharedPtr replacement,
     iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator,
     rclcpp::CallbackGroup::SharedPtr get_reference_cb_group,
     std::string & message
@@ -235,20 +235,19 @@ bool MissionExecutor::OverrideMissionSpecification(
     std::lock_guard<std::mutex> lock(lifecycle_mutex_);
 
     if (mission_active()) {
-        message = "mission specification override rejected because a mission is active";
+        message = "mission catalog selection rejected because a mission is active";
         return false;
     }
 
-    MissionSpecification::SharedPtr replacement;
+    if (replacement == nullptr) {
+        message = "mission catalog selection rejected because the replacement is null";
+        return false;
+    }
     try {
-        replacement = std::make_shared<MissionSpecification>(
-            mission_specification_file,
-            node_
-        );
         replacement->GetMissionSpecificationEntry(replacement->executor_owned_mode());
     } catch (const std::exception & exception) {
-        message = "mission specification override rejected while loading '" +
-            mission_specification_file + "': " + exception.what();
+        message = "mission catalog selection rejected while validating " +
+            replacement->catalog_id() + ": " + exception.what();
         return false;
     }
 
@@ -257,7 +256,7 @@ bool MissionExecutor::OverrideMissionSpecification(
     const auto previous_specification = mission_specification_;
 
     if (tree_provider_ != nullptr && was_configured) {
-        tree_provider_->ClearGlobalBlackboard("mission specification override");
+        tree_provider_->ClearGlobalBlackboard("mission catalog selection");
     }
     if (runtime_intent_buffer_ != nullptr) {
         runtime_intent_buffer_->Clear();
@@ -278,8 +277,7 @@ bool MissionExecutor::OverrideMissionSpecification(
         get_reference_cb_group,
         message
     )) {
-        message = "mission specification override applied: " +
-            replacement->mission_specification_file();
+        message = "mission catalog selection applied: " + replacement->catalog_id();
         return true;
     }
 
@@ -293,12 +291,12 @@ bool MissionExecutor::OverrideMissionSpecification(
         get_reference_cb_group,
         rollback_message
     )) {
-        message = "mission specification override failed and rollback failed. New spec failure: " +
+        message = "mission catalog selection failed and rollback failed. Replacement failure: " +
             replacement_failure + "; rollback failure: " + rollback_message;
         return false;
     }
 
-    message = "mission specification override failed and previous specification was restored. New spec failure: " +
+    message = "mission catalog selection failed and previous entry was restored. Replacement failure: " +
         replacement_failure;
     return false;
 
@@ -346,7 +344,7 @@ bool MissionExecutor::rebuildWithMissionSpecification(
         return false;
     }
 
-    message = "mission executor rebuilt with " + mission_specification_->mission_specification_file();
+    message = "mission executor rebuilt with catalog entry " + mission_specification_->catalog_id();
     return true;
 
 }

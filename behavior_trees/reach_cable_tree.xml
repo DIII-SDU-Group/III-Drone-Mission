@@ -87,7 +87,7 @@
                 powerline_overview_required_line_id="{@powerline_overview_required_line_id}"
             />
 
-            <Action
+            <Condition
                 ID="PublishPowerlineWaypoints"
                 name="publish_powerline_waypoints"
                 waypoints="{waypoints}"
@@ -292,7 +292,7 @@
                         </Sequence>
 
                         <Sequence name="cable_takeoff_after_aborted_landing_sequence">
-                            <Condition
+                            <Action
                                 ID="StringEquals"
                                 name="landing_aborted_check"
                                 value="{landing_terminal_state}"
