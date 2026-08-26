@@ -1,5 +1,7 @@
 #include <iii_drone_mission/mission/mission_specification.hpp>
 
+#include <algorithm>
+#include <set>
 #include <stdexcept>
 #include <utility>
 
@@ -34,6 +36,20 @@ MissionSpecification::MissionSpecification(
     if (catalog_ == nullptr) {
         throw std::runtime_error("mission specification requires an installed mission catalog");
     }
+    std::set<std::string> declared_behavior_tree_asset_ids;
+    for (const auto & asset : catalog_entry.assets) {
+        if (asset.kind == "mission_specification") {
+            if (!specification_asset_id_.empty()) {
+                throw std::runtime_error("mission catalog entry contains multiple specification assets");
+            }
+            specification_asset_id_ = asset.asset_id;
+        } else if (asset.kind == "behavior_tree") {
+            declared_behavior_tree_asset_ids.insert(asset.asset_id);
+        }
+    }
+    if (specification_asset_id_.empty() || declared_behavior_tree_asset_ids.empty()) {
+        throw std::runtime_error("mission catalog entry lacks exact specification/tree identities");
+    }
     const auto & document = catalog_entry.specification;
     executor_owned_mode_ = RequiredString(document, "executor_owned_mode");
     if (!document.contains("entries") || !document.at("entries").is_array() || document.at("entries").empty()) {
@@ -43,14 +59,33 @@ MissionSpecification::MissionSpecification(
         mission_specification_entry_t entry;
         entry.key = RequiredString(item, "key");
         entry.mode_name = RequiredString(item, "mode_name");
-        entry.behavior_tree_xml_file = catalog_->resolveAsset(
-            RequiredString(item, "behavior_tree_asset_id")
-        ).string();
+        const auto behavior_tree_asset_id = RequiredString(item, "behavior_tree_asset_id");
+        if (declared_behavior_tree_asset_ids.count(behavior_tree_asset_id) == 0) {
+            throw std::runtime_error(
+                "resolved mission specification references a tree outside its entry closure"
+            );
+        }
+        behavior_tree_asset_ids_.push_back(behavior_tree_asset_id);
+        entry.behavior_tree_xml_file = catalog_->resolveAsset(behavior_tree_asset_id).string();
         entry.next_mode = item.value("next_mode", "");
         entry.allow_activate_when_disarmed = item.value("allow_activate_when_disarmed", false);
         if (!mission_specification_entries_.emplace(entry.key, entry).second) {
             throw std::runtime_error("resolved mission specification repeats mode key: " + entry.key);
         }
+    }
+    std::sort(behavior_tree_asset_ids_.begin(), behavior_tree_asset_ids_.end());
+    behavior_tree_asset_ids_.erase(
+        std::unique(behavior_tree_asset_ids_.begin(), behavior_tree_asset_ids_.end()),
+        behavior_tree_asset_ids_.end()
+    );
+    if (
+        std::set<std::string>(
+            behavior_tree_asset_ids_.begin(), behavior_tree_asset_ids_.end()
+        ) != declared_behavior_tree_asset_ids
+    ) {
+        throw std::runtime_error(
+            "resolved mission specification tree identities differ from its entry closure"
+        );
     }
     if (mission_specification_entries_.count(executor_owned_mode_) == 0) {
         throw std::runtime_error("resolved mission specification executor-owned mode is unavailable");
@@ -118,6 +153,16 @@ const std::string & MissionSpecification::entry_hash() const
 const std::string & MissionSpecification::catalog_hash() const
 {
     return catalog_hash_;
+}
+
+const std::string & MissionSpecification::specification_asset_id() const
+{
+    return specification_asset_id_;
+}
+
+const std::vector<std::string> & MissionSpecification::behavior_tree_asset_ids() const
+{
+    return behavior_tree_asset_ids_;
 }
 
 const std::string & MissionSpecification::classification() const

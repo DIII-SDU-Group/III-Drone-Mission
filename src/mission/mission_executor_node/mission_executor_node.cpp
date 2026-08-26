@@ -509,9 +509,13 @@ void MissionExecutorNode::selectMissionCatalogEntryService(
 {
     auto publish_active_identity = [this, &response]() {
         response->active_catalog_id = active_catalog_id_;
+        response->active_catalog_hash = mission_catalog_ != nullptr ? mission_catalog_->catalogHash() : "";
         response->temporary_override = temporary_override_;
         if (mission_executor_ != nullptr && mission_executor_->mission_specification() != nullptr) {
-            response->active_entry_hash = mission_executor_->mission_specification()->entry_hash();
+            const auto specification = mission_executor_->mission_specification();
+            response->active_entry_hash = specification->entry_hash();
+            response->active_specification_asset_id = specification->specification_asset_id();
+            response->active_behavior_tree_asset_ids = specification->behavior_tree_asset_ids();
         }
     };
 
@@ -683,6 +687,8 @@ void MissionExecutorNode::publishMissionModeStatus() {
         const auto specification = mission_executor_->mission_specification();
         msg.active_catalog_id = specification->catalog_id();
         msg.active_entry_hash = specification->entry_hash();
+        msg.active_specification_asset_id = specification->specification_asset_id();
+        msg.active_behavior_tree_asset_ids = specification->behavior_tree_asset_ids();
         msg.classification = specification->classification();
         msg.compatible_profiles = specification->compatible_profiles();
         msg.experimental = specification->classification() == "experimental";

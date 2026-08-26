@@ -89,6 +89,8 @@ namespace mission {
         const std::string & catalog_id() const;
         const std::string & entry_hash() const;
         const std::string & catalog_hash() const;
+        const std::string & specification_asset_id() const;
+        const std::vector<std::string> & behavior_tree_asset_ids() const;
         const std::string & classification() const;
         const std::vector<std::string> & compatible_profiles() const;
         const std::string & experimental_warning() const;
@@ -107,6 +109,8 @@ namespace mission {
         std::string catalog_id_;
         std::string entry_hash_;
         std::string catalog_hash_;
+        std::string specification_asset_id_;
+        std::vector<std::string> behavior_tree_asset_ids_;
         std::string classification_;
         std::vector<std::string> compatible_profiles_;
         std::string experimental_warning_;
