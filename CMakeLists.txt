@@ -215,7 +215,7 @@ ament_target_dependencies(iii_drone_mission_lib
 )
 
 ament_export_libraries(iii_drone_mission_lib)
-ament_export_include_directories(${III_DRONE_MISSION_INCLUDE_DIRS})
+ament_export_include_directories(include)
 
 install(TARGETS iii_drone_mission_lib
   ARCHIVE DESTINATION lib
