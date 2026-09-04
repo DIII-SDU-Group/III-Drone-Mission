@@ -212,7 +212,7 @@ MissionExecutorNode::MissionExecutorNode(
     );
     mission_status_publisher_ = create_publisher<iii_drone_interfaces::msg::MissionModeStatus>(
         "/mission/status",
-        rclcpp::SystemDefaultsQoS()
+        rclcpp::QoS(1).reliable().transient_local()
     );
     mission_status_publisher_->on_activate();
     powerline_overview_client_ = create_client<iii_drone_interfaces::srv::GetPowerlineOverview>(

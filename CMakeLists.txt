@@ -311,7 +311,11 @@ endforeach()
 
 add_custom_command(
   OUTPUT "${III_BEHAVIOR_NODE_CONTRACT}" "${III_BEHAVIOR_NODE_MODELS}"
-  COMMAND "$<TARGET_FILE:iii_behavior_node_contract_exporter>"
+  # Naming the executable target lets CMake prepend its
+  # CROSSCOMPILING_EMULATOR.  Expanding TARGET_FILE here bypasses that
+  # mechanism and makes ARM64 release builds hand the target binary directly
+  # to the host's binfmt handler without the immutable target sysroot.
+  COMMAND iii_behavior_node_contract_exporter
           "${III_BEHAVIOR_NODE_CONTRACT}"
           "${III_BEHAVIOR_NODE_MODELS}"
   DEPENDS iii_behavior_node_contract_exporter
