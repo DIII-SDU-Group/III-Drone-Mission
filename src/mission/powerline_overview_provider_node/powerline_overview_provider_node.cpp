@@ -597,7 +597,7 @@ void PowerlineOverviewProviderNode::getPowerlineOverviewCallback(
 {
     (void)request_header;
     (void)request;
-    RCLCPP_INFO(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback()");
+    RCLCPP_DEBUG(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback()");
 
     const bool had_gnss_on_disk = has_persisted_gnss_powerline_ || std::filesystem::exists(gnss_persistence_path_);
 
@@ -606,7 +606,12 @@ void PowerlineOverviewProviderNode::getPowerlineOverviewCallback(
     }
 
     if (!has_stored_powerline_) {
-        RCLCPP_WARN(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback() - No stored powerline available");
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            *get_clock(),
+            10000,
+            "PowerlineOverviewProviderNode::getPowerlineOverviewCallback() - No stored powerline available"
+        );
         response->success = false;
         response->overview_in_frame = false;
         response->overview_gnss_only = had_gnss_on_disk;
@@ -622,7 +627,7 @@ void PowerlineOverviewProviderNode::getPowerlineOverviewCallback(
     response->overview_gnss_only = false;
     response->overview_source = overview_source_;
 
-    RCLCPP_INFO(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback() - Stored powerline sent");
+    RCLCPP_DEBUG(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback() - Stored powerline sent");
 
 }
 
@@ -633,7 +638,8 @@ bool PowerlineOverviewProviderNode::persistStoredPowerlineOverview(
     const auto reference = iii_drone::mission::overview_gnss::makeReference(
         latest_global_position_.Load(),
         tf_buffer_,
-        get_logger()
+        get_logger(),
+        get_clock()
     );
     if (!reference.has_value()) {
         return false;
@@ -665,7 +671,8 @@ bool PowerlineOverviewProviderNode::loadPersistedPowerlineOverviewToMemory()
     const auto reference = iii_drone::mission::overview_gnss::makeReference(
         latest_global_position_.Load(),
         tf_buffer_,
-        get_logger()
+        get_logger(),
+        get_clock()
     );
     if (!reference.has_value()) {
         return false;

@@ -3,28 +3,28 @@ executor_owned_mode: "takeoff1"
 entries:
   - key: "takeoff1"
     mode_name: "Takeoff 1"
-    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/takeoff_test_tree.xml"
+    behavior_tree_xml_file: "behavior_trees/takeoff_test_tree.xml"
     allow_activate_when_disarmed: true
     next_mode: "up_down"
 
   - key: "up_down"
     mode_name: "Up Down"
-    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/up_down_test_tree.xml"
+    behavior_tree_xml_file: "behavior_trees/up_down_test_tree.xml"
     allow_activate_when_disarmed: true
     next_mode: "takeoff2"
 
   - key: "takeoff2"
     mode_name: "Takeoff 2"
-    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/takeoff_test_tree.xml"
+    behavior_tree_xml_file: "behavior_trees/takeoff_test_tree.xml"
     allow_activate_when_disarmed: true
     # next_mode: "land1"
 
   # - key: "land1"
   #   mode_name: "Land 1"
-  #   behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/land_test_tree.xml"
+  #   behavior_tree_xml_file: "behavior_trees/land_test_tree.xml"
   #   allow_activate_when_disarmed: false
 
   # - key: "up_down_2"
   #   mode_name: "Up Down 2"
-  #   behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/up_down_test_tree_2.xml"
+  #   behavior_tree_xml_file: "behavior_trees/up_down_test_tree_2.xml"
   #   allow_activate_when_disarmed: true

@@ -87,7 +87,7 @@
 
      <BehaviorTree ID="FlyToInitPosition">
         <Sequence name="fly_to_init_position_sequence">
-            <Action
+            <Condition
                 ID="PublishPowerlineWaypoints"
                 name="publish_powerline_waypoints"
                 waypoints="{waypoints}"

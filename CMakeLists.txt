@@ -24,11 +24,14 @@ include(CTest)
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+find_package(OpenSSL REQUIRED)
 
 set(dependencies
   rclcpp
   rclcpp_lifecycle
   rclcpp_action
+  ament_index_cpp
 
   builtin_interfaces
   sensor_msgs
@@ -77,6 +80,7 @@ set(III_DRONE_MISSION_HDRS
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/px4/setpoints/trajectory_setpoint.hpp"
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/port_types.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/behavior_node_registry.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/powerline_geometry.hpp"
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/maneuver_action_node.hpp"
@@ -119,6 +123,7 @@ set(III_DRONE_MISSION_HDRS
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/trees/tree_provider.hpp"
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/mission_specification.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/mission_catalog.hpp"
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/mission_executor.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/overview_gnss_persistence.hpp"
@@ -136,6 +141,7 @@ set(III_DRONE_MISSION_SRCS
   "${PROJECT_SOURCE_DIR}/src/px4/setpoints/trajectory_setpoint.cpp"
 
   "${PROJECT_SOURCE_DIR}/src/behavior/port_types.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/behavior_node_registry.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/powerline_geometry.cpp"
 
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/maneuver_action_node.cpp"
@@ -178,6 +184,7 @@ set(III_DRONE_MISSION_SRCS
   "${PROJECT_SOURCE_DIR}/src/behavior/trees/tree_provider.cpp"
 
   "${PROJECT_SOURCE_DIR}/src/mission/mission_specification.cpp"
+  "${PROJECT_SOURCE_DIR}/src/mission/mission_catalog.cpp"
 
   "${PROJECT_SOURCE_DIR}/src/mission/mission_executor.cpp"
   "${PROJECT_SOURCE_DIR}/src/mission/overview_gnss_persistence.cpp"
@@ -195,12 +202,6 @@ add_library(iii_drone_mission_lib
   ${III_DRONE_MISSION_SRCS}
 )
 
-target_sources(iii_drone_mission_lib
-  PUBLIC
-  ${III_DRONE_MISSION_HDRS}
-  ${III_DRONE_MISSION_SRCS}
-)
-
 target_include_directories(iii_drone_mission_lib
   PUBLIC
   ${III_DRONE_MISSION_INCLUDE_DIRS}
@@ -208,6 +209,7 @@ target_include_directories(iii_drone_mission_lib
 
 target_link_libraries(iii_drone_mission_lib
   yaml-cpp
+  OpenSSL::Crypto
 )
 
 ament_target_dependencies(iii_drone_mission_lib
@@ -222,6 +224,171 @@ install(TARGETS iii_drone_mission_lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
   INCLUDES DESTINATION include
+)
+
+add_executable(iii_behavior_node_contract_exporter
+  "${PROJECT_SOURCE_DIR}/src/tools/behavior_node_contract_exporter.cpp"
+)
+target_link_libraries(iii_behavior_node_contract_exporter
+  iii_drone_mission_lib
+  OpenSSL::Crypto
+)
+ament_target_dependencies(iii_behavior_node_contract_exporter ${dependencies})
+
+include("${PROJECT_SOURCE_DIR}/cmake/IIIRegisterMission.cmake")
+
+iii_register_mission(
+  ID inspection-production
+  SPECIFICATION mission_specification/mission_specification.yaml
+  CLASSIFICATION production
+  PROFILES real opti_track sim hil
+  DEFAULT_FOR real opti_track sim hil
+)
+iii_register_mission(
+  ID reach-charge-leave-experimental
+  SPECIFICATION mission_specification/mission_specification_reach_charge_leave.yaml
+  CLASSIFICATION experimental
+  PROFILES real opti_track sim hil
+)
+iii_register_mission(
+  ID ftp-blend-loop-test
+  SPECIFICATION mission_specification/mission_specification_ftp_blend_loop.yaml
+  CLASSIFICATION test
+  PROFILES sim
+)
+iii_register_mission(
+  ID ftp-legacy
+  SPECIFICATION mission_specification/mission_specification.yaml.ftp_test
+  CLASSIFICATION legacy
+  STATUS deprecated
+  PROFILES sim
+)
+iii_register_mission(
+  ID opti-track-up-down-test
+  SPECIFICATION mission_specification/mission_specification.yaml.opti_track
+  CLASSIFICATION test
+  PROFILES opti_track sim
+)
+iii_register_mission(
+  ID reach-cable-simple-test
+  SPECIFICATION mission_specification/mission_specification.yaml.simple_test
+  CLASSIFICATION test
+  PROFILES sim
+)
+iii_register_mission(
+  ID up-down-test
+  SPECIFICATION mission_specification/mission_specification.yaml.up_down
+  CLASSIFICATION test
+  PROFILES sim
+)
+
+set(III_MISSION_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/mission_catalog")
+set(III_MISSION_REGISTRATIONS "${III_MISSION_GENERATED_DIR}/registrations.tsv")
+set(III_BEHAVIOR_NODE_CONTRACT "${III_MISSION_GENERATED_DIR}/behavior-node-contract.json")
+set(III_BEHAVIOR_NODE_MODELS "${III_MISSION_GENERATED_DIR}/models.xml")
+set(III_MISSION_LOCAL_CATALOG "${III_MISSION_GENERATED_DIR}/local/catalog.json")
+set(III_MISSION_QUALIFIED_CATALOG "${III_MISSION_GENERATED_DIR}/qualified/catalog.json")
+set(III_MISSION_FIELD_CANDIDATES_CATALOG "${III_MISSION_GENERATED_DIR}/field-candidates/catalog.json")
+
+file(MAKE_DIRECTORY "${III_MISSION_GENERATED_DIR}")
+iii_write_mission_registrations("${III_MISSION_REGISTRATIONS}")
+file(GLOB_RECURSE III_MISSION_ASSET_SOURCES CONFIGURE_DEPENDS
+  "${PROJECT_SOURCE_DIR}/mission_specification/*"
+  "${PROJECT_SOURCE_DIR}/behavior_trees/*"
+)
+get_property(III_MISSION_REGISTRATION_SOURCES GLOBAL PROPERTY III_MISSION_REGISTRATION_SOURCES)
+get_filename_component(III_INTERFACES_SHARE_DIR "${iii_drone_interfaces_DIR}/.." ABSOLUTE)
+set(III_MISSION_INTERFACE_CONTRACTS
+  "${III_INTERFACES_SHARE_DIR}/msg/MissionModeStatus.msg"
+  "${III_INTERFACES_SHARE_DIR}/srv/GetMissionCatalog.srv"
+  "${III_INTERFACES_SHARE_DIR}/srv/SelectMissionCatalogEntry.srv"
+)
+foreach(contract IN LISTS III_MISSION_INTERFACE_CONTRACTS)
+  if(NOT EXISTS "${contract}")
+    message(FATAL_ERROR "installed mission interface contract is missing: ${contract}")
+  endif()
+endforeach()
+
+add_custom_command(
+  OUTPUT "${III_BEHAVIOR_NODE_CONTRACT}" "${III_BEHAVIOR_NODE_MODELS}"
+  # Naming the executable target lets CMake prepend its
+  # CROSSCOMPILING_EMULATOR.  Expanding TARGET_FILE here bypasses that
+  # mechanism and makes ARM64 release builds hand the target binary directly
+  # to the host's binfmt handler without the immutable target sysroot.
+  COMMAND iii_behavior_node_contract_exporter
+          "${III_BEHAVIOR_NODE_CONTRACT}"
+          "${III_BEHAVIOR_NODE_MODELS}"
+  DEPENDS iii_behavior_node_contract_exporter
+  COMMENT "Exporting authoritative behavior-node contract"
+  VERBATIM
+)
+
+set(III_MISSION_CATALOG_COMMAND
+  "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/iii_drone_mission/mission_catalog.py" generate
+  --source-root "${PROJECT_SOURCE_DIR}"
+  --registrations "${III_MISSION_REGISTRATIONS}"
+  --node-contract "${III_BEHAVIOR_NODE_CONTRACT}"
+  --runtime-contract "${PROJECT_SOURCE_DIR}/config/mission_runtime_contract.json"
+  --models-xml "${III_BEHAVIOR_NODE_MODELS}"
+  --local-output "${III_MISSION_GENERATED_DIR}/local"
+  --qualified-output "${III_MISSION_GENERATED_DIR}/qualified"
+  --field-candidates-output "${III_MISSION_GENERATED_DIR}/field-candidates"
+)
+set(III_MISSION_BUILD_CONTRACTS
+  "${PROJECT_SOURCE_DIR}/CMakeLists.txt"
+  "${PROJECT_SOURCE_DIR}/cmake/IIIRegisterMission.cmake"
+  "${PROJECT_SOURCE_DIR}/iii_drone_mission/mission_catalog.py"
+  "${PROJECT_SOURCE_DIR}/src/tools/behavior_node_contract_exporter.cpp"
+  ${III_DRONE_MISSION_HDRS}
+  ${III_DRONE_MISSION_SRCS}
+)
+foreach(contract IN LISTS III_MISSION_BUILD_CONTRACTS)
+  list(APPEND III_MISSION_CATALOG_COMMAND --build-contract "${contract}")
+endforeach()
+foreach(contract IN LISTS III_MISSION_INTERFACE_CONTRACTS)
+  list(APPEND III_MISSION_CATALOG_COMMAND --interface-contract "${contract}")
+endforeach()
+
+add_custom_command(
+  OUTPUT
+    "${III_MISSION_LOCAL_CATALOG}"
+    "${III_MISSION_QUALIFIED_CATALOG}"
+    "${III_MISSION_FIELD_CANDIDATES_CATALOG}"
+  COMMAND ${III_MISSION_CATALOG_COMMAND}
+  DEPENDS
+    "${PROJECT_SOURCE_DIR}/iii_drone_mission/mission_catalog.py"
+    "${PROJECT_SOURCE_DIR}/config/mission_runtime_contract.json"
+    "${III_MISSION_REGISTRATIONS}"
+    "${III_BEHAVIOR_NODE_CONTRACT}"
+    "${III_BEHAVIOR_NODE_MODELS}"
+    ${III_MISSION_REGISTRATION_SOURCES}
+    ${III_MISSION_ASSET_SOURCES}
+    ${III_MISSION_INTERFACE_CONTRACTS}
+    ${III_MISSION_BUILD_CONTRACTS}
+  COMMENT "Generating and validating immutable mission catalogs"
+  VERBATIM
+)
+
+add_custom_target(iii_drone_mission_catalog ALL
+  DEPENDS
+    "${III_MISSION_LOCAL_CATALOG}"
+    "${III_MISSION_QUALIFIED_CATALOG}"
+    "${III_MISSION_FIELD_CANDIDATES_CATALOG}"
+)
+
+install(DIRECTORY "${III_MISSION_GENERATED_DIR}/local/"
+  DESTINATION "share/${PROJECT_NAME}/mission_catalog"
+)
+install(DIRECTORY "${III_MISSION_GENERATED_DIR}/qualified/"
+  DESTINATION "share/${PROJECT_NAME}/mission_catalog_variants/qualified"
+)
+install(DIRECTORY "${III_MISSION_GENERATED_DIR}/field-candidates/"
+  DESTINATION "share/${PROJECT_NAME}/mission_catalog_variants/field-candidates"
+)
+install(FILES
+  "${PROJECT_SOURCE_DIR}/config/mission_runtime_contract.json"
+  "${PROJECT_SOURCE_DIR}/cmake/IIIRegisterMission.cmake"
+  DESTINATION "share/${PROJECT_NAME}"
 )
 
 # Executables:
@@ -310,9 +477,19 @@ install(DIRECTORY
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  find_package(ament_cmake_pytest REQUIRED)
+
+  ament_add_pytest_test(iii_drone_mission_catalog_test
+    test/test_mission_catalog.py
+    PYTHON_EXECUTABLE "${Python3_EXECUTABLE}"
+  )
 
   ament_add_gtest(iii_drone_mission_specification_test
     test/mission_specification_test.cpp
+  )
+
+  ament_add_gtest(iii_drone_behavior_node_registry_test
+    test/behavior_node_registry_test.cpp
   )
 
   ament_add_gtest(iii_drone_corridor_inspection_route_test
@@ -330,6 +507,11 @@ if(BUILD_TESTING)
     target_include_directories(iii_drone_mission_specification_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
     target_link_libraries(iii_drone_mission_specification_test iii_drone_mission_lib)
     ament_target_dependencies(iii_drone_mission_specification_test ${dependencies})
+  endif()
+  if(TARGET iii_drone_behavior_node_registry_test)
+    target_include_directories(iii_drone_behavior_node_registry_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+    target_link_libraries(iii_drone_behavior_node_registry_test iii_drone_mission_lib)
+    ament_target_dependencies(iii_drone_behavior_node_registry_test ${dependencies})
   endif()
 
   if(TARGET iii_drone_corridor_inspection_route_test)

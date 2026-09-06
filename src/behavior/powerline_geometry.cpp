@@ -130,6 +130,26 @@ std::optional<double> iii_drone::behavior::powerline_geometry::ComputePowerlineA
     );
 }
 
+std::optional<double> iii_drone::behavior::powerline_geometry::ComputeCableFacingYaw(
+    const vector_t & cross_corridor_no_z,
+    bool positive_side_is_entry
+) {
+    vector_t toward_cable = cross_corridor_no_z;
+    toward_cable[2] = 0.0;
+    const auto normalized_toward_cable = normalized(toward_cable);
+    if (!normalized_toward_cable) {
+        return std::nullopt;
+    }
+
+    // The approach point is displaced outward from the selected conductor.
+    // From the positive side, the conductor is therefore in the negative
+    // cross-corridor direction; from the negative side it is positive.
+    if (positive_side_is_entry) {
+        toward_cable *= -1.0;
+    }
+    return std::atan2(toward_cable[1], toward_cable[0]);
+}
+
 std::optional<point_t> iii_drone::behavior::powerline_geometry::SelectHighestPoint(
     const std::vector<point_t> & points
 ) {

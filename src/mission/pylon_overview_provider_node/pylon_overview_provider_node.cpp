@@ -298,7 +298,8 @@ bool PylonOverviewProviderNode::persistOverview(
     const auto reference = iii_drone::mission::overview_gnss::makeReference(
         latest_global_position_.Load(),
         tf_buffer_,
-        get_logger()
+        get_logger(),
+        get_clock()
     );
     if (!reference.has_value()) {
         return false;
@@ -330,7 +331,8 @@ bool PylonOverviewProviderNode::loadPersistedOverviewToMemoryLocked()
     const auto reference = iii_drone::mission::overview_gnss::makeReference(
         latest_global_position_.Load(),
         tf_buffer_,
-        get_logger()
+        get_logger(),
+        get_clock()
     );
     if (!reference.has_value()) {
         return false;

@@ -12,10 +12,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
-#include <filesystem>
-#include <fstream>
-#include <iomanip>
-#include <sstream>
+#include <stdexcept>
 
 #include <lifecycle_msgs/msg/state.hpp>
 #include <px4_msgs/msg/vehicle_status.hpp>
@@ -29,25 +26,11 @@ using LifecycleConfigurator = Configurator<rclcpp_lifecycle::LifecycleNode>;
 using ParameterType = rclcpp::ParameterType;
 using ConfigurationEntry = iii_drone::configuration::configuration_entry_t;
 
-std::string ContentHash(const std::string & path)
-{
-    std::ifstream stream(path, std::ios::binary);
-    if (!stream) {
-        return "";
-    }
-    uint64_t hash = 1469598103934665603ULL;
-    char byte = 0;
-    while (stream.get(byte)) {
-        hash ^= static_cast<unsigned char>(byte);
-        hash *= 1099511628211ULL;
-    }
-    std::ostringstream output;
-    output << "fnv1a64:" << std::hex << std::setw(16) << std::setfill('0') << hash;
-    return output.str();
-}
-
 std::string ConfigurationProfile()
 {
+    if (const char * profile = std::getenv("III_SYSTEM_PROFILE"); profile != nullptr && *profile != '\0') {
+        return profile;
+    }
     if (const char * profile = std::getenv("III_DRONE_PROFILE"); profile != nullptr && *profile != '\0') {
         return profile;
     }
@@ -55,18 +38,6 @@ std::string ConfigurationProfile()
         return std::string(simulation) == "true" ? "sim" : "real";
     }
     return "unknown";
-}
-
-bool SamePath(const std::string & first, const std::string & second)
-{
-    if (first.empty() || second.empty()) {
-        return false;
-    }
-    std::error_code first_error;
-    std::error_code second_error;
-    const auto canonical_first = std::filesystem::weakly_canonical(first, first_error);
-    const auto canonical_second = std::filesystem::weakly_canonical(second, second_error);
-    return !first_error && !second_error && canonical_first == canonical_second;
 }
 
 bool WaitForVehicleStatusMessage(
@@ -117,43 +88,6 @@ std::string Trim(const std::string & value)
     return std::string(begin, end);
 }
 
-bool LooksLikeExplicitPath(const std::string & value)
-{
-    return !value.empty() &&
-        (value[0] == '/' || value[0] == '~' || value[0] == '$');
-}
-
-std::string ResolveMissionSpecificationRequest(
-    const std::string & requested,
-    const std::string & default_mission_specification_file,
-    bool use_default
-) {
-    if (use_default) {
-        return default_mission_specification_file;
-    }
-
-    const std::string trimmed = Trim(requested);
-    if (trimmed.empty()) {
-        throw std::runtime_error(
-            "mission_specification_file must be set unless use_default is true"
-        );
-    }
-    if (LooksLikeExplicitPath(trimmed)) {
-        return trimmed;
-    }
-
-    if (const char * mission_specification_dir = std::getenv("MISSION_SPECIFICATION_DIR");
-        mission_specification_dir != nullptr && std::string(mission_specification_dir) != "") {
-        std::string base_dir = mission_specification_dir;
-        if (!base_dir.empty() && base_dir.back() == '/') {
-            return base_dir + trimmed;
-        }
-        return base_dir + "/" + trimmed;
-    }
-
-    return trimmed;
-}
-
 void DeclareManagedParameters(LifecycleConfigurator & configurator)
 {
     const auto bool_t = ParameterType::PARAMETER_BOOL;
@@ -161,7 +95,6 @@ void DeclareManagedParameters(LifecycleConfigurator & configurator)
     const auto double_t = ParameterType::PARAMETER_DOUBLE;
     const auto string_t = ParameterType::PARAMETER_STRING;
 
-    configurator.DeclareParameter("/mission/mission_specification_file", string_t);
     configurator.DeclareParameter("/mission/use_nans_when_hovering", bool_t);
     configurator.DeclareParameter("/mission/max_failed_attempts_during_maneuver", int_t);
     configurator.DeclareParameter("/mission/wait_for_maneuver_start_timeout_ms", int_t);
@@ -269,17 +202,17 @@ MissionExecutorNode::MissionExecutorNode(
 
 	}
 
-    write_behavior_tree_model_xml_service_ = create_service<iii_drone_interfaces::srv::WriteBehaviorTreeModelXML>(
-        "write_behavior_tree_model_xml",
-        std::bind(&MissionExecutorNode::writeBehaviorTreeModelXmlService, this, std::placeholders::_1, std::placeholders::_2)
+    get_mission_catalog_service_ = create_service<iii_drone_interfaces::srv::GetMissionCatalog>(
+        "get_mission_catalog",
+        std::bind(&MissionExecutorNode::getMissionCatalogService, this, std::placeholders::_1, std::placeholders::_2)
     );
-    override_mission_specification_service_ = create_service<iii_drone_interfaces::srv::OverrideMissionSpecification>(
-        "override_mission_specification",
-        std::bind(&MissionExecutorNode::overrideMissionSpecificationService, this, std::placeholders::_1, std::placeholders::_2)
+    select_mission_catalog_entry_service_ = create_service<iii_drone_interfaces::srv::SelectMissionCatalogEntry>(
+        "select_mission_catalog_entry",
+        std::bind(&MissionExecutorNode::selectMissionCatalogEntryService, this, std::placeholders::_1, std::placeholders::_2)
     );
     mission_status_publisher_ = create_publisher<iii_drone_interfaces::msg::MissionModeStatus>(
         "/mission/status",
-        rclcpp::SystemDefaultsQoS()
+        rclcpp::QoS(1).reliable().transient_local()
     );
     mission_status_publisher_->on_activate();
     powerline_overview_client_ = create_client<iii_drone_interfaces::srv::GetPowerlineOverview>(
@@ -333,8 +266,20 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     );
     DeclareManagedParameters(*configurator_);
     configurator_->validate();
-    default_mission_specification_file_ = configurator_->GetParameter("/mission/mission_specification_file").as_string();
-    mission_specification_file_ = default_mission_specification_file_;
+    active_profile_ = ConfigurationProfile();
+
+    try {
+        mission_catalog_ = MissionCatalog::LoadInstalled();
+        const auto & default_entry = mission_catalog_->defaultEntry(active_profile_);
+        default_catalog_id_ = default_entry.id;
+        active_catalog_id_ = default_entry.id;
+        temporary_override_ = false;
+    } catch (const std::exception & exception) {
+        mission_status_degraded_reason_ = exception.what();
+        RCLCPP_ERROR(get_logger(), "Mission catalog initialization failed: %s", exception.what());
+        publishMissionModeStatus();
+        return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
+    }
 
     // TF Buffer
     if (tf_buffer_ == nullptr) {
@@ -343,18 +288,18 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     }
 
     // Mission Executor
+    auto mission_specification = std::make_shared<MissionSpecification>(
+        mission_catalog_,
+        mission_catalog_->entryForProfile(active_catalog_id_, active_profile_),
+        this
+    );
     mission_executor_ = std::make_shared<MissionExecutor>(
         this, 
         tf_buffer_,
-        default_mission_specification_file_,
+        mission_specification,
         odometry_sub_callback_group_,
         executor_handle_
     );
-    // MissionSpecification resolves shell variables and '~'. Publish and compare
-    // the resolved path so canonical identity is not falsely degraded.
-    default_mission_specification_file_ =
-        mission_executor_->mission_specification()->mission_specification_file();
-    mission_specification_file_ = default_mission_specification_file_;
 
     mission_executor_->Configure(
         configurator_,
@@ -534,62 +479,91 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
 
 }
 
-void MissionExecutorNode::writeBehaviorTreeModelXmlService(
-    const std::shared_ptr<iii_drone_interfaces::srv::WriteBehaviorTreeModelXML::Request> request,
-    std::shared_ptr<iii_drone_interfaces::srv::WriteBehaviorTreeModelXML::Response> response
-) {
-    (void)response;
-
-    const BT::BehaviorTreeFactory & factory = mission_executor_->factory();
-
-    std::string models_xml = BT::writeTreeNodesModelXML(factory);
-
-    std::string destination = request->destination_file;
-
-    std::ofstream file(destination);
-
-    file << models_xml;
-
-    file.close();
-
+void MissionExecutorNode::getMissionCatalogService(
+    const std::shared_ptr<iii_drone_interfaces::srv::GetMissionCatalog::Request> request,
+    std::shared_ptr<iii_drone_interfaces::srv::GetMissionCatalog::Response> response
+)
+{
+    if (mission_catalog_ == nullptr) {
+        response->success = false;
+        response->message = "installed mission catalog is not initialized";
+        return;
+    }
+    try {
+        response->catalog_json = mission_catalog_->catalogJson(
+            active_profile_,
+            request->include_incompatible
+        );
+        response->success = true;
+        response->message = "installed mission catalog returned";
+    } catch (const std::exception & exception) {
+        response->success = false;
+        response->message = exception.what();
+    }
 }
 
-void MissionExecutorNode::overrideMissionSpecificationService(
-    const std::shared_ptr<iii_drone_interfaces::srv::OverrideMissionSpecification::Request> request,
-    std::shared_ptr<iii_drone_interfaces::srv::OverrideMissionSpecification::Response> response
-) {
+void MissionExecutorNode::selectMissionCatalogEntryService(
+    const std::shared_ptr<iii_drone_interfaces::srv::SelectMissionCatalogEntry::Request> request,
+    std::shared_ptr<iii_drone_interfaces::srv::SelectMissionCatalogEntry::Response> response
+)
+{
+    auto publish_active_identity = [this, &response]() {
+        response->active_catalog_id = active_catalog_id_;
+        response->active_catalog_hash = mission_catalog_ != nullptr ? mission_catalog_->catalogHash() : "";
+        response->temporary_override = temporary_override_;
+        if (mission_executor_ != nullptr && mission_executor_->mission_specification() != nullptr) {
+            const auto specification = mission_executor_->mission_specification();
+            response->active_entry_hash = specification->entry_hash();
+            response->active_specification_asset_id = specification->specification_asset_id();
+            response->active_behavior_tree_asset_ids = specification->behavior_tree_asset_ids();
+        }
+    };
 
     if (get_current_state().id() != lifecycle_msgs::msg::State::PRIMARY_STATE_ACTIVE) {
         response->success = false;
-        response->message = "mission specification override rejected because mission executor lifecycle node is not active";
-        response->active_mission_specification_file = mission_specification_file_;
+        response->message = "mission catalog selection rejected because the mission executor is not active";
+        publish_active_identity();
         return;
     }
 
-    if (mission_executor_ == nullptr || configurator_ == nullptr) {
+    if (mission_executor_ == nullptr || configurator_ == nullptr || mission_catalog_ == nullptr) {
         response->success = false;
-        response->message = "mission specification override rejected because mission executor is not initialized";
-        response->active_mission_specification_file = mission_specification_file_;
+        response->message = "mission catalog selection rejected because the mission runtime is not initialized";
+        publish_active_identity();
         return;
     }
 
-    std::string requested_specification_file;
+    const std::string requested_id = request->use_default ? default_catalog_id_ : Trim(request->catalog_id);
+    if (
+        (!request->use_default && requested_id.empty()) ||
+        (request->use_default && !Trim(request->catalog_id).empty()) ||
+        requested_id.find_first_of("/\\~$") != std::string::npos
+    ) {
+        response->success = false;
+        response->message = "mission selection accepts exactly one catalog ID or use_default; filesystem paths are forbidden";
+        publish_active_identity();
+        return;
+    }
+
+    MissionSpecification::SharedPtr replacement;
+    const MissionCatalogEntry * selected_entry = nullptr;
     try {
-        requested_specification_file = ResolveMissionSpecificationRequest(
-            request->mission_specification_file,
-            default_mission_specification_file_,
-            request->use_default
+        selected_entry = &mission_catalog_->entryForProfile(requested_id, active_profile_);
+        replacement = std::make_shared<MissionSpecification>(
+            mission_catalog_,
+            *selected_entry,
+            this
         );
     } catch (const std::exception & exception) {
         response->success = false;
         response->message = exception.what();
-        response->active_mission_specification_file = mission_specification_file_;
+        publish_active_identity();
         return;
     }
 
     std::string message;
-    const bool success = mission_executor_->OverrideMissionSpecification(
-        requested_specification_file,
+    const bool success = mission_executor_->SelectMissionSpecification(
+        replacement,
         configurator_,
         get_reference_cb_group_,
         message
@@ -598,27 +572,32 @@ void MissionExecutorNode::overrideMissionSpecificationService(
     response->success = success;
     response->message = message;
     if (success) {
-        mission_specification_file_ = mission_executor_->mission_specification()->mission_specification_file();
+        active_catalog_id_ = requested_id;
+        temporary_override_ = requested_id != default_catalog_id_;
         mission_status_degraded_reason_.clear();
+        if (selected_entry->experimental()) {
+            response->warning = selected_entry->experimental_warning;
+            RCLCPP_WARN(
+                get_logger(),
+                "EXPERIMENTAL mission catalog entry selected: %s: %s",
+                selected_entry->id.c_str(),
+                selected_entry->experimental_warning.c_str()
+            );
+        }
     }
-    if (mission_executor_ != nullptr && mission_executor_->mission_specification() != nullptr) {
-        response->active_mission_specification_file =
-            mission_executor_->mission_specification()->mission_specification_file();
-    } else {
-        response->active_mission_specification_file = mission_specification_file_;
-    }
+    publish_active_identity();
     publishMissionModeStatus();
 
     if (success) {
         RCLCPP_INFO(
             get_logger(),
-            "MissionExecutorNode::overrideMissionSpecificationService(): %s",
+            "MissionExecutorNode::selectMissionCatalogEntryService(): %s",
             response->message.c_str()
         );
     } else {
         RCLCPP_WARN(
             get_logger(),
-            "MissionExecutorNode::overrideMissionSpecificationService(): %s",
+            "MissionExecutorNode::selectMissionCatalogEntryService(): %s",
             response->message.c_str()
         );
     }
@@ -693,21 +672,28 @@ void MissionExecutorNode::publishMissionModeStatus() {
     msg.stamp = get_clock()->now();
     refreshInspectionOverviewCaches();
     populateInspectionStartEligibility(msg);
-    msg.active_mission_specification = mission_specification_file_;
-    msg.canonical_mission_specification = default_mission_specification_file_;
-    msg.active_mission_specification_hash = ContentHash(mission_specification_file_);
-    msg.canonical_mission_specification_loaded = SamePath(
-        mission_specification_file_,
-        default_mission_specification_file_
-    );
-    msg.configuration_profile = ConfigurationProfile();
-    msg.mission_specification_load_error = mission_status_degraded_reason_;
+    msg.active_catalog_id = active_catalog_id_;
+    msg.catalog_hash = mission_catalog_ != nullptr ? mission_catalog_->catalogHash() : "";
+    msg.default_catalog_id = default_catalog_id_;
+    msg.configuration_profile = active_profile_.empty() ? ConfigurationProfile() : active_profile_;
+    msg.temporary_override = temporary_override_;
+    msg.catalog_ready = mission_catalog_ != nullptr;
+    msg.catalog_error = mission_status_degraded_reason_;
     msg.required_modes = requiredMissionModes();
     msg.registered_modes = registeredMissionModes();
     msg.required_modes_registered = requiredMissionModesRegistered();
 
     if (mission_executor_ != nullptr && mission_executor_->mission_specification() != nullptr) {
-        msg.owned_mode = mission_executor_->mission_specification()->executor_owned_mode();
+        const auto specification = mission_executor_->mission_specification();
+        msg.active_catalog_id = specification->catalog_id();
+        msg.active_entry_hash = specification->entry_hash();
+        msg.active_specification_asset_id = specification->specification_asset_id();
+        msg.active_behavior_tree_asset_ids = specification->behavior_tree_asset_ids();
+        msg.classification = specification->classification();
+        msg.compatible_profiles = specification->compatible_profiles();
+        msg.experimental = specification->classification() == "experimental";
+        msg.experimental_warning = specification->experimental_warning();
+        msg.owned_mode = specification->executor_owned_mode();
         msg.intents = mission_executor_->intentStatuses();
         const auto mode_provider = mission_executor_->mode_provider();
         if (mode_provider != nullptr) {
@@ -728,9 +714,6 @@ void MissionExecutorNode::publishMissionModeStatus() {
                 entry.degraded = !entry.degraded_reason.empty();
                 msg.modes.push_back(entry);
             }
-        }
-        if (msg.active_mission_specification.empty()) {
-            msg.active_mission_specification = mission_executor_->mission_specification()->mission_specification_file();
         }
     }
 

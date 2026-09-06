@@ -47,6 +47,7 @@ PortsList PowerlineWaypointProviderActionNode::providedPorts() {
         OutputPort<SharedQueue<point_t>>("waypoints_depart"),
         OutputPort<SharedQueue<point_t>>("waypoints_return"),
         OutputPort<float>("waypoint_target_yaw"),
+        OutputPort<float>("cable_facing_yaw"),
         OutputPort<int>("powerline_overview_required_line_id")
     };
 
@@ -468,7 +469,6 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
         "PowerlineWaypointProviderActionNode::tick(): Finding the start state location."
     );
     point_t start_state_position = start_state.position();
-    double waypoint_target_yaw = start_state.yaw();
     const std::string drone_frame_id = configuration_->GetParameter("/tf/drone_frame_id").as_string();
     try {
         const auto world_T_drone_msg = tf_buffer_->lookupTransform(
@@ -488,13 +488,6 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
             start_state_position[2]
         );
         start_state_position = tf_start_state_position;
-        waypoint_target_yaw = quatToEul(quaternionFromTransformMsg(world_T_drone_msg.transform))[2];
-        RCLCPP_DEBUG(
-            node_->get_logger(),
-            "PowerlineWaypointProviderActionNode::tick(): Using TF waypoint yaw %.6f instead of odometry state yaw %.6f",
-            waypoint_target_yaw,
-            start_state.yaw()
-        );
     } catch (tf2::TransformException & ex) {
         RCLCPP_WARN(
             node_->get_logger(),
@@ -642,6 +635,18 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
     const bool start_state_is_inside_corridor = corridor_classification.inside_corridor;
     const bool start_state_is_below_top_conductor = start_state_position[2] < highest_z;
     point_t under_cable_target_line_point = positive_direction_is_higher ? positive_direction_furthest_point : negative_direction_furthest_point;
+    const auto waypoint_target_yaw_result = pl_geom::ComputeCableFacingYaw(
+        powerline_normal_no_z,
+        positive_direction_is_higher
+    );
+    if (!waypoint_target_yaw_result) {
+        RCLCPP_WARN(
+            node_->get_logger(),
+            "PowerlineWaypointProviderActionNode::tick(): Could not compute a cable-facing yaw from the cross-corridor axis"
+        );
+        return NodeStatus::FAILURE;
+    }
+    const double waypoint_target_yaw = *waypoint_target_yaw_result;
     bool force_above_corridor_route = false;
 
     if (pylon_a && pylon_b) {
@@ -684,7 +689,11 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
         );
         return NodeStatus::FAILURE;
     }
-    setOutput("waypoint_target_yaw", static_cast<float>(waypoint_target_yaw));
+    // Preserve the vehicle heading during transit. A large yaw step on the
+    // first blended waypoint can prevent the maneuver handoff from producing
+    // references. Rotate toward the cable only at the final sensing position.
+    setOutput("waypoint_target_yaw", static_cast<float>(start_state.yaw()));
+    setOutput("cable_facing_yaw", static_cast<float>(waypoint_target_yaw));
     setOutput("powerline_overview_required_line_id", powerline_overview_required_line_id);
     RCLCPP_INFO(
         node_->get_logger(),

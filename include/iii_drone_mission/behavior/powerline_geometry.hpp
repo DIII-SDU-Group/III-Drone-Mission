@@ -62,6 +62,13 @@ namespace powerline_geometry {
         double current_yaw
     );
 
+    // Approach the selected outer conductor from outside the corridor while
+    // keeping forward-facing sensors pointed back toward that conductor.
+    std::optional<double> ComputeCableFacingYaw(
+        const iii_drone::types::vector_t & cross_corridor_no_z,
+        bool positive_side_is_entry
+    );
+
     std::optional<iii_drone::types::point_t> SelectHighestPoint(
         const std::vector<iii_drone::types::point_t> & points
     );
