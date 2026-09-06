@@ -242,7 +242,7 @@ iii_register_mission(
   SPECIFICATION mission_specification/mission_specification.yaml
   CLASSIFICATION production
   PROFILES real opti_track sim hil
-  DEFAULT_FOR real opti_track sim
+  DEFAULT_FOR real opti_track sim hil
 )
 iii_register_mission(
   ID reach-charge-leave-experimental

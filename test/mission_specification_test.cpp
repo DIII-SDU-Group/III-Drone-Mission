@@ -16,7 +16,7 @@ TEST(MissionCatalogTest, InstalledCatalogHasStableProfileDefaults)
     EXPECT_EQ(catalog->defaultEntry("real").id, "inspection-production");
     EXPECT_EQ(catalog->defaultEntry("opti_track").id, "inspection-production");
     EXPECT_EQ(catalog->defaultEntry("sim").id, "inspection-production");
-    EXPECT_THROW(static_cast<void>(catalog->defaultEntry("hil")), std::runtime_error);
+    EXPECT_EQ(catalog->defaultEntry("hil").id, "inspection-production");
 }
 
 TEST(MissionCatalogTest, CatalogJsonExplainsUnavailableEntriesWithoutPaths)

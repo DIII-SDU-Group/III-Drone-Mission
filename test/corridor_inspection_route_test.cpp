@@ -14,6 +14,7 @@ using iii_drone::behavior::InspectionWaypointShouldBlendToNext;
 using iii_drone::behavior::NextInspectionWaypointIndex;
 using iii_drone::behavior::powerline_geometry::ComputePowerlineAlignedYaw;
 using iii_drone::behavior::powerline_geometry::ComputePylonAlignedAxes;
+using iii_drone::behavior::powerline_geometry::ComputeCableFacingYaw;
 using iii_drone::types::point_t;
 using iii_drone::types::vector_t;
 
@@ -71,6 +72,24 @@ TEST(CorridorInspectionYaw, AlignsWithHorizontalPowerlineDirection) {
 
     ASSERT_TRUE(yaw);
     EXPECT_NEAR(*yaw, M_PI_4, 1e-6);
+}
+
+TEST(PowerlineGeometry, FacesCableFromPositiveEntrySide) {
+    const auto yaw = ComputeCableFacingYaw(point(0.969, -0.246, 0.0), true);
+
+    ASSERT_TRUE(yaw);
+    EXPECT_NEAR(*yaw, std::atan2(0.246, -0.969), 1e-6);
+}
+
+TEST(PowerlineGeometry, FacesCableFromNegativeEntrySide) {
+    const auto yaw = ComputeCableFacingYaw(point(0.969, -0.246, 0.0), false);
+
+    ASSERT_TRUE(yaw);
+    EXPECT_NEAR(*yaw, std::atan2(-0.246, 0.969), 1e-6);
+}
+
+TEST(PowerlineGeometry, RejectsDegenerateCableFacingAxis) {
+    EXPECT_FALSE(ComputeCableFacingYaw(point(0.0, 0.0, 5.0), false));
 }
 
 TEST(CorridorInspectionYaw, SelectsNearestEquivalentAxisHeading) {

@@ -105,15 +105,26 @@ bool validGlobalPosition(const px4_msgs::msg::VehicleGlobalPosition & position)
 std::optional<WorldGnssReference> makeReference(
     const px4_msgs::msg::VehicleGlobalPosition & global_position,
     const tf2_ros::Buffer::SharedPtr & tf_buffer,
-    const rclcpp::Logger & logger
+    const rclcpp::Logger & logger,
+    const rclcpp::Clock::SharedPtr & clock
 )
 {
     if (!validGlobalPosition(global_position)) {
-        RCLCPP_WARN(logger, "GNSS overview persistence unavailable: latest PX4 global position is invalid");
+        RCLCPP_WARN_THROTTLE(
+            logger,
+            *clock,
+            10000,
+            "GNSS overview persistence unavailable: latest PX4 global position is invalid"
+        );
         return std::nullopt;
     }
     if (!tf_buffer) {
-        RCLCPP_WARN(logger, "GNSS overview persistence unavailable: TF buffer is not initialized");
+        RCLCPP_WARN_THROTTLE(
+            logger,
+            *clock,
+            10000,
+            "GNSS overview persistence unavailable: TF buffer is not initialized"
+        );
         return std::nullopt;
     }
 
@@ -121,7 +132,13 @@ std::optional<WorldGnssReference> makeReference(
     try {
         transform = tf_buffer->lookupTransform("world", "drone", tf2::TimePointZero);
     } catch (const tf2::TransformException & error) {
-        RCLCPP_WARN(logger, "GNSS overview persistence unavailable: cannot lookup world->drone transform: %s", error.what());
+        RCLCPP_WARN_THROTTLE(
+            logger,
+            *clock,
+            10000,
+            "GNSS overview persistence unavailable: cannot lookup world->drone transform: %s",
+            error.what()
+        );
         return std::nullopt;
     }
 

@@ -65,6 +65,7 @@
                 waypoints_depart="{waypoints}"
                 waypoints_return="{@waypoints_return}"
                 waypoint_target_yaw="{waypoint_target_yaw}"
+                cable_facing_yaw="{cable_facing_yaw}"
                 powerline_overview_required_line_id="{@powerline_overview_required_line_id}"
             />
 
@@ -75,7 +76,15 @@
                 target_yaw="{waypoint_target_yaw}"
             />
 
-            <LoopPoint queue="{waypoints}" value="{waypoint}">
+            <Action
+                ID="SplitPointQueue"
+                name="split_depart_waypoints"
+                queue="{waypoints}"
+                prefix="{blend_waypoints}"
+                last="{final_waypoint}"
+            />
+
+            <LoopPoint queue="{blend_waypoints}" value="{waypoint}">
                 <Decorator ID="Delay" name="delay_between_waypoints" delay_msec="100">
                     <Action
                         ID="FlyToPosition"
@@ -86,6 +95,22 @@
                     />
                 </Decorator>
             </LoopPoint>
+
+            <Action
+                ID="FlyToPosition"
+                name="fly_to_final_depart_waypoint"
+                target_position="{final_waypoint}"
+                target_yaw="{waypoint_target_yaw}"
+                frame_id="world"
+            />
+
+            <Action
+                ID="FlyToPosition"
+                name="align_with_cable_at_sensing_position"
+                target_position="{final_waypoint}"
+                target_yaw="{cable_facing_yaw}"
+                frame_id="world"
+            />
         </Sequence>
      </BehaviorTree>
 

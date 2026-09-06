@@ -93,6 +93,7 @@
             <input_port name="start_state" type="iii_drone::control::State"/>
             <output_port name="waypoints_depart" type="std::shared_ptr&lt;std::deque&lt;Eigen::Matrix&lt;float, 3, 1, 0, 3, 1&gt;, std::allocator&lt;Eigen::Matrix&lt;float, 3, 1, 0, 3, 1&gt; &gt; &gt; &gt;"/>
             <output_port name="waypoint_target_yaw" type="float"/>
+            <output_port name="cable_facing_yaw" type="float"/>
             <output_port name="powerline_overview_required_line_id" type="int"/>
             <input_port name="stored_powerline" type="iii_drone_interfaces::msg::Powerline_&lt;std::allocator&lt;void&gt; &gt;"/>
         </Action>

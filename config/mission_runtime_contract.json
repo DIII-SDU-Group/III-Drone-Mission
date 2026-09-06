@@ -9,7 +9,7 @@
     "replacement": "transactional-rebuild-with-rollback"
   },
   "profiles": {
-    "hil": {"commissioned": false, "onboard": true},
+    "hil": {"commissioned": true, "onboard": true},
     "opti_track": {"commissioned": true, "onboard": true},
     "real": {"commissioned": true, "onboard": true},
     "sim": {"commissioned": true, "onboard": false}

@@ -77,7 +77,7 @@ def _fixture(tmp_path: Path) -> dict[str, Path]:
     registrations.write_text(
         "inspection-production\t"
         f"{source / 'mission_specification/production.yaml'}\tproduction\tactive\t"
-        "hil,opti_track,real,sim\topti_track,real,sim\n"
+        "hil,opti_track,real,sim\thil,opti_track,real,sim\n"
         "inspection-experimental\t"
         f"{source / 'mission_specification/experimental.yaml'}\texperimental\tactive\t"
         "hil,opti_track,real,sim\t\n"
@@ -366,9 +366,9 @@ def test_catalog_identity_changes_for_asset_only_edit_without_interface_change(t
 def test_invalid_profile_defaults_fail(tmp_path: Path):
     paths = _fixture(tmp_path)
     content = paths["registrations"].read_text().replace(
-        "hil,opti_track,real,sim\topti_track,real,sim",
+        "hil,opti_track,real,sim\thil,opti_track,real,sim",
         "hil,opti_track,real,sim\treal,sim",
     )
     paths["registrations"].write_text(content)
-    with pytest.raises(CatalogError, match="exactly one default.*opti_track"):
+    with pytest.raises(CatalogError, match="exactly one default"):
         _generate(paths)
