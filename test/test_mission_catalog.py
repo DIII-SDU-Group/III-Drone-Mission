@@ -300,8 +300,8 @@ def test_qualified_and_field_catalog_classification_is_fail_closed(tmp_path: Pat
     assert [(entry["id"], entry["classification"]) for entry in qualified["entries"]] == [
         ("inspection-production", "production")
     ]
-    assert set(qualified["profiles"]) == {"hil", "opti_track", "real"}
-    assert qualified["entries"][0]["profiles"] == ["hil", "opti_track", "real"]
+    assert set(qualified["profiles"]) == {"hil", "real"}
+    assert qualified["entries"][0]["profiles"] == ["hil", "real"]
 
     selected = tmp_path / "selected-field"
     field = materialize_field_catalog(

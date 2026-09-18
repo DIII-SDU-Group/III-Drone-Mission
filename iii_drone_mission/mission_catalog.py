@@ -30,8 +30,11 @@ FIELD_POLICY_SCHEMA = "iii.mission-field-policy/v1"
 SOURCE_STATE_SCHEMA = "iii.mission-source-state/v1"
 GROOT_PROJECT_SCHEMA = "iii.groot2-project/v1"
 KNOWN_PROFILES = ("hil", "opti_track", "real", "sim")
-COMMISSIONED_PROFILES = frozenset({"hil", "opti_track", "real", "sim"})
-ONBOARD_PROFILES = frozenset({"hil", "opti_track", "real"})
+COMMISSIONED_PROFILES = frozenset({"hil", "real", "sim"})
+# OptiTrack remains a known development profile, but it cannot appear in an
+# onboard catalog until its NatNet ingress and PX4 external-vision bridge are
+# actually present and validated.
+ONBOARD_PROFILES = frozenset({"hil", "real"})
 CLASSIFICATIONS = frozenset({"production", "experimental", "test", "legacy"})
 STATUSES = frozenset({"active", "deprecated"})
 ID_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9.-]{0,126}[a-z0-9])?")
