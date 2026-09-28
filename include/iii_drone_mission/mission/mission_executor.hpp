@@ -89,7 +89,8 @@ namespace mission {
         );
         void Cleanup();
         void Start(
-            iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator
+            iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator,
+            uint64_t lifecycle_activation_generation
         );
         void Stop();
         bool SelectMissionSpecification(
@@ -150,6 +151,7 @@ namespace mission {
 
         bool is_started_ = false;
         bool is_configured_ = false;
+        uint64_t lifecycle_activation_generation_ = 0;
         mutable std::mutex lifecycle_mutex_;
 
         std::shared_ptr<RuntimeIntentBuffer> runtime_intent_buffer_;

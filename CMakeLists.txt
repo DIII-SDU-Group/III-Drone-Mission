@@ -73,6 +73,7 @@ set(III_DRONE_MISSION_INCLUDE_DIRS
 # Library files:
 set(III_DRONE_MISSION_HDRS
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/px4/modes/maneuver_mode.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/px4/modes/pending_activation_callback.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/px4/modes/mode_provider.hpp"
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/px4/mode_executors/generic_mode_executor.hpp"
@@ -90,6 +91,7 @@ set(III_DRONE_MISSION_HDRS
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/hover_on_cable_maneuver_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/fly_to_position_maneuver_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/follow_waypoint_path_maneuver_action_node.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/partition_point_queue_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/fly_to_object_maneuver_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/cable_landing_maneuver_action_node.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/cable_takeoff_maneuver_action_node.hpp"
@@ -151,6 +153,7 @@ set(III_DRONE_MISSION_SRCS
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/hover_on_cable_maneuver_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/fly_to_position_maneuver_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/follow_waypoint_path_maneuver_action_node.cpp"
+  "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/partition_point_queue_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/fly_to_object_maneuver_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/cable_landing_maneuver_action_node.cpp"
   "${PROJECT_SOURCE_DIR}/src/behavior/action_nodes/cable_takeoff_maneuver_action_node.cpp"
@@ -309,6 +312,12 @@ foreach(contract IN LISTS III_MISSION_INTERFACE_CONTRACTS)
   endif()
 endforeach()
 
+set(III_BEHAVIOR_EXPORTER_DEPENDENCIES iii_behavior_node_contract_exporter)
+set(III_TARGET_EMULATOR_SOURCE "${PROJECT_SOURCE_DIR}/../../cc_ws/run-target-emulated.sh")
+if(CMAKE_CROSSCOMPILING AND EXISTS "${III_TARGET_EMULATOR_SOURCE}")
+  list(APPEND III_BEHAVIOR_EXPORTER_DEPENDENCIES "${III_TARGET_EMULATOR_SOURCE}")
+endif()
+
 add_custom_command(
   OUTPUT "${III_BEHAVIOR_NODE_CONTRACT}" "${III_BEHAVIOR_NODE_MODELS}"
   # Naming the executable target lets CMake prepend its
@@ -318,7 +327,7 @@ add_custom_command(
   COMMAND iii_behavior_node_contract_exporter
           "${III_BEHAVIOR_NODE_CONTRACT}"
           "${III_BEHAVIOR_NODE_MODELS}"
-  DEPENDS iii_behavior_node_contract_exporter
+  DEPENDS ${III_BEHAVIOR_EXPORTER_DEPENDENCIES}
   COMMENT "Exporting authoritative behavior-node contract"
   VERBATIM
 )
@@ -484,6 +493,11 @@ if(BUILD_TESTING)
     PYTHON_EXECUTABLE "${Python3_EXECUTABLE}"
   )
 
+  ament_add_pytest_test(iii_drone_corridor_waypoint_trees_test
+    test/test_corridor_waypoint_trees.py
+    PYTHON_EXECUTABLE "${Python3_EXECUTABLE}"
+  )
+
   ament_add_gtest(iii_drone_mission_specification_test
     test/mission_specification_test.cpp
   )
@@ -492,12 +506,28 @@ if(BUILD_TESTING)
     test/behavior_node_registry_test.cpp
   )
 
+  ament_add_gtest(iii_drone_waypoint_corridor_partition_test
+    test/waypoint_corridor_partition_test.cpp
+  )
+
   ament_add_gtest(iii_drone_corridor_inspection_route_test
     test/corridor_inspection_route_test.cpp
   )
 
   ament_add_gtest(iii_drone_cable_axis_yaw_settler_test
     test/cable_axis_yaw_settler_test.cpp
+  )
+  ament_add_gtest(iii_drone_cable_charging_blackboard_test
+    test/cable_charging_blackboard_test.cpp
+  )
+  ament_add_gtest(iii_drone_pending_activation_callback_test
+    test/pending_activation_callback_test.cpp
+  )
+  ament_add_gtest(iii_drone_maneuver_action_node_handoff_test
+    test/maneuver_action_node_handoff_test.cpp
+  )
+  ament_add_gtest(iii_drone_custom_operation_identity_test
+    test/custom_operation_identity_test.cpp
   )
   ament_add_gtest(iii_drone_overview_gnss_persistence_test
     test/overview_gnss_persistence_test.cpp
@@ -512,6 +542,11 @@ if(BUILD_TESTING)
     target_include_directories(iii_drone_behavior_node_registry_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
     target_link_libraries(iii_drone_behavior_node_registry_test iii_drone_mission_lib)
     ament_target_dependencies(iii_drone_behavior_node_registry_test ${dependencies})
+  endif()
+  if(TARGET iii_drone_waypoint_corridor_partition_test)
+    target_include_directories(iii_drone_waypoint_corridor_partition_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+    target_link_libraries(iii_drone_waypoint_corridor_partition_test iii_drone_mission_lib)
+    ament_target_dependencies(iii_drone_waypoint_corridor_partition_test ${dependencies})
   endif()
 
   if(TARGET iii_drone_corridor_inspection_route_test)
@@ -529,6 +564,24 @@ if(BUILD_TESTING)
     target_include_directories(iii_drone_cable_axis_yaw_settler_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
     target_link_libraries(iii_drone_cable_axis_yaw_settler_test iii_drone_mission_lib)
     ament_target_dependencies(iii_drone_cable_axis_yaw_settler_test ${dependencies})
+  endif()
+  if(TARGET iii_drone_cable_charging_blackboard_test)
+    target_include_directories(iii_drone_cable_charging_blackboard_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+    target_link_libraries(iii_drone_cable_charging_blackboard_test iii_drone_mission_lib)
+    ament_target_dependencies(iii_drone_cable_charging_blackboard_test ${dependencies})
+  endif()
+  if(TARGET iii_drone_pending_activation_callback_test)
+    target_include_directories(iii_drone_pending_activation_callback_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+  endif()
+  if(TARGET iii_drone_maneuver_action_node_handoff_test)
+    target_include_directories(iii_drone_maneuver_action_node_handoff_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+    target_link_libraries(iii_drone_maneuver_action_node_handoff_test iii_drone_mission_lib)
+    ament_target_dependencies(iii_drone_maneuver_action_node_handoff_test ${dependencies})
+  endif()
+  if(TARGET iii_drone_custom_operation_identity_test)
+    target_include_directories(iii_drone_custom_operation_identity_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+    target_link_libraries(iii_drone_custom_operation_identity_test iii_drone_mission_lib)
+    ament_target_dependencies(iii_drone_custom_operation_identity_test ${dependencies})
   endif()
 endif()
 

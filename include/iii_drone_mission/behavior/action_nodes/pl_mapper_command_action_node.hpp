@@ -59,6 +59,7 @@ namespace behavior {
 
     private:
         rclcpp::Node::SharedPtr node_ptr_;
+        std::string service_endpoint_;
 
     };
 

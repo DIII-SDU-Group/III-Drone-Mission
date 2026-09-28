@@ -90,6 +90,8 @@
         </Decorator>
         <Action ID="PowerlineWaypointProvider">
             <output_port name="waypoints_return" type="std::shared_ptr&lt;std::deque&lt;Eigen::Matrix&lt;float, 3, 1, 0, 3, 1&gt;, std::allocator&lt;Eigen::Matrix&lt;float, 3, 1, 0, 3, 1&gt; &gt; &gt; &gt;"/>
+            <output_port name="depart_outside_boundary_index" type="int"/>
+            <output_port name="return_outside_boundary_index" type="int"/>
             <input_port name="start_state" type="iii_drone::control::State"/>
             <output_port name="waypoints_depart" type="std::shared_ptr&lt;std::deque&lt;Eigen::Matrix&lt;float, 3, 1, 0, 3, 1&gt;, std::allocator&lt;Eigen::Matrix&lt;float, 3, 1, 0, 3, 1&gt; &gt; &gt; &gt;"/>
             <output_port name="waypoint_target_yaw" type="float"/>
@@ -97,6 +99,18 @@
             <output_port name="powerline_overview_required_line_id" type="int"/>
             <input_port name="stored_powerline" type="iii_drone_interfaces::msg::Powerline_&lt;std::allocator&lt;void&gt; &gt;"/>
         </Action>
+        <Action ID="PartitionPointQueue">
+            <input_port name="queue"/>
+            <input_port name="boundary_index" type="int"/>
+            <output_port name="before"/>
+            <output_port name="through"/>
+            <output_port name="after"/>
+            <output_port name="boundary"/>
+            <output_port name="has_boundary" type="bool"/>
+        </Action>
+        <Condition ID="QueueHasPoints">
+            <input_port name="queue"/>
+        </Condition>
         <Condition ID="PublishPowerlineWaypoints">
             <input_port name="target_yaw" type="float"/>
             <input_port name="waypoints" type="std::shared_ptr&lt;std::deque&lt;Eigen::Matrix&lt;float, 3, 1, 0, 3, 1&gt;, std::allocator&lt;Eigen::Matrix&lt;float, 3, 1, 0, 3, 1&gt; &gt; &gt; &gt;"/>

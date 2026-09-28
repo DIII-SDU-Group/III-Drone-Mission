@@ -56,11 +56,18 @@
                   msec="250"
             />
 
-            <Action
-               ID="CableTakeoff"
-               name="cable_takeoff"
-               target_cable_id="{@target_cable_id}"
-            />
+            <RetryUntilSuccessful
+               name="cable_takeoff_retry_until_successful"
+               num_attempts="3"
+            >
+                <Decorator ID="Delay" name="delay_cable_takeoff_retry" delay_msec="500">
+                    <Action
+                       ID="CableTakeoff"
+                       name="cable_takeoff"
+                       target_cable_id="{@target_cable_id}"
+                    />
+                </Decorator>
+            </RetryUntilSuccessful>
 
             <Action
                   ID="Sleep"
@@ -95,34 +102,69 @@
             />
 
             <Action
-                ID="SplitPointQueue"
-                name="split_return_waypoints"
+                ID="PartitionPointQueue"
+                name="partition_return_waypoints"
                 queue="{waypoints}"
-                prefix="{blend_waypoints}"
-                last="{final_waypoint}"
+                boundary_index="{@return_outside_boundary_index}"
+                before="{return_inside_points}"
+                through="{return_through_boundary}"
+                after="{return_outside_suffix}"
+                boundary="{return_outside_boundary}"
+                has_boundary="{return_has_outside_boundary}"
             />
 
-            <LoopPoint queue="{blend_waypoints}" value="{waypoint}">
-                <Decorator ID="Delay" name="delay_between_waypoints" delay_msec="100">
+            <IfThenElse name="return_by_explicit_corridor_boundary">
+                <Condition ID="QueueHasPoints" name="has_return_outside_boundary" queue="{return_outside_boundary}"/>
+                <Sequence name="leave_corridor_then_follow_outside_route">
+                    <IfThenElse name="stop_at_inside_return_waypoints_if_present">
+                        <Condition ID="QueueHasPoints" name="has_inside_return_points" queue="{return_inside_points}"/>
+                        <LoopPoint queue="{return_inside_points}" value="{waypoint}">
+                            <Action ID="FlyToPosition" name="fly_to_inside_return_waypoint" target_position="{waypoint}" target_yaw="{initial_yaw}" frame_id="world"/>
+                        </LoopPoint>
+                        <AlwaysSuccess name="no_inside_return_points"/>
+                    </IfThenElse>
+
+                    <LoopPoint queue="{return_outside_boundary}" value="{boundary_waypoint}">
+                        <Action
+                            ID="FlyToPosition"
+                            name="fly_to_first_outside_return_waypoint"
+                            target_position="{boundary_waypoint}"
+                            target_yaw="{initial_yaw}"
+                            frame_id="world"
+                        />
+                    </LoopPoint>
+
+                    <Action
+                        ID="FollowWaypointPath"
+                        name="follow_outside_return_route_to_initial_position"
+                        frame_id="world"
+                        waypoints="{return_outside_suffix}"
+                        repeat="false"
+                        repeat_from_index="0"
+                        target_yaw="{initial_yaw}"
+                    />
+                </Sequence>
+                <Sequence name="direct_inside_corridor_return_with_final_tolerance">
+                    <Action
+                        ID="SplitPointQueue"
+                        name="split_direct_return_waypoints"
+                        queue="{waypoints}"
+                        prefix="{direct_return_prefix}"
+                        last="{direct_return_final_waypoint}"
+                    />
+                    <LoopPoint queue="{direct_return_prefix}" value="{waypoint}">
+                        <Action ID="FlyToPosition" name="fly_to_direct_return_waypoint" target_position="{waypoint}" target_yaw="{initial_yaw}" frame_id="world"/>
+                    </LoopPoint>
                     <Action
                         ID="FlyToPosition"
-                        name="fly_to_position"
-                        target_position="{waypoint}"
+                        name="fly_to_direct_return_initial_position"
+                        target_position="{direct_return_final_waypoint}"
                         target_yaw="{initial_yaw}"
                         frame_id="world"
-                        blend_to_next="true"
+                        completion_position_tolerance_m="0.2"
                     />
-                </Decorator>
-            </LoopPoint>
-
-            <Action
-                ID="FlyToPosition"
-                name="fly_to_final_initial_position"
-                target_position="{final_waypoint}"
-                target_yaw="{initial_yaw}"
-                frame_id="world"
-                completion_position_tolerance_m="0.2"
-            />
+                </Sequence>
+            </IfThenElse>
         </Sequence>
      </BehaviorTree>
 

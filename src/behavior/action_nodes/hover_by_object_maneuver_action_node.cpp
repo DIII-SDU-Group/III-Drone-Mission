@@ -34,9 +34,9 @@ PortsList HoverByObjectManeuverActionNode::providedPorts() {
 
 }
 
-bool HoverByObjectManeuverActionNode::setGoal(Goal & goal) {
+bool HoverByObjectManeuverActionNode::setManeuverGoal(Goal & goal) {
 
-    RCLCPP_INFO(node_ptr_->get_logger(), "HoverByObjectManeuverActionNode::setGoal()");
+    RCLCPP_INFO(node_ptr_->get_logger(), "HoverByObjectManeuverActionNode::setManeuverGoal()");
     
     getInput("duration_s", goal.duration_s);
     getInput("target", goal.target);
@@ -49,7 +49,7 @@ bool HoverByObjectManeuverActionNode::setGoal(Goal & goal) {
     if (goal.duration_s <= 0) {
         RCLCPP_ERROR(
             node_ptr_->get_logger(),
-            "HoverByObjectManeuverActionNode::setGoal(): %s: Duration must be positive",
+            "HoverByObjectManeuverActionNode::setManeuverGoal(): %s: Duration must be positive",
             name_.c_str()
         );
 
@@ -59,7 +59,7 @@ bool HoverByObjectManeuverActionNode::setGoal(Goal & goal) {
     if (goal.target.target_id < 0) {
         RCLCPP_ERROR(
             node_ptr_->get_logger(),
-            "HoverByObjectManeuverActionNode::setGoal(): %s: Target ID must be positive",
+            "HoverByObjectManeuverActionNode::setManeuverGoal(): %s: Target ID must be positive",
             name_.c_str()
         );
 
@@ -69,7 +69,7 @@ bool HoverByObjectManeuverActionNode::setGoal(Goal & goal) {
     if (goal.target.target_type == iii_drone_interfaces::msg::Target::TARGET_TYPE_NONE) {
         RCLCPP_ERROR(
             node_ptr_->get_logger(),
-            "HoverByObjectManeuverActionNode::setGoal(): %s: Target type must be set",
+            "HoverByObjectManeuverActionNode::setManeuverGoal(): %s: Target type must be set",
             name_.c_str()
         );
 
@@ -79,7 +79,7 @@ bool HoverByObjectManeuverActionNode::setGoal(Goal & goal) {
     if (goal.sustain_action && stop_maneuver_after_timeout_ms > 0) {
         RCLCPP_ERROR(
             node_ptr_->get_logger(),
-            "HoverByObjectManeuverActionNode::setGoal(): %s: Stop maneuver after timeout can not be positive when sustaining the action",
+            "HoverByObjectManeuverActionNode::setManeuverGoal(): %s: Stop maneuver after timeout can not be positive when sustaining the action",
             name_.c_str()
         );
 
@@ -100,4 +100,8 @@ bool HoverByObjectManeuverActionNode::setGoal(Goal & goal) {
 
     return true;
 
+}
+
+bool HoverByObjectManeuverActionNode::shouldCompleteSuccessfulNoReferenceGoal() const {
+    return true;
 }

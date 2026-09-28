@@ -9,6 +9,8 @@
 
 #include <chrono>
 #include <memory>
+#include <string>
+#include <vector>
 #include <mutex>
 #include <thread>
 
@@ -58,6 +60,7 @@
 #include <iii_drone_mission/behavior/action_nodes/inspection_waypoint_progress_nodes.hpp>
 #include <iii_drone_mission/behavior/action_nodes/cable_charging_monitor_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/split_point_queue_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/partition_point_queue_action_node.hpp>
 
 #include <iii_drone_mission/behavior/condition_nodes/verify_powerline_detected_condition_node.hpp>
 #include <iii_drone_mission/behavior/condition_nodes/select_target_line_condition_node.hpp>
@@ -110,7 +113,7 @@ namespace behavior {
 
         void StartExecution();
 
-        void StopExecution(bool wait = true);
+        void StopExecution(bool wait = true, const char * diagnostic_reason = "UNSPECIFIED");
 
         bool running() const;
         bool finished() const;
@@ -147,6 +150,9 @@ namespace behavior {
         iii_drone::utils::Atomic<bool> running_ = false;
         iii_drone::utils::Atomic<bool> finished_ = false;
         iii_drone::utils::Atomic<bool> success_ = false;
+        iii_drone::utils::Atomic<bool> stop_requested_ = false;
+        uint64_t execution_generation_ = 0;
+        std::vector<BT::TreeNode::StatusChangeSubscriber> status_subscribers_;
 
         void execute();
 

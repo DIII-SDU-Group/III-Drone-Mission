@@ -5,6 +5,7 @@
 
 using namespace iii_drone::behavior;
 using namespace iii_drone::control;
+using namespace iii_drone::control::maneuver;
 using namespace iii_drone::types;
 
 FollowWaypointPathManeuverActionNode::FollowWaypointPathManeuverActionNode(
@@ -42,7 +43,7 @@ BT::PortsList FollowWaypointPathManeuverActionNode::providedPorts() {
     });
 }
 
-bool FollowWaypointPathManeuverActionNode::setGoal(Goal & goal) {
+bool FollowWaypointPathManeuverActionNode::setManeuverGoal(Goal & goal) {
     BT::SharedQueue<point_t> waypoints;
     int repeat_from_index = 0;
     float target_yaw = 0.0F;
@@ -74,13 +75,12 @@ bool FollowWaypointPathManeuverActionNode::setGoal(Goal & goal) {
         iii_drone_interfaces::msg::Waypoint waypoint;
         waypoint.position = pointMsgFromPoint(waypoints->at(index));
         waypoint.yaw = target_yaw;
-        const bool prefix_stop =
-            index < static_cast<std::size_t>(repeat_from_index) &&
-            index + 1 == static_cast<std::size_t>(repeat_from_index);
-        const bool final_stop = !goal.repeat && index + 1 == waypoints->size();
-        waypoint.transition_mode = prefix_stop || final_stop
-            ? iii_drone_interfaces::msg::Waypoint::TRANSITION_STOP
-            : iii_drone_interfaces::msg::Waypoint::TRANSITION_BLEND;
+        waypoint.transition_mode = FollowWaypointPathTransitionMode(
+            index,
+            waypoints->size(),
+            goal.repeat,
+            static_cast<std::size_t>(repeat_from_index)
+        );
         waypoint.blend_radius_m = blend_radius;
         waypoint.speed_limit_m_s = 0.0F;
         goal.waypoints.push_back(waypoint);
@@ -119,4 +119,29 @@ Reference FollowWaypointPathManeuverActionNode::getFinalReference(
     const BT::RosActionNode<Action>::WrappedResult & result
 ) const {
     return iii_drone::adapters::ReferenceAdapter(result.result->target_reference).reference();
+}
+
+bool FollowWaypointPathManeuverActionNode::shouldStopManeuverOnSuccessfulResult(
+    const typename BT::RosActionNode<Action>::WrappedResult &
+) const {
+    const auto retention = retainCompletedTerminalHoldForCurrentGoal(500);
+    if (retention == ManeuverReferenceClient::TerminalHoldRetention::Failed) {
+        markSuccessfulResultOwnershipFailed();
+        RCLCPP_ERROR(node_ptr_->get_logger(),
+            "FollowWaypointPath terminal hold ownership could not be verified");
+    }
+    return retention == ManeuverReferenceClient::TerminalHoldRetention::NoOffer;
+}
+
+void FollowWaypointPathManeuverActionNode::onHalt() {
+    if (!hasCurrentGoalIdentity()) return;
+    // RosActionNode::halt() has already waited for cancel and result. Core
+    // retains the finite stop only after its ACK and measured-motion proof.
+    const auto retention = retainCompletedTerminalHoldForCurrentGoal(500);
+    if (retention != ManeuverReferenceClient::TerminalHoldRetention::Retained) {
+        RCLCPP_ERROR(node_ptr_->get_logger(),
+            "FollowWaypointPath halt has no proved, owned finite terminal hold");
+        reportTerminalRetentionFailureForCurrentGoal();
+    }
+    clearLocalGoalBookkeeping();
 }

@@ -4,6 +4,8 @@
 
 #include <iii_drone_mission/behavior/action_nodes/pl_mapper_command_action_node.hpp>
 
+#include <iii_drone_core/diagnostics/hil_trace.hpp>
+
 using namespace iii_drone::behavior;
 using namespace BT;
 
@@ -19,7 +21,8 @@ PLMapperCommandActionNode::PLMapperCommandActionNode(
         name, 
         conf, 
         params
-),  node_ptr_(params.nh.lock()) { }
+),  node_ptr_(params.nh.lock()),
+    service_endpoint_(params.default_port_value) { }
 
 PortsList PLMapperCommandActionNode::providedPorts() {
 
@@ -32,6 +35,11 @@ PortsList PLMapperCommandActionNode::providedPorts() {
 }
 
 bool PLMapperCommandActionNode::setRequest(Request::SharedPtr & request) {
+
+    auto event = iii_drone::diagnostics::HilTrace::event("bt_service_request_attempt");
+    event.text("node", name());
+    event.text("endpoint", service_endpoint_);
+    event.commit();
 
     RCLCPP_DEBUG(
         node_ptr_->get_logger(),
@@ -90,6 +98,16 @@ bool PLMapperCommandActionNode::setRequest(Request::SharedPtr & request) {
 }
 
 NodeStatus PLMapperCommandActionNode::onResponseReceived(const Response::SharedPtr & response) {
+
+    const bool success = response->pl_mapper_ack ==
+        iii_drone_interfaces::srv::PLMapperCommand::Response::PL_MAPPER_ACK_SUCCESS;
+    auto event = iii_drone::diagnostics::HilTrace::event("bt_service_response");
+    event.text("node", name());
+    event.text("endpoint", service_endpoint_);
+    event.boolean("success", success);
+    event.text("bt_status", success ? "SUCCESS" : "FAILURE");
+    event.number("response_code", response->pl_mapper_ack);
+    event.commit();
 
     switch (response->pl_mapper_ack) {
 

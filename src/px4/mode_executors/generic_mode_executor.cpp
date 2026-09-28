@@ -68,11 +68,6 @@ GenericModeExecutor::GenericModeExecutor(
         )
     );
 
-    clear_maneuver_queue_client_ = node_.create_client<iii_drone_interfaces::srv::ClearManeuverQueue>(
-        "/control/maneuver_controller/clear_maneuver_queue",
-        rclcpp::ServicesQoS()
-    );
-
     combined_drone_awareness_sub_ = node_.create_subscription<iii_drone_interfaces::msg::CombinedDroneAwareness>(
         "/control/maneuver_controller/combined_drone_awareness",
         10,
@@ -115,8 +110,6 @@ void GenericModeExecutor::onActivate() {
             "GenericModeExecutor::onActivate(): Failed to confirm PX4 failsafe deferral during mission-mode handoff."
         );
     }
-    clearManeuverQueue("mission sequence activated");
-
     std::string owned_mode_key = mission_specification_->executor_owned_mode();
     current_mode_ = mode_provider_->GetMode(owned_mode_key);
     current_mode_entry_ = mission_specification_->GetMissionSpecificationEntry(owned_mode_key);
@@ -184,8 +177,6 @@ void GenericModeExecutor::onDeactivate(DeactivateReason reason) {
             exception.what()
         );
     }
-    clearManeuverQueue("mission sequence deactivated");
-
     switch(reason) {
         case DeactivateReason::FailsafeActivated:
             RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::onDeactivate(): Deactivating mode executor %s because failsafe activated.", mode_executor_name_.c_str());
@@ -210,54 +201,6 @@ std::string GenericModeExecutor::current_mode_key() const {
         return "";
     }
     return current_mode->mode_key();
-
-}
-
-void GenericModeExecutor::clearManeuverQueue(const std::string & reason) {
-
-    if (!clear_maneuver_queue_client_) {
-        RCLCPP_WARN(node_.get_logger(), "GenericModeExecutor::clearManeuverQueue(): Client is not initialized.");
-        return;
-    }
-
-    if (!clear_maneuver_queue_client_->wait_for_service(std::chrono::seconds(2))) {
-        RCLCPP_WARN(
-            node_.get_logger(),
-            "GenericModeExecutor::clearManeuverQueue(): Service unavailable; queued maneuvers were not cleared. Reason: %s",
-            reason.c_str()
-        );
-        return;
-    }
-
-    auto request = std::make_shared<iii_drone_interfaces::srv::ClearManeuverQueue::Request>();
-    request->reason = reason;
-
-    RCLCPP_INFO(
-        node_.get_logger(),
-        "GenericModeExecutor::clearManeuverQueue(): Sending queued maneuver clear request. Reason: %s",
-        reason.c_str()
-    );
-    clear_maneuver_queue_client_->async_send_request(
-        request,
-        [this, reason](rclcpp::Client<iii_drone_interfaces::srv::ClearManeuverQueue>::SharedFuture future) {
-            auto response = future.get();
-            if (!response->success) {
-                RCLCPP_WARN(
-                    node_.get_logger(),
-                    "GenericModeExecutor::clearManeuverQueue(): Service reported failure. Reason: %s",
-                    reason.c_str()
-                );
-                return;
-            }
-
-            RCLCPP_INFO(
-                node_.get_logger(),
-                "GenericModeExecutor::clearManeuverQueue(): Cleared %u queued maneuver(s). Reason: %s",
-                response->cleared_count,
-                reason.c_str()
-            );
-        }
-    );
 
 }
 
@@ -801,7 +744,7 @@ void GenericModeExecutor::onNormalModeSuccess(bool & last_mode) {
                 "GenericModeExecutor::onNormalModeSuccess(): Stopping completed terminal mode %s before mission-done mode handoff.",
                 (*current_mode_)->mode_name().c_str()
             );
-            (*current_mode_)->StopExecution();
+            (*current_mode_)->StopExecution("MISSION_TERMINAL_HANDOFF");
         }
 
         const int mission_done_mode_id = missionDoneSelectModeId();
@@ -1250,7 +1193,7 @@ void GenericModeExecutor::stopModeIfWaiting() {
             (*current_mode_)->mode_name().c_str()
         );
 
-        (*current_mode_)->StopExecution();
+        (*current_mode_)->StopExecution("MISSION_MODE_FAILURE_HANDOFF");
 
     }
 

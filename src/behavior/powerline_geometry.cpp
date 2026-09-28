@@ -305,6 +305,113 @@ CorridorClassification iii_drone::behavior::powerline_geometry::ClassifyCorridor
     return classification;
 }
 
+std::optional<point_t> iii_drone::behavior::powerline_geometry::OutsideCorridorClearancePoint(
+    const point_t & outer_point,
+    const point_t & middle_point,
+    const vector_t & cross_corridor_no_z,
+    bool positive_side,
+    double inside_corridor_threshold_m,
+    double completion_tolerance_m,
+    double horizontal_clearance_m
+) {
+    if (!outer_point.allFinite() || !middle_point.allFinite() ||
+        !cross_corridor_no_z.allFinite() ||
+        !std::isfinite(inside_corridor_threshold_m) || inside_corridor_threshold_m < 0.0 ||
+        !std::isfinite(completion_tolerance_m) || completion_tolerance_m < 0.0 ||
+        !std::isfinite(horizontal_clearance_m) || horizontal_clearance_m < 0.0) {
+        return std::nullopt;
+    }
+    const auto cross = normalized(xyOnly(cross_corridor_no_z));
+    if (!cross) return std::nullopt;
+    const double sign = positive_side ? 1.0 : -1.0;
+    const double outer_projection = (outer_point - middle_point).dot(*cross);
+    const double outside_magnitude = std::max(
+        sign * outer_projection + horizontal_clearance_m,
+        inside_corridor_threshold_m + 2.0 * std::max(completion_tolerance_m, 0.01) + 0.01
+    );
+    return point_t(outer_point + (sign * outside_magnitude - outer_projection) * (*cross));
+}
+
+InsideCorridorRoute iii_drone::behavior::powerline_geometry::BuildInsideCorridorReturnRoute(
+    const point_t & start_position,
+    const point_t & middle_point,
+    const point_t & entry_under_point,
+    const point_t & positive_outer_point,
+    const point_t & negative_outer_point,
+    const vector_t & cross_corridor_no_z,
+    bool positive_side_is_entry,
+    double inside_corridor_threshold_m,
+    double completion_tolerance_m,
+    double horizontal_clearance_m
+) {
+    InsideCorridorRoute route;
+    const auto axes_cross = normalized(cross_corridor_no_z);
+    if (!axes_cross || !std::isfinite(inside_corridor_threshold_m) ||
+        !std::isfinite(completion_tolerance_m) || !std::isfinite(horizontal_clearance_m)) {
+        route.kind = InsideCorridorRouteKind::top_clearance;
+        return route;
+    }
+
+    const auto classification = ClassifyCorridor(
+        start_position,
+        middle_point,
+        *axes_cross,
+        positive_outer_point,
+        negative_outer_point,
+        inside_corridor_threshold_m
+    );
+    const bool start_is_same_side_exterior = positive_side_is_entry
+        ? classification.on_positive_outer_side
+        : classification.on_negative_outer_side;
+    const bool start_is_opposite_side_exterior = positive_side_is_entry
+        ? classification.on_negative_outer_side
+        : classification.on_positive_outer_side;
+    if (start_is_opposite_side_exterior) {
+        route.kind = InsideCorridorRouteKind::top_clearance;
+        return route;
+    }
+
+    point_t middle_under = middle_point;
+    middle_under[2] = entry_under_point[2];
+    if (!start_is_same_side_exterior) {
+        route.kind = InsideCorridorRouteKind::direct;
+        route.waypoints = {start_position, middle_under, entry_under_point};
+        route.return_waypoints.assign(route.waypoints.rbegin(), route.waypoints.rend());
+        return route;
+    }
+
+    route.kind = InsideCorridorRouteKind::same_side_exterior_clearance;
+    const double entry_outer_projection = positive_side_is_entry
+        ? classification.positive_outer_cross_dot
+        : classification.negative_outer_cross_dot;
+    const double direction = positive_side_is_entry ? 1.0 : -1.0;
+    const double strict_outside_projection = inside_corridor_threshold_m +
+        2.0 * std::max(completion_tolerance_m, 0.01) + 0.01;
+    const double required_outer_projection = std::abs(entry_outer_projection) + horizontal_clearance_m;
+    const double outside_magnitude = std::max(required_outer_projection, strict_outside_projection);
+    const double start_projection = classification.start_cross_dot;
+    const double outside_start_projection = direction * std::max(
+        direction * start_projection,
+        outside_magnitude
+    );
+    const double lateral_offset = outside_start_projection - start_projection;
+
+    point_t outside_at_start_altitude = start_position;
+    outside_at_start_altitude += lateral_offset * (*axes_cross);
+    point_t outside_at_entry_altitude = outside_at_start_altitude;
+    outside_at_entry_altitude[2] = entry_under_point[2];
+
+    route.outside_boundary_index = 2;
+    route.waypoints = {
+        start_position,
+        outside_at_start_altitude,
+        outside_at_entry_altitude,
+        entry_under_point
+    };
+    route.return_waypoints.assign(route.waypoints.rbegin(), route.waypoints.rend());
+    return route;
+}
+
 bool iii_drone::behavior::powerline_geometry::PylonSpanMatchesPowerlineDirection(
     const point_t & pylon_a,
     const point_t & pylon_b,

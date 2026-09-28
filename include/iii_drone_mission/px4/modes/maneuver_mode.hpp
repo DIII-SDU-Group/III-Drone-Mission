@@ -31,6 +31,8 @@
 
 #include <iii_drone_mission/px4/setpoints/trajectory_setpoint.hpp>
 
+#include <iii_drone_mission/px4/modes/pending_activation_callback.hpp>
+
 #include <iii_drone_mission/behavior/trees/tree_executor.hpp>
 
 /*****************************************************************************/
@@ -67,10 +69,11 @@ namespace px4 {
             std::string mode_name,
             float dt,
             bool is_owned_mode,
-            bool allow_activate_when_disarmed
+            bool allow_activate_when_disarmed,
+            uint64_t lifecycle_activation_generation
         );
 
-        // ~ManeuverMode() override;
+        ~ManeuverMode() override;
 
         void Register(
             iii_drone::behavior::TreeExecutor::SharedPtr tree_executor,
@@ -90,7 +93,7 @@ namespace px4 {
         void StopControls();
         void StartControls();
 
-        void StopExecution();
+        void StopExecution(const char * diagnostic_reason = "MODE_STOP_EXECUTION");
 
         void updateSetpoint(float dt) override;
 
@@ -134,15 +137,25 @@ namespace px4 {
 
         utils::Atomic<bool> stop_controls_ = false;
 
+        utils::Atomic<uint64_t> reference_control_owner_ = 0;
+
         utils::Atomic<bool> tree_completion_reported_ = false;
 
         utils::Atomic<bool> emergency_reference_hold_active_ = false;
 
-        std::function<void()> on_next_activate_callback_ = nullptr;
+        PendingActivationCallback on_next_activate_callback_;
 
         rclcpp::Client<iii_drone_interfaces::srv::RegisterOffboardMode>::SharedPtr register_offboard_mode_client_;
 
         rclcpp::Publisher<px4_msgs::msg::VehicleCommand>::SharedPtr vehicle_command_publisher_;
+
+        rclcpp::Subscription<px4_msgs::msg::VehicleStatus>::SharedPtr vehicle_status_subscription_;
+
+        utils::Atomic<uint8_t> vehicle_system_id_ = 1;
+
+        utils::Atomic<uint8_t> vehicle_component_id_ = 1;
+
+        utils::Atomic<uint64_t> vehicle_timestamp_ = 0;
 
         rclcpp::Publisher<iii_drone_interfaces::msg::StringStamped>::SharedPtr status_publisher_;
 
@@ -157,7 +170,9 @@ namespace px4 {
 
         void startExecutionIfReady();
 
-        void publishStatus();
+        void publishStatus(const char * trigger = "state_change");
+
+        uint64_t lifecycle_activation_generation_;
 
     };
 

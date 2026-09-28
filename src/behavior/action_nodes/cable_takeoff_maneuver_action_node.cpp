@@ -35,36 +35,36 @@ PortsList CableTakeoffManeuverActionNode::providedPorts() {
 
 }
 
-bool CableTakeoffManeuverActionNode::setGoal(Goal & goal) {
+bool CableTakeoffManeuverActionNode::setManeuverGoal(Goal & goal) {
     
     if (!getInput("target_cable_id", goal.target_cable_id)) {
-        RCLCPP_WARN(node_ptr_->get_logger(), "CableTakeoffManeuverActionNode::setGoal(): Could not get target_cable_id.");
+        RCLCPP_WARN(node_ptr_->get_logger(), "CableTakeoffManeuverActionNode::setManeuverGoal(): Could not get target_cable_id.");
         return false;
     }
 
     if (!getInput("target_cable_distance", goal.target_cable_distance)) {
         RCLCPP_INFO(
             node_ptr_->get_logger(), 
-            "CableTakeoffManeuverActionNode::setGoal(): Using default target cable distance."
+            "CableTakeoffManeuverActionNode::setManeuverGoal(): Using default target cable distance."
         );
         goal.target_cable_distance = configuration_->GetParameter("/behavior/target_cable_distance").as_double();
     }
 
     if (goal.target_cable_id < 0) {
-        RCLCPP_WARN(node_ptr_->get_logger(), "CableTakeoffManeuverActionNode::setGoal(): Invalid target_cable_id.");
+        RCLCPP_WARN(node_ptr_->get_logger(), "CableTakeoffManeuverActionNode::setManeuverGoal(): Invalid target_cable_id.");
         return false;
     }
 
     if (goal.target_cable_distance < configuration_->GetParameter("/control/maneuver_controller/cable_takeoff_min_target_cable_distance").as_double() 
         || goal.target_cable_distance > configuration_->GetParameter("/control/maneuver_controller/cable_takeoff_max_target_cable_distance").as_double()) {
 
-        RCLCPP_WARN(node_ptr_->get_logger(), "CableTakeoffManeuverActionNode::setGoal(): Target cable distance out of range.");
+        RCLCPP_WARN(node_ptr_->get_logger(), "CableTakeoffManeuverActionNode::setManeuverGoal(): Target cable distance out of range.");
         return false;
     }
 
     RCLCPP_INFO(
         node_ptr_->get_logger(), 
-        "CableTakeoffManeuverActionNode::setGoal(): Successfully set goal with target_cable_id=%d, target_cable_distance=%f", 
+        "CableTakeoffManeuverActionNode::setManeuverGoal(): Successfully set goal with target_cable_id=%d, target_cable_distance=%f",
         goal.target_cable_id, goal.target_cable_distance
     );
 

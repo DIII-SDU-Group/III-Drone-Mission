@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 /*****************************************************************************/
 // Includes
 /*****************************************************************************/
@@ -111,6 +113,7 @@ namespace mission {
         std::string default_catalog_id_;
         std::string active_catalog_id_;
         bool temporary_override_ = false;
+        uint64_t lifecycle_activation_generation_ = 0;
 
         void getMissionCatalogService(
             const std::shared_ptr<iii_drone_interfaces::srv::GetMissionCatalog::Request> request,

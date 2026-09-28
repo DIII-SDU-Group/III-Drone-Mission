@@ -1,4 +1,6 @@
 #include <iii_drone_mission/behavior/behavior_node_registry.hpp>
+#include <iii_drone_mission/behavior/action_nodes/partition_point_queue_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/partition_point_queue_action_node.hpp>
 #include <iii_drone_mission/behavior/trees/tree_executor.hpp>
 
 #include <algorithm>
@@ -73,6 +75,8 @@ std::vector<BT::TreeNodeManifest> CustomBehaviorNodeManifests()
         Manifest<PhaseWaypointProviderActionNode>("PhaseWaypointProvider"),
         Manifest<BT::LoopNode<iii_drone::types::point_t>>("LoopPoint"),
         Manifest<SplitPointQueueActionNode>("SplitPointQueue"),
+        Manifest<PartitionPointQueueActionNode>("PartitionPointQueue"),
+        Manifest<QueueHasPointsConditionNode>("QueueHasPoints"),
         Manifest<PublishPowerlineWaypointsConditionNode>("PublishPowerlineWaypoints"),
         Manifest<VerifyGripperClosedConditionNode>("VerifyGripperClosed"),
         Manifest<ShouldRechargeBatteryLowConditionNode>("ShouldRechargeBatteryLow"),

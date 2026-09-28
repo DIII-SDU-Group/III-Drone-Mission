@@ -4,6 +4,7 @@
 
 #include <iii_drone_mission/mission/mission_executor_node/mission_executor_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/phase_waypoint_provider_action_node.hpp>
+#include <iii_drone_core/diagnostics/hil_trace.hpp>
 
 #include <iii_drone_core/adapters/powerline_adapter.hpp>
 
@@ -242,6 +243,10 @@ MissionExecutorNode::~MissionExecutorNode() {
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn MissionExecutorNode::on_configure(
     const rclcpp_lifecycle::State & state
 ) {
+    auto configure = iii_drone::diagnostics::HilTrace::event("mission_executor_lifecycle_configure_entry");
+    configure.number("node_address", reinterpret_cast<uintptr_t>(this));
+    configure.number("lifecycle_activation_generation", lifecycle_activation_generation_);
+    configure.commit();
     RCLCPP_INFO(get_logger(), "MissionExecutorNode::on_configure()");
 
     CallbackReturn ret = rclcpp_lifecycle::LifecycleNode::on_configure(state);
@@ -341,6 +346,11 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn MissionExecutorNode::on_activate(
     const rclcpp_lifecycle::State & state
 ) {
+    const uint64_t activation_generation = ++lifecycle_activation_generation_;
+    auto activate = iii_drone::diagnostics::HilTrace::event("mission_executor_lifecycle_activate_entry");
+    activate.number("node_address", reinterpret_cast<uintptr_t>(this));
+    activate.number("lifecycle_activation_generation", activation_generation);
+    activate.commit();
     RCLCPP_INFO(get_logger(), "MissionExecutorNode::on_activate()");
 
     CallbackReturn ret = rclcpp_lifecycle::LifecycleNode::on_activate(state);
@@ -372,7 +382,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     }
 
     try {
-        mission_executor_->Start(configurator_);
+        mission_executor_->Start(configurator_, activation_generation);
     } catch (const std::exception & exc) {
         RCLCPP_ERROR(
             get_logger(),
@@ -408,6 +418,10 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn MissionExecutorNode::on_deactivate(
     const rclcpp_lifecycle::State & state
 ) {
+    auto deactivate = iii_drone::diagnostics::HilTrace::event("mission_executor_lifecycle_deactivate_entry");
+    deactivate.number("node_address", reinterpret_cast<uintptr_t>(this));
+    deactivate.number("lifecycle_activation_generation", lifecycle_activation_generation_);
+    deactivate.commit();
     RCLCPP_INFO(get_logger(), "MissionExecutorNode::on_deactivate()");
 
     CallbackReturn ret = rclcpp_lifecycle::LifecycleNode::on_deactivate(state);

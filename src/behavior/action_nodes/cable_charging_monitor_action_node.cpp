@@ -66,10 +66,14 @@ bool CableChargingMonitorActionNode::blackboardBool(
     bool fallback
 ) const {
     bool value = fallback;
-    if (config().blackboard && config().blackboard->get(key, value)) {
+    // The Cable Charging executor retains its local blackboard between
+    // cycles. An Inspection intent can update the shared flag after the
+    // previous Cable Charging cycle wrote a local false value, so read the
+    // shared value first to avoid shadowing the new cross-mode intent.
+    if (global_blackboard_ && global_blackboard_->get(key, value)) {
         return value;
     }
-    if (global_blackboard_ && global_blackboard_->get(key, value)) {
+    if (config().blackboard && config().blackboard->get(key, value)) {
         return value;
     }
     return fallback;

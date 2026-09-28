@@ -4,8 +4,35 @@
 
 #include <iii_drone_mission/behavior/action_nodes/mode_executor_action_node.hpp>
 
+#include <iii_drone_core/diagnostics/hil_trace.hpp>
+
+#include <iomanip>
+#include <sstream>
+
 using namespace iii_drone::behavior;
 using namespace BT;
+
+namespace {
+
+std::string goalUuidToString(const rclcpp_action::GoalUUID & uuid) {
+    std::ostringstream stream;
+    stream << std::hex << std::setfill('0');
+    for (const auto byte : uuid) {
+        stream << std::setw(2) << static_cast<unsigned int>(byte);
+    }
+    return stream.str();
+}
+
+std::string actionResultCodeToString(rclcpp_action::ResultCode code) {
+    switch (code) {
+        case rclcpp_action::ResultCode::SUCCEEDED: return "SUCCEEDED";
+        case rclcpp_action::ResultCode::ABORTED: return "ABORTED";
+        case rclcpp_action::ResultCode::CANCELED: return "CANCELED";
+        case rclcpp_action::ResultCode::UNKNOWN: default: return "UNKNOWN";
+    }
+}
+
+}  // namespace
 
 /*****************************************************************************/
 // Implementation
@@ -19,7 +46,25 @@ ModeExecutorActionNode::ModeExecutorActionNode(
         name, 
         conf, 
         params
-),  node_ptr_(params.nh.lock()) { }
+),  node_ptr_(params.nh.lock()),
+    action_endpoint_(params.default_port_value) { }
+
+BT::NodeStatus ModeExecutorActionNode::tick() {
+    if (this->status() == BT::NodeStatus::IDLE) {
+        auto event = iii_drone::diagnostics::HilTrace::event("bt_action_goal_attempt");
+        event.text("node", name());
+        event.text("endpoint", action_endpoint_);
+        event.commit();
+    }
+    return RosActionNode<iii_drone_interfaces::action::ModeExecutorAction>::tick();
+}
+
+void ModeExecutorActionNode::onGoalAccepted() {
+    auto event = iii_drone::diagnostics::HilTrace::event("bt_action_goal_accepted");
+    event.text("node", name());
+    event.text("endpoint", action_endpoint_);
+    event.commit();
+}
 
 PortsList ModeExecutorActionNode::providedPorts() {
 
@@ -127,6 +172,16 @@ bool ModeExecutorActionNode::setGoal(Goal & goal) {
 
 NodeStatus ModeExecutorActionNode::onResultReceived(const WrappedResult & wr) {
 
+    const NodeStatus returned_status =
+        wr.code == rclcpp_action::ResultCode::SUCCEEDED ? NodeStatus::SUCCESS : NodeStatus::FAILURE;
+    auto event = iii_drone::diagnostics::HilTrace::event("bt_action_result");
+    event.text("node", name());
+    event.text("endpoint", action_endpoint_);
+    event.text("goal_id", goalUuidToString(wr.goal_id));
+    event.text("result_code", actionResultCodeToString(wr.code));
+    event.text("bt_status", BT::toStr(returned_status, false));
+    event.commit();
+
     if (wr.code == rclcpp_action::ResultCode::SUCCEEDED) {
         RCLCPP_INFO(
             node_ptr_->get_logger(),
@@ -141,4 +196,21 @@ NodeStatus ModeExecutorActionNode::onResultReceived(const WrappedResult & wr) {
         return NodeStatus::FAILURE;
     }
 
+}
+
+NodeStatus ModeExecutorActionNode::onFailure(
+    BT::ActionNodeErrorCode error,
+    const std::optional<WrappedResult> & result
+) {
+    auto event = iii_drone::diagnostics::HilTrace::event("bt_action_failure");
+    event.text("node", name());
+    event.text("endpoint", action_endpoint_);
+    event.text("error", BT::toStr(error));
+    event.text("bt_status", "FAILURE");
+    if (result.has_value()) {
+        event.text("goal_id", goalUuidToString(result->goal_id));
+        event.text("result_code", actionResultCodeToString(result->code));
+    }
+    event.commit();
+    return RosActionNode<iii_drone_interfaces::action::ModeExecutorAction>::onFailure(error, result);
 }

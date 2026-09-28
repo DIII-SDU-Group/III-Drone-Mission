@@ -37,9 +37,9 @@ PortsList HoverOnCableManeuverActionNode::providedPorts() {
 
 }
 
-bool HoverOnCableManeuverActionNode::setGoal(Goal & goal) {
+bool HoverOnCableManeuverActionNode::setManeuverGoal(Goal & goal) {
 
-    RCLCPP_INFO(node_ptr_->get_logger(), "HoverOnCableManeuverActionNode::setGoal()");
+    RCLCPP_INFO(node_ptr_->get_logger(), "HoverOnCableManeuverActionNode::setManeuverGoal()");
     
     getInput("target_cable_id", goal.target_cable_id);
     getInput("duration_s", goal.duration_s);
@@ -51,7 +51,7 @@ bool HoverOnCableManeuverActionNode::setGoal(Goal & goal) {
     if (goal.sustain_action && stop_maneuver_after_timeout_ms > 0) {
         RCLCPP_ERROR(
             node_ptr_->get_logger(),
-            "HoverOnCableManeuverActionNode::setGoal(): %s: Stop maneuver after timeout can not be positive when sustaining the action",
+            "HoverOnCableManeuverActionNode::setManeuverGoal(): %s: Stop maneuver after timeout can not be positive when sustaining the action",
             name_.c_str()
         );
 

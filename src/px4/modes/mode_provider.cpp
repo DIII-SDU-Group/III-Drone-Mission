@@ -3,6 +3,9 @@
 /*****************************************************************************/
 
 #include <iii_drone_mission/px4/modes/mode_provider.hpp>
+#include <iii_drone_core/diagnostics/hil_trace.hpp>
+
+#include <chrono>
 
 using namespace iii_drone::px4;
 using namespace iii_drone::behavior;
@@ -20,10 +23,12 @@ ModeProvider::ModeProvider(
     iii_drone::mission::MissionSpecification::SharedPtr mission_specification,
     rclcpp_lifecycle::LifecycleNode * node,
     iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
-    iii_drone::configuration::Configuration::SharedPtr parameters
+    iii_drone::configuration::Configuration::SharedPtr parameters,
+    uint64_t lifecycle_activation_generation
 ) : tree_provider_(tree_provider),
     mission_specification_(mission_specification),
-    node_(node)
+    node_(node),
+    lifecycle_activation_generation_(lifecycle_activation_generation)
 {
 
     RCLCPP_INFO(node_->get_logger(), "ModeProvider::ModeProvider(): Initializing.");
@@ -32,6 +37,8 @@ ModeProvider::ModeProvider(
         "px4_mode",
         rclcpp::NodeOptions().use_global_arguments(false)
     );
+
+    initializeDiagnosticProbes();
     auto set_logger_level = [this](int severity) {
         const rcutils_ret_t ret = rcutils_logging_set_logger_level(mode_node_->get_logger().get_name(), severity);
         if (ret != RCUTILS_RET_OK) {
@@ -96,10 +103,79 @@ void ModeProvider::Register() {
 
 void ModeProvider::Cleanup() {
 
+    deinitializeDiagnosticProbes();
     deinitializeModes();
     maneuver_reference_client_.reset();
     configuration_.reset();
 
+}
+
+void ModeProvider::initializeDiagnosticProbes() {
+    using namespace std::chrono_literals;
+
+    diagnostic_independent_callback_group_ = mode_node_->create_callback_group(
+        rclcpp::CallbackGroupType::MutuallyExclusive
+    );
+
+    const auto record_probe = [](const char * event_name, const char * callback_group) {
+        auto event = iii_drone::diagnostics::HilTrace::event(event_name);
+        event.text("callback", "mode_provider_diagnostic_probe");
+        event.text("callback_group", callback_group);
+        event.text("callback_group_type", "MutuallyExclusive");
+        event.text("node", "/px4_mode");
+        event.commit();
+    };
+
+    diagnostic_default_probe_timer_ = mode_node_->create_wall_timer(
+        500ms,
+        [record_probe]() {
+            const auto start = std::chrono::steady_clock::now();
+            record_probe(
+                "callback_group_probe_default_entry",
+                "px4_mode_default_mutually_exclusive"
+            );
+            const auto end = std::chrono::steady_clock::now();
+            auto event = iii_drone::diagnostics::HilTrace::event("callback_group_probe_default_exit");
+            event.text("callback", "mode_provider_diagnostic_probe");
+            event.text("callback_group", "px4_mode_default_mutually_exclusive");
+            event.text("callback_group_type", "MutuallyExclusive");
+            event.text("node", "/px4_mode");
+            event.number(
+                "duration_ns",
+                static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count())
+            );
+            event.commit();
+        }
+    );
+
+    diagnostic_independent_probe_timer_ = mode_node_->create_wall_timer(
+        500ms,
+        [record_probe]() {
+            const auto start = std::chrono::steady_clock::now();
+            record_probe(
+                "callback_group_probe_independent_entry",
+                "px4_mode_diagnostic_independent_mutually_exclusive"
+            );
+            const auto end = std::chrono::steady_clock::now();
+            auto event = iii_drone::diagnostics::HilTrace::event("callback_group_probe_independent_exit");
+            event.text("callback", "mode_provider_diagnostic_probe");
+            event.text("callback_group", "px4_mode_diagnostic_independent_mutually_exclusive");
+            event.text("callback_group_type", "MutuallyExclusive");
+            event.text("node", "/px4_mode");
+            event.number(
+                "duration_ns",
+                static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count())
+            );
+            event.commit();
+        },
+        diagnostic_independent_callback_group_
+    );
+}
+
+void ModeProvider::deinitializeDiagnosticProbes() {
+    diagnostic_default_probe_timer_.reset();
+    diagnostic_independent_probe_timer_.reset();
+    diagnostic_independent_callback_group_.reset();
 }
 
 void ModeProvider::Stop() {
@@ -169,7 +245,8 @@ void ModeProvider::initializeModes() {
             entry.mode_name,
             dt,
             is_owned_mode,
-            entry.allow_activate_when_disarmed
+            entry.allow_activate_when_disarmed,
+            lifecycle_activation_generation_
         );
 
         modes_[entry.key] = mode;

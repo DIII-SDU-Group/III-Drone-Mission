@@ -3,6 +3,7 @@
 /*****************************************************************************/
 
 #include <iii_drone_mission/mission/mission_executor.hpp>
+#include <iii_drone_core/diagnostics/hil_trace.hpp>
 
 #include <algorithm>
 
@@ -145,8 +146,17 @@ void MissionExecutor::Cleanup() {
 }
 
 void MissionExecutor::Start(
-    iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator
+    iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator,
+    uint64_t lifecycle_activation_generation
 ) {
+
+    lifecycle_activation_generation_ = lifecycle_activation_generation;
+
+    auto start = iii_drone::diagnostics::HilTrace::event("mission_executor_start");
+    start.number("executor_address", reinterpret_cast<uintptr_t>(this));
+    start.number("lifecycle_activation_generation", lifecycle_activation_generation);
+    start.boolean("already_started", is_started_);
+    start.commit();
 
     if (is_started_) {
         RCLCPP_WARN(node_->get_logger(), "MissionExecutor::Start(): Already started.");
@@ -161,7 +171,8 @@ void MissionExecutor::Start(
         mission_specification_,
         node_,
         maneuver_reference_client_,
-        configurator->GetConfiguration("mode_provider")
+        configurator->GetConfiguration("mode_provider"),
+        lifecycle_activation_generation
     );
 
     RCLCPP_DEBUG(node_->get_logger(), "MissionExecutor::Start(): Initializing mode executor.");
@@ -189,9 +200,22 @@ void MissionExecutor::Start(
 
     is_started_ = true;
 
+    auto started = iii_drone::diagnostics::HilTrace::event("mission_executor_started");
+    started.number("executor_address", reinterpret_cast<uintptr_t>(this));
+    started.number("mode_provider_address", reinterpret_cast<uintptr_t>(mode_provider_.get()));
+    started.number("lifecycle_activation_generation", lifecycle_activation_generation);
+    started.number("mode_count", static_cast<uint64_t>(mode_provider_->mode_keys().size()));
+    started.commit();
+
 }
 
 void MissionExecutor::Stop() {
+
+    auto stop = iii_drone::diagnostics::HilTrace::event("mission_executor_stop");
+    stop.number("executor_address", reinterpret_cast<uintptr_t>(this));
+    stop.boolean("started", is_started_);
+    stop.number("mode_provider_address", reinterpret_cast<uintptr_t>(mode_provider_.get()));
+    stop.commit();
 
     if (!is_started_ && generic_mode_executor_ == nullptr && mode_provider_ == nullptr) {
         RCLCPP_WARN(node_->get_logger(), "MissionExecutor::Stop(): Already stopped.");
@@ -222,6 +246,10 @@ void MissionExecutor::Stop() {
     mode_provider_ = nullptr;
 
     is_started_ = false;
+
+    auto stopped = iii_drone::diagnostics::HilTrace::event("mission_executor_stopped");
+    stopped.number("executor_address", reinterpret_cast<uintptr_t>(this));
+    stopped.commit();
 
 }
 
@@ -334,7 +362,7 @@ bool MissionExecutor::rebuildWithMissionSpecification(
             Configure(configurator, get_reference_cb_group);
         }
         if (start_after_rebuild) {
-            Start(configurator);
+            Start(configurator, lifecycle_activation_generation_);
         }
     } catch (const std::exception & exception) {
         message = exception.what();
