@@ -5,6 +5,7 @@
 #include <iii_drone_mission/behavior/action_nodes/mode_executor_action_node.hpp>
 
 #include <iii_drone_core/diagnostics/hil_trace.hpp>
+#include <iii_drone_mission/mission/mission_exit.hpp>
 
 #include <iomanip>
 #include <sstream>
@@ -50,13 +51,28 @@ ModeExecutorActionNode::ModeExecutorActionNode(
     action_endpoint_(params.default_port_value) { }
 
 BT::NodeStatus ModeExecutorActionNode::tick() {
-    if (this->status() == BT::NodeStatus::IDLE) {
-        auto event = iii_drone::diagnostics::HilTrace::event("bt_action_goal_attempt");
-        event.text("node", name());
-        event.text("endpoint", action_endpoint_);
-        event.commit();
-    }
-    return RosActionNode<iii_drone_interfaces::action::ModeExecutorAction>::tick();
+    const bool dispatching = this->status() == BT::NodeStatus::IDLE;
+    return iii_drone::mission::guardMissionDispatch(
+        dispatching,
+        [this, dispatching]() {
+            if (dispatching) {
+                auto event = iii_drone::diagnostics::HilTrace::event("bt_action_goal_attempt");
+                event.text("node", name());
+                event.text("endpoint", action_endpoint_);
+                event.commit();
+            }
+            return RosActionNode<iii_drone_interfaces::action::ModeExecutorAction>::tick();
+        },
+        [this]() {
+            // Mission Exit: never arm/disarm/land/take off for an exited mission.
+            RCLCPP_INFO(
+                node_ptr_->get_logger(),
+                "ModeExecutorActionNode::tick(): %s: Mission Exit, not requesting mode executor action",
+                name().c_str()
+            );
+            return BT::NodeStatus::FAILURE;
+        }
+    );
 }
 
 void ModeExecutorActionNode::onGoalAccepted() {
@@ -189,10 +205,17 @@ NodeStatus ModeExecutorActionNode::onResultReceived(const WrappedResult & wr) {
         );
         return NodeStatus::SUCCESS;
     } else {
-        RCLCPP_ERROR(
-            node_ptr_->get_logger(),
-            "ModeExecutorActionNode::onResultReceived(): Failure"
-        );
+        if (iii_drone::mission::missionExitClosedDispatch()) {
+            RCLCPP_INFO(
+                node_ptr_->get_logger(),
+                "ModeExecutorActionNode::onResultReceived(): Ended by Mission Exit"
+            );
+        } else {
+            RCLCPP_ERROR(
+                node_ptr_->get_logger(),
+                "ModeExecutorActionNode::onResultReceived(): Failure"
+            );
+        }
         return NodeStatus::FAILURE;
     }
 

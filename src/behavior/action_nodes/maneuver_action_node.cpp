@@ -13,6 +13,7 @@
 #include <iii_drone_interfaces/action/hover_by_object.hpp>
 #include <iii_drone_interfaces/action/hover_on_cable.hpp>
 #include <iii_drone_core/diagnostics/hil_trace.hpp>
+#include <iii_drone_mission/mission/mission_exit.hpp>
 
 #include <atomic>
 #include <iomanip>
@@ -126,13 +127,33 @@ ManeuverActionNode<ActionT>::ManeuverActionNode(
 
 template <typename ActionT>
 BT::NodeStatus ManeuverActionNode<ActionT>::tick() {
-    if (this->status() == BT::NodeStatus::IDLE) {
-        auto event = iii_drone::diagnostics::HilTrace::event("bt_action_goal_attempt");
-        event.text("node", name_);
-        event.text("endpoint", action_endpoint_);
-        event.commit();
-    }
-    return RosActionNode<ActionT>::tick();
+    const bool dispatching = this->status() == BT::NodeStatus::IDLE;
+    return iii_drone::mission::guardMissionDispatch(
+        dispatching,
+        [this, dispatching]() {
+            if (dispatching) {
+                auto event = iii_drone::diagnostics::HilTrace::event("bt_action_goal_attempt");
+                event.text("node", name_);
+                event.text("endpoint", action_endpoint_);
+                event.commit();
+            }
+            return RosActionNode<ActionT>::tick();
+        },
+        [this]() {
+            // Mission Exit: PX4 no longer runs this mission. Never send a goal.
+            RCLCPP_INFO(
+                node_ptr_->get_logger(),
+                "ManeuverActionNode::tick(): %s: Mission Exit, not dispatching maneuver goal",
+                name_.c_str()
+            );
+            auto event = iii_drone::diagnostics::HilTrace::event("bt_action_goal_blocked_mission_exit");
+            event.text("node", name_);
+            event.text("endpoint", action_endpoint_);
+            event.commit();
+            ManeuverActionNode<ActionT>::setOutput("terminal_state", std::string("MISSION_EXIT"));
+            return BT::NodeStatus::FAILURE;
+        }
+    );
 }
 
 template <typename ActionT>
@@ -198,11 +219,19 @@ void ManeuverActionNode<ActionT>::onGoalAccepted() {
     // }
 
     if (!setManeuverRunning()) {
-        RCLCPP_ERROR(
-            node_ptr_->get_logger(),
-            "ManeuverActionNode::onGoalAccepted(): %s: Failed to start maneuver, halting maneuver",
-            name_.c_str()
-        );
+        if (iii_drone::mission::missionExitClosedDispatch()) {
+            RCLCPP_INFO(
+                node_ptr_->get_logger(),
+                "ManeuverActionNode::onGoalAccepted(): %s: Goal accepted after Mission Exit released it, halting maneuver",
+                name_.c_str()
+            );
+        } else {
+            RCLCPP_ERROR(
+                node_ptr_->get_logger(),
+                "ManeuverActionNode::onGoalAccepted(): %s: Failed to start maneuver, halting maneuver",
+                name_.c_str()
+            );
+        }
 
         this->halt();
     }
@@ -351,6 +380,22 @@ BT::NodeStatus ManeuverActionNode<ActionT>::onFailure(BT::ActionNodeErrorCode er
 
     safeSetManeuverNotRunning("action failure cleanup");
 
+    const bool mission_exit = iii_drone::mission::missionExitClosedDispatch();
+    if (mission_exit && (
+            error == ActionNodeErrorCode::ACTION_ABORTED ||
+            error == ActionNodeErrorCode::ACTION_CANCELLED ||
+            error == ActionNodeErrorCode::GOAL_REJECTED_BY_SERVER)) {
+        // The echo of a Mission Exit: PX4 no longer runs this mission and
+        // Core ended the goal on purpose. Server faults stay loud below.
+        RCLCPP_INFO(
+            node_ptr_->get_logger(),
+            "ManeuverActionNode::onFailure(): %s: Maneuver ended by Mission Exit (%s)",
+            name_.c_str(),
+            actionNodeErrorCodeToString(error).c_str()
+        );
+        return NodeStatus::FAILURE;
+    }
+
     switch(error) {
         case ActionNodeErrorCode::ACTION_ABORTED:
             RCLCPP_WARN(
@@ -425,11 +470,22 @@ void ManeuverActionNode<ActionT>::onHalt() {
     event.text("endpoint", action_endpoint_);
     event.commit();
 
-    RCLCPP_WARN(
-        node_ptr_->get_logger(),
-        "ManeuverActionNode::onHalt(): %s: Halting maneuver",
-        name_.c_str()
-    );
+    if (iii_drone::mission::missionExitClosedDispatch()) {
+        RCLCPP_INFO(
+            node_ptr_->get_logger(),
+            "ManeuverActionNode::onHalt(): %s: Halting maneuver for Mission Exit",
+            name_.c_str()
+        );
+    } else {
+        // A halt is always a deliberate tree decision (e.g. the recharge
+        // ReactiveFallback preempting an inspection maneuver); failures are
+        // reported by their own paths.
+        RCLCPP_INFO(
+            node_ptr_->get_logger(),
+            "ManeuverActionNode::onHalt(): %s: Halting maneuver",
+            name_.c_str()
+        );
+    }
 
     safeSetManeuverNotRunning("halt cleanup");
 
@@ -485,11 +541,19 @@ bool ManeuverActionNode<ActionT>::setManeuverRunning() {
 
         if (goal_handoff_pending_) {
             if (!maneuver_reference_client_->ConfirmManeuverGoalHandoff(pending_request_identity_)) {
-                RCLCPP_ERROR(
-                    node_ptr_->get_logger(),
-                    "ManeuverActionNode::setManeuverRunning(): %s: Pending goal handoff was lost",
-                    name_.c_str()
-                );
+                if (iii_drone::mission::missionExitClosedDispatch()) {
+                    RCLCPP_INFO(
+                        node_ptr_->get_logger(),
+                        "ManeuverActionNode::setManeuverRunning(): %s: Pending goal handoff was released by Mission Exit",
+                        name_.c_str()
+                    );
+                } else {
+                    RCLCPP_ERROR(
+                        node_ptr_->get_logger(),
+                        "ManeuverActionNode::setManeuverRunning(): %s: Pending goal handoff was lost",
+                        name_.c_str()
+                    );
+                }
                 return false;
             }
             goal_handoff_pending_ = false;

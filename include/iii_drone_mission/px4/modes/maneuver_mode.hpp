@@ -93,6 +93,12 @@ namespace px4 {
         void StopControls();
         void StartControls();
 
+        /**
+         * Mission Exit: stop publishing setpoints and never report this run's
+         * tree completion to PX4 (PX4 already left the mission).
+         */
+        void PrepareForMissionExit();
+
         void StopExecution(const char * diagnostic_reason = "MODE_STOP_EXECUTION");
 
         void updateSetpoint(float dt) override;

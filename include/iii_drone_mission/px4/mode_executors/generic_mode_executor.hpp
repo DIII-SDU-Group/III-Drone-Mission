@@ -8,6 +8,8 @@
 // Std:
 
 #include <memory>
+#include <mutex>
+#include <thread>
 
 /*****************************************************************************/
 // ROS2:
@@ -41,12 +43,16 @@
 
 #include <iii_drone_mission/px4/modes/mode_provider.hpp>
 
+#include <iii_drone_mission/mission/mission_exit.hpp>
+
 /*****************************************************************************/
 // III-Drone-Interfaces:
 
 #include <iii_drone_interfaces/action/mode_executor_action.hpp>
 
 #include <iii_drone_interfaces/msg/combined_drone_awareness.hpp>
+
+#include <iii_drone_interfaces/srv/pl_mapper_command.hpp>
 
 
 /*****************************************************************************/
@@ -82,6 +88,8 @@ namespace px4 {
             iii_drone::configuration::Configuration::SharedPtr parameters
         ); 
         
+        ~GenericModeExecutor() override;
+
         void onActivate() override;
 
         void onDeactivate(DeactivateReason reason) override;
@@ -111,6 +119,31 @@ namespace px4 {
         utils::Atomic<iii_drone::mission::mission_specification_entry_t> current_mode_entry_;
 
         void onModeCompleted(px4_ros2::Result result);
+
+        void handleModeCompleted(px4_ros2::Result result);
+
+        /**
+         * Mission Exit: PX4 took command authority away from this executor
+         * for anything the mission did not initiate. Runs the ordered cleanup
+         * of MissionExitSteps once per run (first observer wins).
+         */
+        void triggerMissionExit(const iii_drone::mission::MissionExitDecision & decision);
+
+        void onMissionExitVehicleStatus(const px4_msgs::msg::VehicleStatus::SharedPtr msg);
+
+        void completeActionGoalForMissionExit();
+
+        void sendPlMapperExitCommand(uint8_t command);
+
+        std::mutex mission_exit_mutex_;
+        rclcpp::CallbackGroup::SharedPtr mission_exit_callback_group_;
+        rclcpp::Subscription<px4_msgs::msg::VehicleStatus>::SharedPtr mission_exit_vehicle_status_sub_;
+        rclcpp::Client<iii_drone_interfaces::srv::PLMapperCommand>::SharedPtr pl_mapper_command_client_;
+        rclcpp::TimerBase::SharedPtr deferred_deactivation_timer_;
+        // The Mission Exit monitor runs on its own executor thread so no
+        // other callback of the Mission process can delay its latest sample.
+        std::shared_ptr<rclcpp::executors::SingleThreadedExecutor> mission_exit_executor_;
+        std::thread mission_exit_thread_;
 
         bool checkScheduleAndActionValidity();
 

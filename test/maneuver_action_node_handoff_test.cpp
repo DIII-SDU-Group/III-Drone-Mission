@@ -1,5 +1,10 @@
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdarg>
+#include <cstdio>
+#include <mutex>
+#include <utility>
 #include <memory>
 #include <string>
 #include <thread>
@@ -8,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include <rclcpp_action/rclcpp_action.hpp>
+#include <rcutils/logging.h>
 
 #include <iii_drone_configuration/configuration.hpp>
 #include <iii_drone_core/adapters/reference_adapter.hpp>
@@ -20,6 +26,9 @@
 
 #include <iii_drone_mission/behavior/action_nodes/maneuver_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/hover_by_object_maneuver_action_node.hpp>
+#include <iii_drone_mission/mission/mission_exit.hpp>
+
+#include <px4_msgs/msg/vehicle_status.hpp>
 
 namespace {
 
@@ -709,3 +718,243 @@ TEST(ManeuverActionNodeHandoff, HoverByObjectUnappliedSuccessFailsWithoutRetirin
 }
 
 }  // namespace
+
+// ---------------------------------------------------------------------------
+// Mission Exit: the dispatch guard and quiet, fail-closed goal endings.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+struct MissionExitScope {
+    MissionExitScope() {
+        control().ResetForTest();
+        control().BeginRun();
+    }
+    ~MissionExitScope() { control().ResetForTest(); }
+
+    static iii_drone::mission::MissionControl & control() {
+        return iii_drone::mission::MissionControl::Process();
+    }
+
+    void exitToHold() {
+        ASSERT_TRUE(control().LatchExit(
+            iii_drone::mission::MissionExitReason::OperatorModeChange,
+            px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_AUTO_LOITER, 1));
+    }
+};
+
+}  // namespace
+
+TEST(ManeuverActionNodeHandoff, MissionExitGateBlocksDispatchWithoutGoalOrHandoff) {
+    RclcppContext context;
+    MissionExitScope mission;
+    mission.exitToHold();
+    Fixture fixture(true);
+    fixture.makeActivePredecessor();
+    const auto config = fixture.config();
+    HandoffActionNode action("after_exit", config, fixture.params(), fixture.client, false);
+
+    EXPECT_EQ(action.tick(), BT::NodeStatus::FAILURE);
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        fixture.server.spin();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    EXPECT_EQ(fixture.server.goal_requests.load(), 0U);
+    EXPECT_FALSE(fixture.client->pending_goal_handoff_);
+    // The running predecessor is untouched by the refused dispatch.
+    EXPECT_EQ(fixture.client->reference_mode_.Load(), ManeuverReferenceClient::MANEUVER);
+    std::string terminal_state;
+    ASSERT_TRUE(config.blackboard->get("terminal_state", terminal_state));
+    EXPECT_EQ(terminal_state, "MISSION_EXIT");
+}
+
+TEST(ManeuverActionNodeHandoff, MissionExitAfterAcceptedGoalReleasesHandoffAndBlocksNextDispatch) {
+    // Race R3: a goal was accepted just before the exit.
+    RclcppContext context;
+    MissionExitScope mission;
+    Fixture fixture(true);
+    fixture.makeActivePredecessor();
+    HandoffActionNode action("accepted_before_exit", fixture.config(), fixture.params(),
+        fixture.client, false);
+    EXPECT_EQ(action.tick(), BT::NodeStatus::RUNNING);
+    ASSERT_TRUE(fixture.tickUntilGoalResponse(action));
+    ASSERT_TRUE(fixture.client->pending_goal_handoff_);
+    EXPECT_TRUE(fixture.client->pending_goal_handoff_->goal_accepted);
+    // The mode owns reference control while the goal runs.
+    const uint64_t owner = 7;
+    fixture.client->reference_control_owner_ = owner;
+
+    mission.exitToHold();
+    (void)fixture.client->ReleaseConsumerControl(
+        iii_drone_interfaces::srv::ReleaseConsumerControl::Request::REASON_OPERATOR_MODE_CHANGE,
+        px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_AUTO_LOITER);
+    EXPECT_EQ(fixture.client->reference_mode_.Load(), ManeuverReferenceClient::HOVER);
+    EXPECT_FALSE(fixture.client->pending_goal_handoff_);
+    EXPECT_EQ(fixture.client->reference_control_owner_, 0U);
+    // The mode's own late deactivation cannot release a newer owner.
+    EXPECT_FALSE(fixture.client->ReleaseReferenceControl(owner));
+
+    // Tree teardown halts the running node quietly.
+    action.onHalt();
+    EXPECT_EQ(fixture.client->reference_mode_.Load(), ManeuverReferenceClient::HOVER);
+
+    // Nothing else leaves the tree afterwards.
+    HandoffActionNode next("next_after_exit", fixture.config(), fixture.params(), fixture.client, false);
+    const auto goals_before = fixture.server.goal_requests.load();
+    EXPECT_EQ(next.tick(), BT::NodeStatus::FAILURE);
+    fixture.server.spin();
+    EXPECT_EQ(fixture.server.goal_requests.load(), goals_before);
+}
+
+TEST(ManeuverActionNodeHandoff, MissionExitBeforeAcceptanceCannotAdoptAGeneration) {
+    // Race R2/R3: the dispatching tick completed, then the exit released the
+    // handoff before the goal response arrived. A late acceptance halts.
+    RclcppContext context;
+    MissionExitScope mission;
+    Fixture fixture(true);
+    HandoffActionNode action("late_acceptance", fixture.config(), fixture.params(),
+        fixture.client, false);
+    EXPECT_EQ(action.tick(), BT::NodeStatus::RUNNING);
+    ASSERT_TRUE(fixture.client->pending_goal_handoff_);
+    const std::string request_identity = fixture.client->pending_goal_handoff_->request_identity;
+
+    mission.exitToHold();
+    (void)fixture.client->ReleaseConsumerControl(
+        iii_drone_interfaces::srv::ReleaseConsumerControl::Request::REASON_OPERATOR_MODE_CHANGE,
+        px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_AUTO_LOITER);
+    ASSERT_FALSE(fixture.client->pending_goal_handoff_);
+
+    // The test double never answers cancellation; Core does (the released
+    // goal is already terminal), so the fork's cancel/result timeouts logged
+    // here are an artifact of the double, not of the exit path.
+    BT::NodeStatus status = BT::NodeStatus::RUNNING;
+    for (int attempt = 0; attempt < 50 && status == BT::NodeStatus::RUNNING; ++attempt) {
+        fixture.server.spin();
+        status = action.tick();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_EQ(status, BT::NodeStatus::FAILURE);
+    ASSERT_EQ(fixture.server.received_request_identities.size(), 1U);
+    EXPECT_EQ(fixture.server.received_request_identities.front(), request_identity);
+    EXPECT_FALSE(fixture.client->pending_goal_handoff_);
+    EXPECT_NE(fixture.client->reference_mode_.Load(), ManeuverReferenceClient::MANEUVER);
+    EXPECT_NE(fixture.client->active_request_identity_, request_identity);
+}
+
+namespace {
+
+// Captures formatted rcutils log lines for the scope of one test.
+class ScopedLogCapture {
+public:
+    ScopedLogCapture() : previous_(rcutils_logging_get_output_handler()) {
+        std::lock_guard<std::mutex> lock(mutex());
+        entries().clear();
+        rcutils_logging_set_output_handler(&ScopedLogCapture::handler);
+    }
+    ~ScopedLogCapture() { rcutils_logging_set_output_handler(previous_); }
+
+    size_t count(int severity, const std::string & needle) const {
+        std::lock_guard<std::mutex> lock(mutex());
+        return static_cast<size_t>(std::count_if(entries().begin(), entries().end(),
+            [severity, &needle](const auto & entry) {
+                return entry.first == severity && entry.second.find(needle) != std::string::npos;
+            }));
+    }
+
+private:
+    static void handler(const rcutils_log_location_t *, int severity, const char *,
+                        rcutils_time_point_value_t, const char * format, va_list * args) {
+        va_list copy;
+        va_copy(copy, *args);
+        char buffer[4096];
+        std::vsnprintf(buffer, sizeof(buffer), format, copy);
+        va_end(copy);
+        std::lock_guard<std::mutex> lock(mutex());
+        entries().emplace_back(severity, buffer);
+    }
+    static std::mutex & mutex() { static std::mutex value; return value; }
+    static std::vector<std::pair<int, std::string>> & entries() {
+        static std::vector<std::pair<int, std::string>> value;
+        return value;
+    }
+    rcutils_logging_output_handler_t previous_;
+};
+
+iii_drone::mission::VehicleControlSample vehicleSample(
+    uint64_t timestamp_us, uint8_t executor_in_charge, uint8_t nav_state) {
+    iii_drone::mission::VehicleControlSample sample;
+    sample.timestamp_us = timestamp_us;
+    sample.executor_in_charge = executor_in_charge;
+    sample.nav_state = nav_state;
+    sample.receipt = std::chrono::steady_clock::now();
+    return sample;
+}
+
+}  // namespace
+
+TEST(ManeuverActionNodeHandoff, MissionExitHandoverObservedAtDispatchWithholdsGoalBeforeAnyLatch) {
+    // (a) The freshest PX4 vehicle_status in this process already shows the
+    // executor out of charge, but neither the monitor's exit handling nor
+    // px4_ros2's onDeactivate has latched Mission Exit yet. The dispatching
+    // tick itself must withhold the goal and latch the exit.
+    RclcppContext context;
+    MissionExitScope mission;
+    constexpr uint8_t kExecutor = 4;
+    auto & control = MissionExitScope::control();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    (void)control.ObserveVehicleStatus(vehicleSample(
+        100, kExecutor, px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_EXTERNAL1), kExecutor);
+    (void)control.ObserveVehicleStatus(vehicleSample(
+        200, 0, px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_AUTO_LOITER), kExecutor);
+    ASSERT_FALSE(control.ExitLatched());
+
+    Fixture fixture(true);
+    fixture.makeActivePredecessor();
+    HandoffActionNode action("handover_at_dispatch", fixture.config(), fixture.params(),
+        fixture.client, false);
+    EXPECT_EQ(action.tick(), BT::NodeStatus::FAILURE);
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        fixture.server.spin();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    EXPECT_EQ(fixture.server.goal_requests.load(), 0U);
+    EXPECT_FALSE(fixture.client->pending_goal_handoff_);
+    EXPECT_TRUE(control.ExitLatched());
+}
+
+TEST(ManeuverActionNodeHandoff, MissionExitRacedRejectionIsQuietOnMission) {
+    // (c) The goal was sent just before the exit latched and Core, which
+    // saw PX4 native control, rejects it. Mission treats it as the handover.
+    RclcppContext context;
+    MissionExitScope mission;
+    ScopedLogCapture logs;
+    Fixture fixture(false);  // Core rejects: not offboard
+    fixture.makeActivePredecessor();
+    HandoffActionNode action("raced_rejection", fixture.config(), fixture.params(),
+        fixture.client, false);
+    EXPECT_EQ(action.tick(), BT::NodeStatus::RUNNING);
+    mission.exitToHold();
+    BT::NodeStatus status = BT::NodeStatus::RUNNING;
+    for (int attempt = 0; attempt < 50 && status == BT::NodeStatus::RUNNING; ++attempt) {
+        fixture.server.spin();
+        status = action.tick();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_EQ(status, BT::NodeStatus::FAILURE);
+    EXPECT_EQ(fixture.server.goal_requests.load(), 1U);
+    EXPECT_EQ(logs.count(RCUTILS_LOG_SEVERITY_WARN, "Maneuver goal rejected by server"), 0U);
+    EXPECT_EQ(logs.count(RCUTILS_LOG_SEVERITY_INFO, "Maneuver ended by Mission Exit (GOAL_REJECTED_BY_SERVER)"), 1U);
+    // Without an exit, the same rejection stays a WARN.
+    MissionExitScope fresh;
+    Fixture control_case(false);
+    control_case.makeActivePredecessor();
+    HandoffActionNode normal("normal_rejection", control_case.config(), control_case.params(),
+        control_case.client, false);
+    status = normal.tick();
+    for (int attempt = 0; attempt < 50 && status == BT::NodeStatus::RUNNING; ++attempt) {
+        control_case.server.spin();
+        status = normal.tick();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_EQ(logs.count(RCUTILS_LOG_SEVERITY_WARN, "Maneuver goal rejected by server"), 1U);
+}

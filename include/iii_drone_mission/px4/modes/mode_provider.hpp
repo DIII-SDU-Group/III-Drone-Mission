@@ -76,6 +76,8 @@ namespace px4 {
         ModeProviderIterator end();
 
         rclcpp::Node::SharedPtr mode_node() const;
+
+        iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client() const;
         std::vector<std::string> mode_keys() const;
         std::vector<std::string> registered_mode_keys() const;
         bool all_modes_registered() const;

@@ -295,6 +295,12 @@ rclcpp::Node::SharedPtr ModeProvider::mode_node() const {
 
 }
 
+ManeuverReferenceClient::SharedPtr ModeProvider::maneuver_reference_client() const {
+
+    return maneuver_reference_client_;
+
+}
+
 std::vector<std::string> ModeProvider::mode_keys() const {
 
     std::vector<std::string> values;

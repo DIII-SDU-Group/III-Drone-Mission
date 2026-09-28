@@ -42,6 +42,9 @@ namespace behavior {
 
         static BT::PortsList providedPorts();
 
+        /** Mission Exit guard: no command leaves an exited mission's tree. */
+        BT::NodeStatus tick() override;
+
         bool setRequest(Request::SharedPtr & request) override;
 
         BT::NodeStatus onResponseReceived(const Response::SharedPtr & response) override;

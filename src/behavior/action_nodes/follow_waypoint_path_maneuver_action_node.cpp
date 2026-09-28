@@ -1,4 +1,5 @@
 #include <iii_drone_mission/behavior/action_nodes/follow_waypoint_path_maneuver_action_node.hpp>
+#include <iii_drone_mission/mission/mission_exit.hpp>
 
 #include <iii_drone_core/adapters/reference_adapter.hpp>
 #include <iii_drone_core/utils/types.hpp>
@@ -135,6 +136,14 @@ bool FollowWaypointPathManeuverActionNode::shouldStopManeuverOnSuccessfulResult(
 
 void FollowWaypointPathManeuverActionNode::onHalt() {
     if (!hasCurrentGoalIdentity()) return;
+    if (iii_drone::mission::missionExitClosedDispatch()) {
+        // Mission Exit: PX4 owns the vehicle and Core retires every owner of
+        // this consumer; there is no terminal hold to retain or prove.
+        RCLCPP_INFO(node_ptr_->get_logger(),
+            "FollowWaypointPath halt for Mission Exit; terminal hold released to PX4");
+        clearLocalGoalBookkeeping();
+        return;
+    }
     // RosActionNode::halt() has already waited for cancel and result. Core
     // retains the finite stop only after its ACK and measured-motion proof.
     const auto retention = retainCompletedTerminalHoldForCurrentGoal(500);

@@ -190,6 +190,7 @@ set(III_DRONE_MISSION_SRCS
   "${PROJECT_SOURCE_DIR}/src/mission/mission_catalog.cpp"
 
   "${PROJECT_SOURCE_DIR}/src/mission/mission_executor.cpp"
+  "${PROJECT_SOURCE_DIR}/src/mission/mission_exit.cpp"
   "${PROJECT_SOURCE_DIR}/src/mission/overview_gnss_persistence.cpp"
 
 )
@@ -535,6 +536,9 @@ if(BUILD_TESTING)
   ament_add_gtest(iii_drone_overview_gnss_persistence_test
     test/overview_gnss_persistence_test.cpp
   )
+  ament_add_gtest(iii_drone_mission_exit_test
+    test/mission_exit_test.cpp
+  )
 
   if(TARGET iii_drone_mission_specification_test)
     target_include_directories(iii_drone_mission_specification_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
@@ -583,6 +587,11 @@ if(BUILD_TESTING)
     target_include_directories(iii_drone_maneuver_action_node_handoff_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
     target_link_libraries(iii_drone_maneuver_action_node_handoff_test iii_drone_mission_lib)
     ament_target_dependencies(iii_drone_maneuver_action_node_handoff_test ${dependencies})
+  endif()
+  if(TARGET iii_drone_mission_exit_test)
+    target_include_directories(iii_drone_mission_exit_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+    target_link_libraries(iii_drone_mission_exit_test iii_drone_mission_lib)
+    ament_target_dependencies(iii_drone_mission_exit_test ${dependencies})
   endif()
   if(TARGET iii_drone_custom_operation_identity_test)
     target_include_directories(iii_drone_custom_operation_identity_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})

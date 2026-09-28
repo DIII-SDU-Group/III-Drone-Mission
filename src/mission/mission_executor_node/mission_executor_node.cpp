@@ -5,6 +5,7 @@
 #include <iii_drone_mission/mission/mission_executor_node/mission_executor_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/phase_waypoint_provider_action_node.hpp>
 #include <iii_drone_core/diagnostics/hil_trace.hpp>
+#include <iii_drone_mission/mission/mission_exit.hpp>
 
 #include <iii_drone_core/adapters/powerline_adapter.hpp>
 
@@ -732,6 +733,15 @@ void MissionExecutorNode::publishMissionModeStatus() {
     }
 
     msg.mission_active = mission_executor_ != nullptr && mission_executor_->mission_active();
+    if (const auto exit = iii_drone::mission::MissionControl::Process().LastExit()) {
+        // Mission Exit is normal operation for an operator; it is reported,
+        // not degraded. A failsafe exit is reported with the same fields.
+        msg.exit_reason = iii_drone::mission::missionExitReasonLabel(exit->reason);
+        msg.exit_px4_nav_state = exit->px4_nav_state;
+        const auto since_epoch = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            exit->stamp.time_since_epoch()).count();
+        msg.exit_stamp = rclcpp::Time(static_cast<int64_t>(since_epoch), RCL_SYSTEM_TIME);
+    }
     msg.degraded_reason = mission_status_degraded_reason_;
     msg.degraded = !mission_status_degraded_reason_.empty() ||
         (msg.mission_active && !msg.required_modes_registered);

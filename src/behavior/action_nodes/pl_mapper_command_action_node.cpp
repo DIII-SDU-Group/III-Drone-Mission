@@ -5,6 +5,7 @@
 #include <iii_drone_mission/behavior/action_nodes/pl_mapper_command_action_node.hpp>
 
 #include <iii_drone_core/diagnostics/hil_trace.hpp>
+#include <iii_drone_mission/mission/mission_exit.hpp>
 
 using namespace iii_drone::behavior;
 using namespace BT;
@@ -32,6 +33,22 @@ PortsList PLMapperCommandActionNode::providedPorts() {
         OutputPort<pl_mapper_ack_t>("pl_mapper_ack")
     });
 
+}
+
+BT::NodeStatus PLMapperCommandActionNode::tick() {
+    const bool dispatching = status() == BT::NodeStatus::IDLE;
+    return iii_drone::mission::guardMissionDispatch(
+        dispatching,
+        [this]() { return RosServiceNode<iii_drone_interfaces::srv::PLMapperCommand>::tick(); },
+        [this]() {
+            RCLCPP_INFO(
+                node_ptr_->get_logger(),
+                "PLMapperCommandActionNode::tick(): %s: Mission Exit, not sending PL mapper command",
+                name().c_str()
+            );
+            return BT::NodeStatus::FAILURE;
+        }
+    );
 }
 
 bool PLMapperCommandActionNode::setRequest(Request::SharedPtr & request) {
@@ -92,6 +109,10 @@ bool PLMapperCommandActionNode::setRequest(Request::SharedPtr & request) {
     }
 
     request->pl_mapper_cmd.reset = reset;
+    // Mission Exit returns the mapper to the state a completed Leave Cable
+    // leaves it in when the mission started, paused or froze it.
+    iii_drone::mission::MissionControl::Process().RecordPlMapperCommand(
+        request->pl_mapper_cmd.command);
 
     return true;
 

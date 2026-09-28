@@ -4,6 +4,7 @@
 
 #include <iii_drone_mission/px4/modes/maneuver_mode.hpp>
 #include <iii_drone_core/diagnostics/hil_trace.hpp>
+#include <iii_drone_mission/mission/mission_exit.hpp>
 
 #include <chrono>
 #include <exception>
@@ -368,6 +369,23 @@ void ManeuverMode::startExecutionIfReady() {
 
     if (!tree_executor_->running()) {
 
+        // Race R4: px4_ros2 may process a stale activation of this mode after
+        // PX4 already left the mission (Mission Exit latched by the monitor).
+        // Such a start is refused; a standalone start after an exited run
+        // reopens the Mission dispatch gate.
+        if (!iii_drone::mission::MissionControl::Process().AdmitModeStart()) {
+            RCLCPP_INFO(
+                node().get_logger(),
+                "ManeuverMode::startExecutionIfReady(): Mission Exit in progress; not starting mode %s",
+                mode_name_.c_str()
+            );
+            // No setpoints and no stale completion report from this refused
+            // activation; px4_ros2 deactivates the mode on the newer sample.
+            stop_controls_ = true;
+            tree_completion_reported_ = true;
+            return;
+        }
+
         RCLCPP_INFO(node().get_logger(), "ManeuverMode::startExecutionIfReady(): Starting mode %s", mode_name_.c_str());
 
         try {
@@ -531,6 +549,16 @@ void ManeuverMode::StopControls() {
     RCLCPP_INFO(node().get_logger(), "ManeuverMode::StopControls(): Stopping controls for mode %s", mode_name_.c_str());
 
     stop_controls_ = true;
+
+}
+
+void ManeuverMode::PrepareForMissionExit() {
+
+    RCLCPP_INFO(node().get_logger(), "ManeuverMode::PrepareForMissionExit(): Mode %s stops setpoints for Mission Exit", mode_name_.c_str());
+
+    stop_controls_ = true;
+    tree_completion_reported_ = true;
+    emergency_reference_hold_active_ = false;
 
 }
 

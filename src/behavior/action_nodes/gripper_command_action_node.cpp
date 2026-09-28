@@ -5,6 +5,7 @@
 #include <iii_drone_mission/behavior/action_nodes/gripper_command_action_node.hpp>
 
 #include <iii_drone_core/diagnostics/hil_trace.hpp>
+#include <iii_drone_mission/mission/mission_exit.hpp>
 
 using namespace iii_drone::behavior;
 using namespace BT;
@@ -31,6 +32,22 @@ PortsList GripperCommandActionNode::providedPorts() {
         OutputPort<gripper_command_response_t>("gripper_command_response")
     });
 
+}
+
+BT::NodeStatus GripperCommandActionNode::tick() {
+    const bool dispatching = status() == BT::NodeStatus::IDLE;
+    return iii_drone::mission::guardMissionDispatch(
+        dispatching,
+        [this]() { return RosServiceNode<iii_drone_interfaces::srv::GripperCommand>::tick(); },
+        [this]() {
+            RCLCPP_INFO(
+                node_ptr_->get_logger(),
+                "GripperCommandActionNode::tick(): %s: Mission Exit, not sending gripper command",
+                name().c_str()
+            );
+            return BT::NodeStatus::FAILURE;
+        }
+    );
 }
 
 bool GripperCommandActionNode::setRequest(Request::SharedPtr & request) {

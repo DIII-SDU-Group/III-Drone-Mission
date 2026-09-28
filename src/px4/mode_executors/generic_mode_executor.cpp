@@ -6,7 +6,12 @@
 
 #include <chrono>
 
+#include <iii_drone_core/diagnostics/hil_trace.hpp>
+
 using namespace iii_drone::px4;
+using iii_drone::mission::MissionControl;
+using iii_drone::mission::MissionExitDecision;
+using iii_drone::mission::MissionExitReason;
 using namespace iii_drone::mission;
 using namespace iii_drone::configuration;
 using namespace iii_drone::adapters;
@@ -78,12 +83,69 @@ GenericModeExecutor::GenericModeExecutor(
 
     );
 
+    // Mission Exit monitor: an independent callback group so the falling edge
+    // of executor_in_charge is observed even while px4_ros2's own
+    // vehicle-status callback is blocked in a synchronous PX4 command.
+    mission_exit_callback_group_ = node_.create_callback_group(
+        rclcpp::CallbackGroupType::MutuallyExclusive,
+        false
+    );
+    rclcpp::SubscriptionOptions mission_exit_options;
+    mission_exit_options.callback_group = mission_exit_callback_group_;
+    mission_exit_vehicle_status_sub_ = node_.create_subscription<px4_msgs::msg::VehicleStatus>(
+        "/fmu/out/vehicle_status_v1",
+        rclcpp::QoS(1).best_effort().transient_local(),
+        [this](const px4_msgs::msg::VehicleStatus::SharedPtr msg) {
+            onMissionExitVehicleStatus(msg);
+        },
+        mission_exit_options
+    );
+    pl_mapper_command_client_ = node_.create_client<iii_drone_interfaces::srv::PLMapperCommand>(
+        "/perception/pl_mapper/pl_mapper_command",
+        rclcpp::ServicesQoS(),
+        mission_exit_callback_group_
+    );
+
+    // Dedicated, never-shared executor thread: the multi-threaded Mission
+    // executor can be saturated by blocking PX4 commands, tree service calls
+    // and reference callbacks; this sample must be as fresh as Core's.
+    mission_exit_executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+    mission_exit_executor_->add_callback_group(
+        mission_exit_callback_group_, node_.get_node_base_interface());
+    mission_exit_thread_ = std::thread([executor = mission_exit_executor_]() {
+        executor->spin();
+    });
+
+    MissionControl::Process().SetExitHandler(
+        [this](const MissionExitDecision & decision) {
+            triggerMissionExit(decision);
+        }
+    );
+
 }
     
+GenericModeExecutor::~GenericModeExecutor() {
+
+    MissionControl::Process().ClearExitHandler();
+    if (mission_exit_executor_) {
+        mission_exit_executor_->cancel();
+    }
+    if (mission_exit_thread_.joinable()) {
+        mission_exit_thread_.join();
+    }
+    if (mission_exit_executor_ && mission_exit_callback_group_) {
+        mission_exit_executor_->remove_callback_group(mission_exit_callback_group_);
+    }
+
+}
+
 void GenericModeExecutor::onActivate() {
 
     RCLCPP_INFO(node_.get_logger(), "GenericModeExecutor::onActivate(): Activating mode executor %s", mode_executor_name_.c_str());
 
+    // A new mission run: clears any earlier Mission Exit latch and reopens
+    // the tree dispatch gate before any mode of this run can start.
+    MissionControl::Process().BeginRun();
     is_active_ = true;
     triggered_position_control_ = false;
     constexpr int kActivationFailsafeDeferTimeoutS = 5;
@@ -166,6 +228,20 @@ void GenericModeExecutor::onActivate() {
 
 void GenericModeExecutor::onDeactivate(DeactivateReason reason) {
 
+    auto & mission_control = MissionControl::Process();
+    if (is_active_ && mission_control.RunActive() && !mission_control.ExitLatched()) {
+        // px4_ros2 observed the loss of command authority before the Mission
+        // Exit monitor did: same transition, reason from px4_ros2.
+        MissionExitDecision decision;
+        decision.reason = reason == DeactivateReason::FailsafeActivated
+            ? MissionExitReason::Failsafe
+            : MissionExitReason::OperatorModeChange;
+        decision.px4_nav_state = mission_control.LatestNavState().value_or(0);
+        triggerMissionExit(decision);
+    }
+    const bool mission_exit = mission_control.ExitLatched();
+    mission_control.EndRun();
+
     is_active_ = false;
     clearGlobalBlackboard("mission executor deactivated");
     try {
@@ -176,6 +252,10 @@ void GenericModeExecutor::onDeactivate(DeactivateReason reason) {
             "GenericModeExecutor::onDeactivate(): Failed while clearing PX4 failsafe deferral: %s",
             exception.what()
         );
+    }
+    if (mission_exit) {
+        RCLCPP_INFO(node_.get_logger(), "GenericModeExecutor::onDeactivate(): Deactivating mode executor %s after Mission Exit", mode_executor_name_.c_str());
+        return;
     }
     switch(reason) {
         case DeactivateReason::FailsafeActivated:
@@ -218,6 +298,50 @@ void GenericModeExecutor::clearGlobalBlackboard(const std::string & reason) {
 }
 
 void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
+
+    switch (iii_drone::mission::classifyModeCompletion(
+                MissionControl::Process(),
+                result == px4_ros2::Result::Deactivated,
+                is_active_)) {
+        case iii_drone::mission::ModeCompletionHandling::IgnoreAfterMissionExit:
+            RCLCPP_INFO(
+                node_.get_logger(),
+                "GenericModeExecutor::onModeCompleted(): %s ended with result %s after Mission Exit; nothing to schedule",
+                getModeName(schedule_current_).c_str(),
+                px4_ros2::resultToString(result)
+            );
+            return;
+        case iii_drone::mission::ModeCompletionHandling::DeferUntilDeactivation:
+            // px4_ros2 cancels the scheduled mode before it calls
+            // onDeactivate(reason) in the same vehicle-status callback. Decide
+            // once that callback has returned (same callback group): a Mission
+            // Exit then owns the cleanup; otherwise the legacy handling runs.
+            if (deferred_deactivation_timer_) {
+                deferred_deactivation_timer_->cancel();
+            }
+            deferred_deactivation_timer_ = node_.create_wall_timer(
+                std::chrono::milliseconds(0),
+                [this, result]() {
+                    if (deferred_deactivation_timer_) {
+                        deferred_deactivation_timer_->cancel();
+                    }
+                    if (MissionControl::Process().ExitLatched()) {
+                        return;
+                    }
+                    handleModeCompleted(result);
+                }
+            );
+            return;
+        case iii_drone::mission::ModeCompletionHandling::Handle:
+        default:
+            break;
+    }
+
+    handleModeCompleted(result);
+
+}
+
+void GenericModeExecutor::handleModeCompleted(px4_ros2::Result result) {
 
     if (!checkScheduleAndActionValidity()) return;
 
@@ -814,11 +938,16 @@ void GenericModeExecutor::manualControlSetpointCallback(const px4_msgs::msg::Man
 
     if (switch_to_position_control) {
 
-        RCLCPP_WARN(
-            node_.get_logger(), 
-            "GenericModeExecutor::manualControlSetpointCallback(): Position control triggered, deactivating mode executor %s", 
+        RCLCPP_INFO(
+            node_.get_logger(),
+            "GenericModeExecutor::manualControlSetpointCallback(): Position control triggered by stick input, ending mission of executor %s",
             mode_executor_name_.c_str()
         );
+
+        MissionExitDecision decision;
+        decision.reason = MissionExitReason::OperatorStickOverride;
+        decision.px4_nav_state = px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_POSCTL;
+        triggerMissionExit(decision);
 
         is_active_ = false;
         triggered_position_control_ = true;
@@ -1132,12 +1261,23 @@ void GenericModeExecutor::onArmCompleted(
 
     if (result != px4_ros2::Result::Success) {
 
-        RCLCPP_WARN(
-            node_.get_logger(),
-            "GenericModeExecutor::onArmCompleted(): Arming failed."
-        );
+        if (MissionControl::Process().ExitLatched()) {
+            RCLCPP_INFO(
+                node_.get_logger(),
+                "GenericModeExecutor::onArmCompleted(): Arming ended by Mission Exit."
+            );
+        } else {
+            RCLCPP_WARN(
+                node_.get_logger(),
+                "GenericModeExecutor::onArmCompleted(): Arming failed."
+            );
+        }
 
-        goal_handle->abort(std::make_shared<ModeExecutorAction::Result>());
+        try {
+            goal_handle->abort(std::make_shared<ModeExecutorAction::Result>());
+        } catch (const std::exception & error) {
+            RCLCPP_DEBUG(node_.get_logger(), "GenericModeExecutor::onArmCompleted(): goal already terminal: %s", error.what());
+        }
 
         return;
 
@@ -1161,12 +1301,23 @@ void GenericModeExecutor::onDisarmCompleted(
 
     if (result != px4_ros2::Result::Success) {
 
-        RCLCPP_WARN(
-            node_.get_logger(),
-            "GenericModeExecutor::onDisarmCompleted(): Disarming failed."
-        );
+        if (MissionControl::Process().ExitLatched()) {
+            RCLCPP_INFO(
+                node_.get_logger(),
+                "GenericModeExecutor::onDisarmCompleted(): Disarming ended by Mission Exit."
+            );
+        } else {
+            RCLCPP_WARN(
+                node_.get_logger(),
+                "GenericModeExecutor::onDisarmCompleted(): Disarming failed."
+            );
+        }
 
-        goal_handle->abort(std::make_shared<ModeExecutorAction::Result>());
+        try {
+            goal_handle->abort(std::make_shared<ModeExecutorAction::Result>());
+        } catch (const std::exception & error) {
+            RCLCPP_DEBUG(node_.get_logger(), "GenericModeExecutor::onDisarmCompleted(): goal already terminal: %s", error.what());
+        }
 
         return;
 
@@ -1228,10 +1379,17 @@ void GenericModeExecutor::tryCompleteActionGoal(bool success) {
 
     } else {
 
-        RCLCPP_WARN(
-            node_.get_logger(),
-            "GenericModeExecutor::tryCompleteActionGoal(): Mode executor action failed."
-        );
+        if (MissionControl::Process().ExitLatched()) {
+            RCLCPP_INFO(
+                node_.get_logger(),
+                "GenericModeExecutor::tryCompleteActionGoal(): Mode executor action ended by Mission Exit."
+            );
+        } else {
+            RCLCPP_WARN(
+                node_.get_logger(),
+                "GenericModeExecutor::tryCompleteActionGoal(): Mode executor action failed."
+            );
+        }
 
         (*current_goal_handle_)->abort(std::make_shared<ModeExecutorAction::Result>());
 
@@ -1456,5 +1614,184 @@ bool GenericModeExecutor::canTakeoff(float altitude) {
     }
 
     return true;
+
+}
+
+void GenericModeExecutor::onMissionExitVehicleStatus(const px4_msgs::msg::VehicleStatus::SharedPtr msg) {
+
+    iii_drone::mission::VehicleControlSample sample;
+    sample.timestamp_us = msg->timestamp;
+    sample.nav_state = msg->nav_state;
+    sample.executor_in_charge = msg->executor_in_charge;
+    sample.failsafe = msg->failsafe;
+    sample.receipt = std::chrono::steady_clock::now();
+
+    const int executor_id = id();
+    const uint8_t observed_executor_id =
+        executor_id > 0 && executor_id <= 255 ? static_cast<uint8_t>(executor_id) : 0;
+    const auto decision = MissionControl::Process().ObserveVehicleStatus(
+        sample, observed_executor_id);
+    if (decision && is_active_) {
+        triggerMissionExit(*decision);
+    }
+
+}
+
+void GenericModeExecutor::triggerMissionExit(const MissionExitDecision & decision) {
+
+    std::lock_guard<std::mutex> lock(mission_exit_mutex_);
+
+    iii_drone::mission::MissionExitSteps steps;
+    steps.stop_setpoint_consumption = [this]() {
+        for (auto mode : *mode_provider_) {
+            mode->PrepareForMissionExit();
+        }
+    };
+    steps.stop_trees = [this]() {
+        for (auto mode : *mode_provider_) {
+            if (mode->tree_running() || mode->active()) {
+                mode->StopExecution("MISSION_EXIT");
+            }
+        }
+    };
+    steps.complete_executor_action = [this]() {
+        completeActionGoalForMissionExit();
+    };
+    steps.release_consumer_control = [this, decision]() {
+        using Release = iii_drone_interfaces::srv::ReleaseConsumerControl;
+        const auto client = mode_provider_->maneuver_reference_client();
+        if (!client) {
+            return;
+        }
+        uint8_t reason = Release::Request::REASON_OTHER;
+        switch (decision.reason) {
+            case MissionExitReason::OperatorModeChange:
+                reason = Release::Request::REASON_OPERATOR_MODE_CHANGE;
+                break;
+            case MissionExitReason::OperatorStickOverride:
+                reason = Release::Request::REASON_OPERATOR_STICK_OVERRIDE;
+                break;
+            case MissionExitReason::Failsafe:
+                reason = Release::Request::REASON_FAILSAFE;
+                break;
+            case MissionExitReason::None:
+            default:
+                break;
+        }
+        client->ReleaseConsumerControl(reason, decision.px4_nav_state);
+    };
+    steps.stop_side_effects = [this]() {
+        if (const auto command = MissionControl::Process().TakePlMapperExitCommand()) {
+            sendPlMapperExitCommand(*command);
+        }
+    };
+    steps.end_run_bookkeeping = [this, decision]() {
+        is_active_ = false;
+        schedule_next_ = schedule_next_mode;
+        schedule_current_ = schedule_next_mode;
+        clearGlobalBlackboard(
+            std::string("Mission Exit: ") + iii_drone::mission::missionExitReasonLabel(decision.reason)
+        );
+    };
+
+    const auto record = iii_drone::mission::ExecuteMissionExit(
+        MissionControl::Process(),
+        decision,
+        steps,
+        [this](const char * step, const std::exception & error) {
+            RCLCPP_ERROR(
+                node_.get_logger(),
+                "GenericModeExecutor::triggerMissionExit(): Mission Exit step %s failed: %s",
+                step,
+                error.what()
+            );
+        }
+    );
+    if (!record) {
+        return;
+    }
+
+    const auto current_mode = current_mode_.Load();
+    const std::string mode_name = current_mode != nullptr ? current_mode->mode_name() : "";
+    if (iii_drone::mission::isOperatorMissionExit(record->reason)) {
+        RCLCPP_INFO(
+            node_.get_logger(),
+            "GenericModeExecutor::triggerMissionExit(): Mission Exit (%s, PX4 nav_state %u) during %s: "
+            "dispatch closed, trees stopped, consumer released",
+            iii_drone::mission::missionExitReasonLabel(record->reason),
+            static_cast<unsigned>(record->px4_nav_state),
+            mode_name.c_str()
+        );
+    } else {
+        RCLCPP_ERROR(
+            node_.get_logger(),
+            "GenericModeExecutor::triggerMissionExit(): Mission Exit (%s, PX4 nav_state %u) during %s: "
+            "dispatch closed, trees stopped, consumer released",
+            iii_drone::mission::missionExitReasonLabel(record->reason),
+            static_cast<unsigned>(record->px4_nav_state),
+            mode_name.c_str()
+        );
+    }
+    auto event = iii_drone::diagnostics::HilTrace::event("mission_exit");
+    event.text("reason", iii_drone::mission::missionExitReasonLabel(record->reason));
+    event.number("px4_nav_state", record->px4_nav_state);
+    event.number("px4_timestamp_us", record->px4_timestamp_us);
+    event.number("run", record->run);
+    event.text("mode", mode_name);
+    event.commit();
+
+}
+
+void GenericModeExecutor::completeActionGoalForMissionExit() {
+
+    const auto goal_handle = current_goal_handle_.Load();
+    current_goal_handle_ = (std::shared_ptr<GoalHandleModeExecutorAction>)nullptr;
+    if (goal_handle == nullptr) {
+        return;
+    }
+    try {
+        if (goal_handle->is_active()) {
+            RCLCPP_INFO(
+                node_.get_logger(),
+                "GenericModeExecutor::completeActionGoalForMissionExit(): Ending mode executor action for Mission Exit."
+            );
+            goal_handle->abort(std::make_shared<ModeExecutorAction::Result>());
+        }
+    } catch (const std::exception & error) {
+        RCLCPP_DEBUG(
+            node_.get_logger(),
+            "GenericModeExecutor::completeActionGoalForMissionExit(): goal already terminal: %s",
+            error.what()
+        );
+    }
+
+}
+
+void GenericModeExecutor::sendPlMapperExitCommand(uint8_t command) {
+
+    if (!pl_mapper_command_client_ || !pl_mapper_command_client_->service_is_ready()) {
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::sendPlMapperExitCommand(): PL mapper command service unavailable; mapper left as the mission left it"
+        );
+        return;
+    }
+    auto request = std::make_shared<iii_drone_interfaces::srv::PLMapperCommand::Request>();
+    request->pl_mapper_cmd.command = command;
+    request->pl_mapper_cmd.reset = true;
+    auto logger = node_.get_logger();
+    pl_mapper_command_client_->async_send_request(
+        request,
+        [logger](rclcpp::Client<iii_drone_interfaces::srv::PLMapperCommand>::SharedFuture future) {
+            if (future.get()->pl_mapper_ack !=
+                    iii_drone_interfaces::srv::PLMapperCommand::Response::PL_MAPPER_ACK_SUCCESS) {
+                RCLCPP_WARN(logger, "GenericModeExecutor: PL mapper refused the Mission Exit stop command");
+            }
+        }
+    );
+    RCLCPP_INFO(
+        node_.get_logger(),
+        "GenericModeExecutor::sendPlMapperExitCommand(): Stopping the PL mapper started by the exited mission"
+    );
 
 }
