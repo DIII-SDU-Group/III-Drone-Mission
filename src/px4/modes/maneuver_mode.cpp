@@ -457,7 +457,7 @@ void ManeuverMode::startExecutionIfReady() {
     
     } else {
 
-        RCLCPP_WARN(node().get_logger(), "ManeuverMode::startExecutionIfReady(): Resuming mode %s", mode_name_.c_str());
+        RCLCPP_INFO(node().get_logger(), "ManeuverMode::startExecutionIfReady(): Resuming mode %s", mode_name_.c_str());
 
     }
 
@@ -492,7 +492,7 @@ void ManeuverMode::onDeactivate() {
 
     } else {
 
-        RCLCPP_WARN(node().get_logger(), "ManeuverMode::onDeactivate(): Partial deactivation of mode %s", mode_name_.c_str());
+        RCLCPP_INFO(node().get_logger(), "ManeuverMode::onDeactivate(): Partial deactivation of mode %s", mode_name_.c_str());
 
     }
 

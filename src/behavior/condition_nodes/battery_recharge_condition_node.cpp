@@ -174,7 +174,7 @@ NodeStatus ShouldRechargeBatteryLowConditionNode::tick() {
         return NodeStatus::FAILURE;
     }
 
-    RCLCPP_WARN(
+    RCLCPP_INFO(
         node_->get_logger(),
         "ShouldRechargeBatteryLowConditionNode::tick(): Battery low %.2f V below %.2f V for %.2f s",
         latest_voltage_,

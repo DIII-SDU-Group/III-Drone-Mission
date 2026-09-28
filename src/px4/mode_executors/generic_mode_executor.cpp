@@ -1073,7 +1073,7 @@ void GenericModeExecutor::handleDisarmAccepted(const std::shared_ptr<GoalHandleM
     bool force_disarm = goal_handle->get_goal()->force_disarm;
 
     if (force_disarm) {
-        RCLCPP_WARN(
+        RCLCPP_INFO(
             node_.get_logger(),
             "GenericModeExecutor::handleDisarmAccepted(): Force disarming."
         );

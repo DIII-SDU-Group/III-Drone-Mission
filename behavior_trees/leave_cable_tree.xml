@@ -5,7 +5,7 @@
                 ID="LogMessage" 
                 name="log"
                 message="Leave cable tree started. Hovering on cable."
-                log_level="2"
+                log_level="1"
             />
 
             <Action
