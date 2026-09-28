@@ -99,7 +99,8 @@ NodeStatus CableChargingMonitorActionNode::evaluateChargingState() {
     }
 
     if (blackboardBool("charging.interrupt_requested", false)) {
-        RCLCPP_WARN(node_->get_logger(), "CableChargingMonitorActionNode::evaluateChargingState(): Charging interrupted by runtime intent.");
+        // An explicit operator intent, not an anomaly.
+        RCLCPP_INFO(node_->get_logger(), "CableChargingMonitorActionNode::evaluateChargingState(): Charging interrupted by runtime intent.");
         return NodeStatus::SUCCESS;
     }
 
