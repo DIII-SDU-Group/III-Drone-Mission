@@ -523,6 +523,9 @@ if(BUILD_TESTING)
   ament_add_gtest(iii_drone_pending_activation_callback_test
     test/pending_activation_callback_test.cpp
   )
+  ament_add_gtest(iii_drone_rosbag_qos_overrides_test
+    test/rosbag_qos_overrides_test.cpp
+  )
   ament_add_gtest(iii_drone_maneuver_action_node_handoff_test
     test/maneuver_action_node_handoff_test.cpp
   )
@@ -572,6 +575,9 @@ if(BUILD_TESTING)
   endif()
   if(TARGET iii_drone_pending_activation_callback_test)
     target_include_directories(iii_drone_pending_activation_callback_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+  endif()
+  if(TARGET iii_drone_rosbag_qos_overrides_test)
+    target_include_directories(iii_drone_rosbag_qos_overrides_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
   endif()
   if(TARGET iii_drone_maneuver_action_node_handoff_test)
     target_include_directories(iii_drone_maneuver_action_node_handoff_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})

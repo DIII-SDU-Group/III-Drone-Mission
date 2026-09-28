@@ -3,6 +3,7 @@
 /*****************************************************************************/
 
 #include <iii_drone_mission/mission/rosbag_recorder_node/rosbag_recorder_node.hpp>
+#include <iii_drone_mission/mission/rosbag_recorder_node/rosbag_qos_overrides.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -10,6 +11,7 @@
 #include <cctype>
 #include <ctime>
 #include <fcntl.h>
+#include <fstream>
 #include <iomanip>
 #include <sstream>
 #include <sys/types.h>
@@ -239,6 +241,22 @@ void RosbagRecorderNode::startRecordingCallback(
     }
     if (request->include_hidden_topics) {
         args.push_back("--include-hidden-topics");
+    }
+    const auto qos_overrides = px4InputQosOverridesYaml(
+        std::vector<std::string>(request->topics.begin(), request->topics.end()),
+        request->all_topics);
+    if (!qos_overrides.empty()) {
+        const auto overrides_path = log_dir / "qos_overrides.yaml";
+        std::ofstream overrides(overrides_path);
+        overrides << qos_overrides;
+        if (overrides.good()) {
+            args.push_back("--qos-profile-overrides-path");
+            args.push_back(overrides_path.string());
+        } else {
+            RCLCPP_WARN(get_logger(),
+                "Could not write rosbag QoS overrides to %s; PX4 input topics may miss publishers",
+                overrides_path.c_str());
+        }
     }
     args.push_back("-o");
     args.push_back(output_dir_.string());
