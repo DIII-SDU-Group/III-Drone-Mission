@@ -71,3 +71,20 @@ bool CableTakeoffManeuverActionNode::setManeuverGoal(Goal & goal) {
     return true;
 
 }
+
+bool CableTakeoffManeuverActionNode::shouldStopManeuverOnSuccessfulResult(
+    const typename BT::RosActionNode<iii_drone_interfaces::action::CableTakeoff>::WrappedResult &
+) const {
+
+    const auto retention = retainCompletedTerminalHoldForCurrentGoal(500);
+    if (retention == ManeuverReferenceClient::TerminalHoldRetention::Failed) {
+        markSuccessfulResultOwnershipFailed();
+        RCLCPP_ERROR(node_ptr_->get_logger(),
+            "CableTakeoff terminal hold ownership could not be verified");
+    }
+    // Without a retained terminal hold the takeoff keeps its historical
+    // stop-at-target cleanup; with one, the Core command stays live.
+    return retention == ManeuverReferenceClient::TerminalHoldRetention::NoOffer;
+
+}
+

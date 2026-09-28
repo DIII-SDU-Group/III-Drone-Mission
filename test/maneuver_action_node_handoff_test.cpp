@@ -19,6 +19,8 @@
 #include <iii_drone_core/adapters/reference_adapter.hpp>
 #include <iii_drone_interfaces/action/hover.hpp>
 #include <iii_drone_interfaces/action/hover_by_object.hpp>
+#include <iii_drone_interfaces/action/cable_takeoff.hpp>
+#include <iii_drone_interfaces/srv/terminal_hold_transfer.hpp>
 
 #define private public
 #include <iii_drone_core/control/maneuver/maneuver_reference_client.hpp>
@@ -26,6 +28,7 @@
 
 #include <iii_drone_mission/behavior/action_nodes/maneuver_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/hover_by_object_maneuver_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/cable_takeoff_maneuver_action_node.hpp>
 #include <iii_drone_mission/mission/mission_exit.hpp>
 
 #include <px4_msgs/msg/vehicle_status.hpp>
@@ -957,4 +960,99 @@ TEST(ManeuverActionNodeHandoff, MissionExitRacedRejectionIsQuietOnMission) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     EXPECT_EQ(logs.count(RCUTILS_LOG_SEVERITY_WARN, "Maneuver goal rejected by server"), 1U);
+}
+
+TEST(ManeuverActionNodeHandoff, CableTakeoffSuccessRetainsCoreTerminalCorrection) {
+    using CableTakeoff = iii_drone_interfaces::action::CableTakeoff;
+    using Transfer = iii_drone_interfaces::srv::TerminalHoldTransfer;
+    RclcppContext context;
+    Fixture fixture(true);
+
+    // Core accepted the takeoff and settled it through terminal correction;
+    // its terminal-hold QUERY offers that exact retained generation.
+    auto core_services = std::make_shared<rclcpp::Node>("takeoff_handoff_core_services");
+    std::string request_identity;
+    std::mutex request_mutex;
+    auto action_server = rclcpp_action::create_server<CableTakeoff>(
+        core_services, "/takeoff_handoff_action",
+        [&](const rclcpp_action::GoalUUID &, std::shared_ptr<const CableTakeoff::Goal> goal) {
+            std::lock_guard<std::mutex> lock(request_mutex);
+            request_identity = goal->request_identity;
+            return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+        },
+        [](const std::shared_ptr<rclcpp_action::ServerGoalHandle<CableTakeoff>>) {
+            return rclcpp_action::CancelResponse::ACCEPT;
+        },
+        [](const std::shared_ptr<rclcpp_action::ServerGoalHandle<CableTakeoff>>) {});
+    auto transfer = core_services->create_service<Transfer>(
+        "/control/maneuver_controller/terminal_hold_transfer",
+        [&](const std::shared_ptr<Transfer::Request> request,
+            std::shared_ptr<Transfer::Response> response) {
+            if (request->operation != Transfer::Request::OP_QUERY) return;
+            std::lock_guard<std::mutex> lock(request_mutex);
+            response->accepted = true;
+            response->source_request_identity = request_identity;
+            response->source_stream_id = "cable_takeoff:g1";
+            response->source_ack_sequence = 1;
+            response->reference = iii_drone::adapters::ReferenceAdapter(
+                iii_drone::control::Reference(iii_drone::types::point_t(1.87F, -0.10F, 2.0F), 2.785)).ToMsg();
+        });
+    rclcpp::executors::MultiThreadedExecutor core_executor;
+    core_executor.add_node(core_services);
+    core_executor.add_node(fixture.core_node->get_node_base_interface());
+    std::thread core_spinner([&core_executor] { core_executor.spin(); });
+
+    const std::vector<configuration_entry_t> entries{
+        {"/behavior/target_cable_distance", rclcpp::ParameterType::PARAMETER_DOUBLE},
+        {"/control/maneuver_controller/cable_takeoff_min_target_cable_distance", rclcpp::ParameterType::PARAMETER_DOUBLE},
+        {"/control/maneuver_controller/cable_takeoff_max_target_cable_distance", rclcpp::ParameterType::PARAMETER_DOUBLE},
+    };
+    auto takeoff_configuration = std::make_shared<Configuration>(
+        "cable-takeoff-handoff-test", entries,
+        [](const std::string & name) -> rclcpp::Parameter {
+            if (name == "/control/maneuver_controller/cable_takeoff_min_target_cable_distance") {
+                return rclcpp::Parameter(name, 0.5);
+            }
+            if (name == "/control/maneuver_controller/cable_takeoff_max_target_cable_distance") {
+                return rclcpp::Parameter(name, 2.0);
+            }
+            return rclcpp::Parameter(name, 1.5);
+        });
+    auto config = fixture.config();
+    config.input_ports.insert({"target_cable_id", "3"});
+    BT::RosNodeParams params(fixture.mission_node, "/takeoff_handoff_action");
+    params.server_timeout = std::chrono::milliseconds(250);
+    params.wait_for_server_timeout = std::chrono::milliseconds(500);
+    iii_drone::behavior::CableTakeoffManeuverActionNode action(
+        "cable_takeoff", config, params, fixture.client, takeoff_configuration);
+
+    ASSERT_EQ(action.tick(), BT::NodeStatus::RUNNING);
+    for (int attempt = 0; attempt < 100 &&
+         !(fixture.client->pending_goal_handoff_ &&
+           fixture.client->pending_goal_handoff_->goal_accepted); ++attempt) {
+        action.tick();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(fixture.client->pending_goal_handoff_);
+    std::string accepted_identity;
+    {
+        std::lock_guard<std::mutex> lock(request_mutex);
+        accepted_identity = request_identity;
+    }
+    fixture.commitStream(accepted_identity, "cable_takeoff:g1", true);
+    ASSERT_EQ(fixture.client->active_request_identity_, accepted_identity);
+
+    BT::RosActionNode<CableTakeoff>::WrappedResult result{};
+    result.code = rclcpp_action::ResultCode::SUCCEEDED;
+    result.result = std::make_shared<CableTakeoff::Result>();
+    result.result->success = true;
+    const auto status = action.onResultReceived(result);
+
+    core_executor.cancel();
+    core_spinner.join();
+    EXPECT_EQ(status, BT::NodeStatus::SUCCESS);
+    EXPECT_EQ(fixture.client->reference_mode_.Load(), ManeuverReferenceClient::MANEUVER)
+        << "takeoff cleanup stopped consuming the retained Core correction";
+    EXPECT_TRUE(fixture.client->terminalHoldContinuityRequired());
+    EXPECT_EQ(fixture.client->active_request_identity_, accepted_identity);
 }

@@ -73,6 +73,15 @@ namespace behavior {
          * momentary on-cable odometry sample.
          */
 
+        /**
+         * A takeoff that settled through Core terminal correction leaves that
+         * command source retained after its result, as FlyToPosition does.
+         * Keep consuming it until the successor claims it.
+         */
+        bool shouldStopManeuverOnSuccessfulResult(
+            const typename BT::RosActionNode<iii_drone_interfaces::action::CableTakeoff>::WrappedResult & wr
+        ) const override;
+
     private:
         /**
          * @brief The parameter bundle.
