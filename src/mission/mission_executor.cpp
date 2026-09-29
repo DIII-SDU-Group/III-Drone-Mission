@@ -53,8 +53,10 @@ MissionExecutor::MissionExecutor(
     odometry_sub_ = node->create_subscription<px4_msgs::msg::VehicleOdometry>(
         "/fmu/out/vehicle_odometry",
         px4_sub_qos,
-        [&](const px4_msgs::msg::VehicleOdometry::SharedPtr msg) {
-            vehicle_odometry_adapter_history_->Store(VehicleOdometryAdapter(*msg));
+        // Captures only the shared history: this callback runs on its own
+        // group and may still be delivering while the executor is destroyed.
+        [history = vehicle_odometry_adapter_history_](const px4_msgs::msg::VehicleOdometry::SharedPtr msg) {
+            history->Store(VehicleOdometryAdapter(*msg));
         },
         sub_opts
     );
