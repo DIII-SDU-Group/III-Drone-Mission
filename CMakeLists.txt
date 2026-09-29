@@ -82,6 +82,7 @@ set(III_DRONE_MISSION_HDRS
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/port_types.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/behavior_node_registry.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/latest_message_subscription.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/powerline_geometry.hpp"
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/behavior/action_nodes/maneuver_action_node.hpp"
@@ -521,6 +522,9 @@ if(BUILD_TESTING)
   ament_add_gtest(iii_drone_cable_charging_blackboard_test
     test/cable_charging_blackboard_test.cpp
   )
+  ament_add_gtest(iii_drone_latest_message_subscription_test
+    test/latest_message_subscription_test.cpp
+  )
   ament_add_gtest(iii_drone_pending_activation_callback_test
     test/pending_activation_callback_test.cpp
   )
@@ -576,6 +580,11 @@ if(BUILD_TESTING)
     target_include_directories(iii_drone_cable_charging_blackboard_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
     target_link_libraries(iii_drone_cable_charging_blackboard_test iii_drone_mission_lib)
     ament_target_dependencies(iii_drone_cable_charging_blackboard_test ${dependencies})
+  endif()
+  if(TARGET iii_drone_latest_message_subscription_test)
+    target_include_directories(iii_drone_latest_message_subscription_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+    target_link_libraries(iii_drone_latest_message_subscription_test iii_drone_mission_lib)
+    ament_target_dependencies(iii_drone_latest_message_subscription_test ${dependencies})
   endif()
   if(TARGET iii_drone_pending_activation_callback_test)
     target_include_directories(iii_drone_pending_activation_callback_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})

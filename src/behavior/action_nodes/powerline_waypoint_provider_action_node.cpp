@@ -29,14 +29,15 @@ PowerlineWaypointProviderActionNode::PowerlineWaypointProviderActionNode(
     tf2_ros::Buffer::SharedPtr tf_buffer,
     rclcpp::Node * node,
     Configuration::SharedPtr params
-) : SyncActionNode(name, conf), tf_buffer_(tf_buffer), node_(node), configuration_(params) {
-    combined_drone_awareness_sub_ = node_->create_subscription<iii_drone_interfaces::msg::CombinedDroneAwareness>(
+) : SyncActionNode(name, conf),
+    tf_buffer_(tf_buffer),
+    node_(node),
+    configuration_(params),
+    combined_drone_awareness_(
+        *node_,
         "/control/maneuver_controller/combined_drone_awareness",
-        rclcpp::QoS(1),
-        [this](const iii_drone_interfaces::msg::CombinedDroneAwareness::SharedPtr msg) {
-            latest_ground_altitude_estimate_.store(msg->ground_altitude_estimate);
-        }
-    );
+        rclcpp::QoS(1)
+    ) {
 }
 
 PortsList PowerlineWaypointProviderActionNode::providedPorts() {
@@ -77,7 +78,10 @@ double PowerlineWaypointProviderActionNode::minimumWaypointZ() const {
     ).as_double();
     const double mission_waypoint_margin = 0.5;
     const double fallback_minimum_z = minimum_target_altitude + mission_waypoint_margin;
-    const double ground_altitude_estimate = latest_ground_altitude_estimate_.load();
+    const auto awareness = combined_drone_awareness_.latest();
+    const double ground_altitude_estimate = awareness
+        ? awareness->message.ground_altitude_estimate
+        : std::numeric_limits<double>::quiet_NaN();
     if (!std::isfinite(ground_altitude_estimate)) {
         RCLCPP_WARN(
             node_->get_logger(),

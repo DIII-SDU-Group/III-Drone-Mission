@@ -8,7 +8,7 @@
 // Std:
 
 #include <memory>
-#include <mutex>
+#include <cstdint>
 
 /*****************************************************************************/
 // ROS2:
@@ -20,6 +20,11 @@
 // III-Drone-Configuration:
 
 #include <iii_drone_configuration/configuration.hpp>
+
+/*****************************************************************************/
+// III-Drone-Mission:
+
+#include <iii_drone_mission/behavior/latest_message_subscription.hpp>
 
 /*****************************************************************************/
 // BT.CPP:
@@ -49,12 +54,10 @@ namespace behavior {
     private:
         std::shared_ptr<rclcpp::Node> node_;
         iii_drone::configuration::Configuration::SharedPtr configuration_;
-        rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr battery_voltage_sub_;
+        LatestMessageSubscription<std_msgs::msg::Float32> battery_voltage_;
 
-        mutable std::mutex mutex_;
-        bool has_voltage_ = false;
-        float latest_voltage_ = 0.0f;
-        rclcpp::Time latest_voltage_receive_time_;
+        // Tick-thread state only.
+        uint64_t last_voltage_sequence_ = 0;
         rclcpp::Time low_voltage_since_;
         rclcpp::Time last_stale_retry_time_;
         unsigned int stale_failure_count_ = 0;
