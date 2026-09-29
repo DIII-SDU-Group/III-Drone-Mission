@@ -245,8 +245,9 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Powerl
         return ret;
     }
 
-    tf_buffer_.reset();
+    // The listener's spin thread writes into the buffer: stop it first.
     tf_listener_.reset();
+    tf_buffer_.reset();
 
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
