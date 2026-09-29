@@ -203,6 +203,7 @@ std::vector<rclcpp::Parameter> referenceClientParameters() {
         integer("/mission/get_reference_timeout_ms"),
         integer("/mission/reference_loss_timeout_ms", 1000),
         integer("/mission/reference_rebase_timeout_ms", 1000),
+        decimal("/control/maneuver_controller/minimum_target_altitude", 0.5),
         integer("/control/maneuver_controller/maneuver_execution_period_ms"),
         integer("/control/maneuver_controller/reference_stream_timeout_ms", 1000),
         decimal("/mission/reference_continuity_position_tolerance_m"),

@@ -104,6 +104,7 @@ void DeclareManagedParameters(LifecycleConfigurator & configurator)
     configurator.DeclareParameter("/mission/get_reference_timeout_ms", int_t);
     configurator.DeclareParameter("/mission/reference_loss_timeout_ms", int_t);
     configurator.DeclareParameter("/mission/reference_rebase_timeout_ms", int_t);
+    configurator.DeclareParameter("/control/maneuver_controller/minimum_target_altitude", double_t);
     configurator.DeclareParameter("/control/maneuver_controller/maneuver_execution_period_ms", int_t);
     configurator.DeclareParameter("/control/maneuver_controller/reference_stream_timeout_ms", int_t);
     configurator.DeclareParameter("/mission/reference_continuity_position_tolerance_m", double_t);
@@ -129,6 +130,7 @@ void DeclareManagedParameters(LifecycleConfigurator & configurator)
         ConfigurationEntry("/mission/get_reference_timeout_ms", int_t),
         ConfigurationEntry("/mission/reference_loss_timeout_ms", int_t),
         ConfigurationEntry("/mission/reference_rebase_timeout_ms", int_t),
+        ConfigurationEntry("/control/maneuver_controller/minimum_target_altitude", double_t),
         ConfigurationEntry("/control/maneuver_controller/maneuver_execution_period_ms", int_t),
         ConfigurationEntry("/control/maneuver_controller/reference_stream_timeout_ms", int_t),
         ConfigurationEntry("/mission/reference_continuity_position_tolerance_m", double_t),

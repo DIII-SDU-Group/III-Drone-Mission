@@ -83,6 +83,7 @@ Configuration::SharedPtr makeConfiguration() {
         {"/control/maneuver_controller/controlled_cancel_yaw_rate_threshold_rad_s", rclcpp::ParameterType::PARAMETER_DOUBLE},
         {"/control/maneuver_controller/controlled_cancel_settle_time_s", rclcpp::ParameterType::PARAMETER_DOUBLE},
         {"/mission/reference_rebase_timeout_ms", rclcpp::ParameterType::PARAMETER_INTEGER},
+        {"/control/maneuver_controller/minimum_target_altitude", rclcpp::ParameterType::PARAMETER_DOUBLE},
         {"/mission/wait_for_maneuver_start_timeout_ms", rclcpp::ParameterType::PARAMETER_INTEGER},
         {"/mission/max_failed_attempts_during_maneuver", rclcpp::ParameterType::PARAMETER_INTEGER},
         {"/mission/use_nans_when_hovering", rclcpp::ParameterType::PARAMETER_BOOL},
@@ -94,6 +95,9 @@ Configuration::SharedPtr makeConfiguration() {
         [](const std::string & name) -> rclcpp::Parameter {
             if (name == "/mission/use_nans_when_hovering") {
                 return rclcpp::Parameter(name, false);
+            }
+            if (name == "/control/maneuver_controller/minimum_target_altitude") {
+                return rclcpp::Parameter(name, 0.5);
             }
             if (
                 name == "/control/maneuver_controller/controlled_cancel_max_jerk_m_s3" ||
