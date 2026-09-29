@@ -6,6 +6,8 @@
 #include <iii_drone_core/diagnostics/hil_trace.hpp>
 
 #include <algorithm>
+#include <chrono>
+#include <thread>
 
 using namespace iii_drone::utils;
 using namespace iii_drone::mission;
@@ -209,6 +211,45 @@ void MissionExecutor::Start(
 
 }
 
+namespace {
+
+// rclcpp's remove_node() stops new callbacks of a node but does not wait for
+// ones already running on other executor threads. The PX4 modes and the mode
+// executor capture raw `this` in their callbacks, so they may only be
+// destroyed once every callback group of their node is idle. All of the
+// node's executor-spun groups are MutuallyExclusive, whose
+// can_be_taken_from() is false exactly while one of their callbacks runs.
+void waitForNodeCallbacksIdle(const rclcpp::Node::SharedPtr & node) {
+    using namespace std::chrono_literals;
+    const auto start = std::chrono::steady_clock::now();
+    auto next_warning = start + 1s;
+    int consecutive_idle = 0;
+    // A callback taken just before the removal may start after one idle
+    // sample; require a few consecutive idle observations.
+    while (consecutive_idle < 3) {
+        bool idle = true;
+        node->for_each_callback_group([&idle](const rclcpp::CallbackGroup::SharedPtr & group) {
+            if (group->type() == rclcpp::CallbackGroupType::MutuallyExclusive &&
+                !group->can_be_taken_from().load()) {
+                idle = false;
+            }
+        });
+        consecutive_idle = idle ? consecutive_idle + 1 : 0;
+        const auto now = std::chrono::steady_clock::now();
+        if (!idle && now >= next_warning) {
+            RCLCPP_WARN(
+                node->get_logger(),
+                "MissionExecutor::Stop(): waiting %.1f s for running px4_mode callbacks before destroying the modes",
+                std::chrono::duration<double>(now - start).count()
+            );
+            next_warning = now + 1s;
+        }
+        std::this_thread::sleep_for(5ms);
+    }
+}
+
+} // namespace
+
 void MissionExecutor::Stop() {
 
     auto stop = iii_drone::diagnostics::HilTrace::event("mission_executor_stop");
@@ -227,19 +268,21 @@ void MissionExecutor::Stop() {
         mode_node = mode_provider_->mode_node();
     }
 
+    // Quiesce the mode node before destroying anything its callbacks use.
+    if (mode_node != nullptr) {
+        executor_.remove_node(
+            mode_node,
+            true
+        );
+        waitForNodeCallbacksIdle(mode_node);
+    }
+
     generic_mode_executor_.reset();
     generic_mode_executor_ = nullptr;
 
     if (mode_provider_ != nullptr) {
         mode_provider_->Stop();
         mode_provider_->Cleanup();
-    }
-
-    if (mode_node != nullptr) {
-        executor_.remove_node(
-            mode_node,
-            true
-        );
     }
 
     mode_provider_.reset();
