@@ -453,3 +453,32 @@ TEST(InspectionWaypointProgress, BlendsEveryRepeatingLoopWaypoint) {
     }
     EXPECT_FALSE(InspectionWaypointShouldBlendToNext(0, 7, 0));
 }
+
+TEST(CorridorInspectionRoute, ReportsWhyAResumedStartCannotBeRouted) {
+    // A resume that does not apply (vehicle far from the interruption point)
+    // falls back to a fresh start; when that is rejected too, the reason must
+    // name both, so an in-flight failure is diagnosable from the log alone.
+    const CorridorInspectionResume resume{
+        "positive_start", 3, 1, 0, point(4.0, -3.5, 6.75)};
+    std::string reason;
+    const auto route = BuildCorridorInspectionRoute(
+        kConductors, kPowerlineDirection, kPylonStart, kPylonEnd,
+        point(5.0, 0.0, 2.0), 1.5, 2.0, 2.0, 2.0, 3.0, 0.5, 0.35,
+        resume, 0.75, &reason);
+
+    EXPECT_FALSE(route);
+    EXPECT_NE(reason.find("resume (route=positive_start waypoint=3 loop_start=1"), std::string::npos) << reason;
+    EXPECT_NE(reason.find("fresh start rejected:"), std::string::npos) << reason;
+    EXPECT_NE(reason.find("inside the corridor"), std::string::npos) << reason;
+}
+
+TEST(CorridorInspectionRoute, ReportsInvalidGeometry) {
+    std::string reason;
+    const auto route = BuildCorridorInspectionRoute(
+        {point(5.0, 0.0, 6.0)}, kPowerlineDirection, kPylonStart, kPylonEnd,
+        point(5.0, -5.0, 6.0), 1.5, 2.0, 2.0, 2.0, 3.0, 0.5, 0.35,
+        std::nullopt, 0.75, &reason);
+
+    EXPECT_FALSE(route);
+    EXPECT_EQ(reason, "inspection geometry or configuration is invalid");
+}

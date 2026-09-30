@@ -1,3 +1,4 @@
+#include <sstream>
 /*****************************************************************************/
 // Includes
 /*****************************************************************************/
@@ -257,8 +258,14 @@ std::optional<CorridorInspectionRoute> iii_drone::behavior::BuildCorridorInspect
     double pylon_span_margin_m,
     double max_pylon_direction_mismatch_rad,
     const std::optional<CorridorInspectionResume> & resume,
-    double resume_position_tolerance_m
+    double resume_position_tolerance_m,
+    std::string * failure_reason
 ) {
+    const auto fail = [failure_reason](const std::string & reason)
+        -> std::optional<CorridorInspectionRoute> {
+        if (failure_reason) *failure_reason = reason;
+        return std::nullopt;
+    };
     (void)under_cable_clearance_m;
     (void)inside_corridor_threshold_m;
     if (
@@ -268,13 +275,13 @@ std::optional<CorridorInspectionRoute> iii_drone::behavior::BuildCorridorInspect
         pylon_structure_extent_m < 0.0 ||
         under_cable_clearance_m < 0.0
     ) {
-        return std::nullopt;
+        return fail("inspection geometry or configuration is invalid");
     }
 
     const auto powerline_axes = pl_geom::ComputeAxes(powerline_direction);
     const auto highest_conductor = pl_geom::SelectHighestPoint(powerline_points);
     if (!powerline_axes || !highest_conductor) {
-        return std::nullopt;
+        return fail("powerline direction or conductors are invalid");
     }
 
     if (!pl_geom::PylonSpanMatchesPowerlineDirection(
@@ -283,7 +290,7 @@ std::optional<CorridorInspectionRoute> iii_drone::behavior::BuildCorridorInspect
         powerline_axes->direction_no_z,
         max_pylon_direction_mismatch_rad
     )) {
-        return std::nullopt;
+        return fail("pylon span does not follow the powerline direction");
     }
 
     vector_t corridor_direction = xyOnly(pylon_b - pylon_a);
@@ -292,7 +299,7 @@ std::optional<CorridorInspectionRoute> iii_drone::behavior::BuildCorridorInspect
     }
     const auto axes = pl_geom::ComputeAxes(corridor_direction);
     if (!axes) {
-        return std::nullopt;
+        return fail("pylon positions do not define a corridor");
     }
 
     const auto side_split = splitInspectionSideConductors(
@@ -300,7 +307,7 @@ std::optional<CorridorInspectionRoute> iii_drone::behavior::BuildCorridorInspect
         axes->cross_corridor_no_z
     );
     if (!side_split) {
-        return std::nullopt;
+        return fail("conductors cannot be split into corridor sides");
     }
 
     const auto positive_outer = pl_geom::FurthestPointXY(
@@ -312,12 +319,12 @@ std::optional<CorridorInspectionRoute> iii_drone::behavior::BuildCorridorInspect
         side_split->middle_point
     );
     if (!positive_outer || !negative_outer) {
-        return std::nullopt;
+        return fail("outer side conductors are unavailable");
     }
     const auto positive_highest = pl_geom::SelectHighestPoint(side_split->positive_points);
     const auto negative_highest = pl_geom::SelectHighestPoint(side_split->negative_points);
     if (!positive_highest || !negative_highest) {
-        return std::nullopt;
+        return fail("top side conductors are unavailable");
     }
 
     point_t pylon_start = pylon_a;
@@ -335,7 +342,7 @@ std::optional<CorridorInspectionRoute> iii_drone::behavior::BuildCorridorInspect
     const double end_along =
         xyOnly(pylon_end).dot(axes->direction_no_z) - pylon_centerline_setback_m;
     if (start_along >= end_along) {
-        return std::nullopt;
+        return fail("pylon span is too short for the configured endpoint clearances");
     }
     const double positive_cross =
         xyOnly(*positive_outer).dot(axes->cross_corridor_no_z) + inspection_clearance_m;
@@ -419,6 +426,16 @@ std::optional<CorridorInspectionRoute> iii_drone::behavior::BuildCorridorInspect
         }
     }
 
+    std::string resume_note;
+    if (resume) {
+        std::ostringstream note;
+        note << "resume (route=" << resume->selected_route
+             << " waypoint=" << resume->active_waypoint_index
+             << " loop_start=" << resume->loop_start_index
+             << " distance_m=" << (start_position - resume->interrupted_position).norm()
+             << ") not applied; ";
+        resume_note = note.str();
+    }
     const auto eligibility = EvaluateCorridorInspectionStart(
         powerline_points,
         powerline_direction,
@@ -432,7 +449,12 @@ std::optional<CorridorInspectionRoute> iii_drone::behavior::BuildCorridorInspect
         max_pylon_direction_mismatch_rad
     );
     if (!eligibility.evaluable || !eligibility.eligible || !eligibility.ingress_point_valid) {
-        return std::nullopt;
+        std::string reasons;
+        for (const auto & reason : eligibility.failure_reasons) {
+            reasons += (reasons.empty() ? "" : "; ") + reason;
+        }
+        return fail(resume_note + "fresh start rejected: " +
+            (reasons.empty() ? std::string("ingress point unavailable") : reasons));
     }
 
     const bool positive_side = eligibility.side == "positive";
@@ -450,7 +472,7 @@ std::optional<CorridorInspectionRoute> iii_drone::behavior::BuildCorridorInspect
         }
     }
     if (selected == nullptr) {
-        return std::nullopt;
+        return fail(resume_note + "no route candidate starts on the " + eligibility.side + " side");
     }
 
     CorridorInspectionRoute route;
@@ -610,6 +632,7 @@ NodeStatus PhaseWaypointProviderActionNode::tick() {
         return NodeStatus::FAILURE;
     }
 
+    std::string route_failure;
     const auto route = BuildCorridorInspectionRoute(
         powerline_points,
         powerline_adapter.projection_plane().normal,
@@ -624,12 +647,16 @@ NodeStatus PhaseWaypointProviderActionNode::tick() {
         pylon_span_margin_m,
         max_direction_mismatch_rad,
         resume,
-        0.75
+        0.75,
+        &route_failure
     );
     if (!route) {
         RCLCPP_WARN(
             node_->get_logger(),
-            "PhaseWaypointProviderActionNode::tick(): Failed to generate corridor inspection route"
+            "PhaseWaypointProviderActionNode::tick(): Failed to generate corridor inspection route "
+            "from [%.3f, %.3f, %.3f]: %s",
+            start_state.position()(0), start_state.position()(1), start_state.position()(2),
+            route_failure.c_str()
         );
         return NodeStatus::FAILURE;
     }
