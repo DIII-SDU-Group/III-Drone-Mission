@@ -181,7 +181,7 @@ PowerlineOverviewProviderNode::PowerlineOverviewProviderNode(
                 status_msg.data = "No powerline stored";
             }
 
-            stored_powerline_status_pub_->publish(status_msg);
+            if (stored_powerline_status_pub_->is_activated()) stored_powerline_status_pub_->publish(status_msg);
             iii_drone_interfaces::msg::PowerlineOverviewStatus overview_status;
             overview_status.stamp = status_msg.stamp;
             overview_status.valid = has_stored_powerline_;
@@ -197,7 +197,7 @@ PowerlineOverviewProviderNode::PowerlineOverviewProviderNode(
                     ? "GNSS powerline data cannot be reprojected into the active world frame"
                     : "no powerline overview is stored";
             }
-            overview_status_pub_->publish(overview_status);
+            if (overview_status_pub_->is_activated()) overview_status_pub_->publish(overview_status);
 
         }
     );

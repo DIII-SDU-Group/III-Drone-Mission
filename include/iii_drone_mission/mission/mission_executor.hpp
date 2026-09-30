@@ -114,6 +114,10 @@ namespace mission {
             return mode_provider_;
         }
 
+        bool stopped() const {
+            return !is_started_ && generic_mode_executor_ == nullptr && mode_provider_ == nullptr;
+        }
+
         bool mission_active() const {
             return generic_mode_executor_ != nullptr && generic_mode_executor_->active();
         }

@@ -628,7 +628,8 @@ void MissionExecutorNode::cleanup() {
     // Mission Executor
     if (mission_executor_ != nullptr) {
         RCLCPP_INFO(get_logger(), "MissionExecutorNode::cleanup(): Cleaning up mission executor.");
-        mission_executor_->Stop();
+        // Deactivation normally stopped it already.
+        if (!mission_executor_->stopped()) mission_executor_->Stop();
         mission_executor_->Cleanup();
         mission_executor_.reset();
         mission_executor_ = nullptr;
@@ -769,7 +770,8 @@ void MissionExecutorNode::publishMissionModeStatus() {
         msg.mission_state_label = "idle";
     }
 
-    mission_status_publisher_->publish(msg);
+    // A lifecycle publisher drops messages while inactive; don't ask it to.
+    if (mission_status_publisher_->is_activated()) mission_status_publisher_->publish(msg);
 
 }
 

@@ -52,8 +52,8 @@ PylonOverviewProviderNode::PylonOverviewProviderNode(
                 msg.data = "No valid pylon overview stored";
             }
 
-            status_pub_->publish(msg);
-            overview_status_pub_->publish(statusLocked());
+            if (status_pub_->is_activated()) status_pub_->publish(msg);
+            if (overview_status_pub_->is_activated()) overview_status_pub_->publish(statusLocked());
         }
     );
 }
