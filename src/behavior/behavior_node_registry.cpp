@@ -81,6 +81,7 @@ std::vector<BT::TreeNodeManifest> CustomBehaviorNodeManifests()
         Manifest<VerifyGripperClosedConditionNode>("VerifyGripperClosed"),
         Manifest<ShouldRechargeBatteryLowConditionNode>("ShouldRechargeBatteryLow"),
         Manifest<CableChargingMonitorActionNode>("CableChargingMonitor"),
+        Manifest<WaitForPX4AirborneActionNode>("WaitForPX4Airborne"),
         Manifest<VerifyDisarmedConditionNode>("VerifyDisarmed"),
         Manifest<GetGripperAlignmentYawConditionNode>("GetGripperAlignmentYaw"),
         Manifest<ModeExecutorActionNode>("ModeExecutorAction"),

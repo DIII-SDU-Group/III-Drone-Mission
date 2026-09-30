@@ -59,6 +59,7 @@
 #include <iii_drone_mission/behavior/action_nodes/runtime_intent_action_nodes.hpp>
 #include <iii_drone_mission/behavior/action_nodes/inspection_waypoint_progress_nodes.hpp>
 #include <iii_drone_mission/behavior/action_nodes/cable_charging_monitor_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/wait_for_px4_airborne_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/split_point_queue_action_node.hpp>
 #include <iii_drone_mission/behavior/action_nodes/partition_point_queue_action_node.hpp>
 

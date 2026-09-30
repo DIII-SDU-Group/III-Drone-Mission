@@ -31,18 +31,48 @@
                 </Delay>
             </RetryUntilSuccessful>
 
-            <Action ID="HoverOnCable" name="pre_release_upward_thrust"
-                target_cable_id="{@target_cable_id}"
-                duration_s="7."
-                target_upwards_velocity="2.0"
-                stop_maneuver_after_timeout_ms="7000"
-            />
-
-            <Action
-                  ID="Sleep"
-                  name="pre_release_thrust_wait"
-                  msec="5000"
-            />
+            <!-- Hold the cable before opening the gripper. The push is an
+                 upward acceleration (thrust = hover thrust * (1 + a/g)), not a
+                 velocity: against the cable a velocity setpoint winds PX4's
+                 integrator up to maximum thrust. The gripper opens only once
+                 the push is established and PX4 has reported the vehicle
+                 airborne without interruption, so PX4 cannot consider it
+                 landed (cut thrust or disarm) while the gripper opens.
+                 Otherwise the vehicle disarms and stays on the cable. -->
+            <Fallback name="hold_cable_or_stay_on_it">
+                <Sequence name="push_until_px4_airborne">
+                    <Action ID="HoverOnCable" name="pre_release_push"
+                        target_cable_id="{@target_cable_id}"
+                        cable_release_push="true"
+                        sustain_action="true"
+                        duration_s="10."
+                        stop_maneuver_after_timeout_ms="10000"
+                    />
+                    <Action ID="WaitForPX4Airborne" name="px4_airborne_before_release"
+                        hold_ms="1000"
+                        timeout_ms="5000"
+                    />
+                </Sequence>
+                <Sequence name="push_failed_stay_on_cable">
+                    <Action
+                        ID="LogMessage"
+                        name="log_push_failed"
+                        message="Leave cable: push against the cable was not established; keeping the gripper closed and disarming on the cable."
+                        log_level="3"
+                    />
+                    <RetryUntilSuccessful name="disarm_on_cable_after_failed_push" num_attempts="5">
+                        <Delay name="delay_disarm_after_failed_push" delay_msec="500">
+                            <Action
+                                ID="ModeExecutorAction"
+                                name="disarm_on_cable"
+                                action_request_type="4"
+                                force_disarm="true"
+                            />
+                        </Delay>
+                    </RetryUntilSuccessful>
+                    <AlwaysFailure name="leave_cable_failed_on_cable"/>
+                </Sequence>
+            </Fallback>
 
             <Action 
                   ID="GripperCommand" 

@@ -651,6 +651,13 @@ void TreeExecutor::registerNodes() {
     }
 
     {
+        factory_.registerNodeType<WaitForPX4AirborneActionNode>(
+            "WaitForPX4Airborne",
+            node
+        );
+    }
+
+    {
         factory_.registerNodeType<CableChargingMonitorActionNode>(
             "CableChargingMonitor",
             node,
