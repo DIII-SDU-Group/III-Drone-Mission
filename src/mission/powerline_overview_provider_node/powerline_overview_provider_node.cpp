@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <limits>
 #include <optional>
+#include <iii_drone_core/utils/multi_threaded_executor.hpp>
 
 using namespace iii_drone::mission::powerline_overview_provider_node;
 using namespace iii_drone::adapters;
@@ -716,7 +717,7 @@ int main(int argc, char * argv[])
 {
     rclcpp::init(argc, argv);
 
-    rclcpp::executors::MultiThreadedExecutor executor;
+    iii_drone::utils::MultiThreadedExecutor executor;
 
     auto node = std::make_shared<PowerlineOverviewProviderNode>();
 

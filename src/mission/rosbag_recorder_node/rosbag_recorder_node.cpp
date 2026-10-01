@@ -19,6 +19,7 @@
 #include <thread>
 #include <unistd.h>
 #include <vector>
+#include <iii_drone_core/utils/multi_threaded_executor.hpp>
 
 using namespace iii_drone::mission::rosbag_recorder_node;
 
@@ -465,7 +466,7 @@ void RosbagRecorderNode::fillStatus(iii_drone_interfaces::srv::GetRosbagRecordin
 int main(int argc, char * argv[]) {
     rclcpp::init(argc, argv);
 
-    rclcpp::executors::MultiThreadedExecutor executor;
+    iii_drone::utils::MultiThreadedExecutor executor;
     auto node = std::make_shared<RosbagRecorderNode>();
 
     executor.add_node(node->get_node_base_interface());

@@ -23,7 +23,7 @@ MissionExecutor::MissionExecutor(
     tf2_ros::Buffer::SharedPtr tf_buffer,
     MissionSpecification::SharedPtr mission_specification,
     rclcpp::CallbackGroup::SharedPtr odometry_sub_callback_group,
-    rclcpp::executors::MultiThreadedExecutor & executor
+    rclcpp::Executor & executor
 ) : node_(node),
     tf_buffer_(tf_buffer),
     odometry_sub_callback_group_(odometry_sub_callback_group),

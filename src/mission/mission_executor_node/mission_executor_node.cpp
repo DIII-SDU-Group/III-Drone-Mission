@@ -18,6 +18,7 @@
 
 #include <lifecycle_msgs/msg/state.hpp>
 #include <px4_msgs/msg/vehicle_status.hpp>
+#include <iii_drone_core/utils/multi_threaded_executor.hpp>
 
 using namespace iii_drone::configuration;
 using namespace iii_drone::mission;
@@ -163,7 +164,7 @@ void DeclareManagedParameters(LifecycleConfigurator & configurator)
 /*****************************************************************************/
 
 MissionExecutorNode::MissionExecutorNode(
-    rclcpp::executors::MultiThreadedExecutor & executor_handle,
+    rclcpp::Executor & executor_handle,
     std::string node_name,
     std::string node_namespace,
     const rclcpp::NodeOptions & options
@@ -900,7 +901,7 @@ int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IONBF, BUFSIZ);
     rclcpp::init(argc, argv);
 
-    rclcpp::executors::MultiThreadedExecutor executor;
+    iii_drone::utils::MultiThreadedExecutor executor;
 
     auto node = std::make_shared<MissionExecutorNode>(
         executor

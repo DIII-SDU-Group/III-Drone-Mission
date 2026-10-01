@@ -48,6 +48,7 @@
 
 #include <px4_ros2/components/mode.hpp>
 #include <yaml-cpp/yaml.h>
+#include <iii_drone_core/utils/multi_threaded_executor.hpp>
 
 namespace {
 
@@ -1603,7 +1604,7 @@ int main(int argc, char * argv[]) {
         return 1;
     }
 
-    rclcpp::executors::MultiThreadedExecutor executor;
+    iii_drone::utils::MultiThreadedExecutor executor;
     executor.add_node(node);
     executor.add_callback_group(
         mode->operationCallbackGroup(),

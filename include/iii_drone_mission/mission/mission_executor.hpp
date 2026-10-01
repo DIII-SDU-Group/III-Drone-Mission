@@ -78,7 +78,7 @@ namespace mission {
             tf2_ros::Buffer::SharedPtr tf_buffer,
             MissionSpecification::SharedPtr mission_specification,
             rclcpp::CallbackGroup::SharedPtr odometry_sub_callback_group,
-            rclcpp::executors::MultiThreadedExecutor & executor
+            rclcpp::Executor & executor
         );
 
         ~MissionExecutor();
@@ -151,7 +151,7 @@ namespace mission {
 
         iii_drone::px4::GenericModeExecutor::SharedPtr generic_mode_executor_;
 
-        rclcpp::executors::MultiThreadedExecutor & executor_;
+        rclcpp::Executor & executor_;
 
         bool is_started_ = false;
         bool is_configured_ = false;

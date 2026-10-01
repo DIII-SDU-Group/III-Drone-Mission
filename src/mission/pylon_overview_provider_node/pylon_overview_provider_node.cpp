@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <filesystem>
+#include <iii_drone_core/utils/multi_threaded_executor.hpp>
 
 using namespace iii_drone::mission::pylon_overview_provider_node;
 
@@ -559,7 +560,7 @@ int main(int argc, char ** argv)
 
     auto node = std::make_shared<PylonOverviewProviderNode>();
 
-    rclcpp::executors::MultiThreadedExecutor executor;
+    iii_drone::utils::MultiThreadedExecutor executor;
     executor.add_node(node->get_node_base_interface());
     executor.spin();
 

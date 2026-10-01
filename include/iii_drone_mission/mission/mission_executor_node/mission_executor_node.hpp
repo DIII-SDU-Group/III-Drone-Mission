@@ -59,7 +59,7 @@ namespace mission {
     class MissionExecutorNode : public rclcpp_lifecycle::LifecycleNode {
     public:
         explicit MissionExecutorNode(
-            rclcpp::executors::MultiThreadedExecutor & executor_handle,
+            rclcpp::Executor & executor_handle,
             std::string node_name = "mission_executor",
             std::string node_namespace = "/mission/mission_executor",
             const rclcpp::NodeOptions & options = rclcpp::NodeOptions()
@@ -127,7 +127,7 @@ namespace mission {
         tf2_ros::Buffer::SharedPtr tf_buffer_;
         std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
 
-        rclcpp::executors::MultiThreadedExecutor & executor_handle_;
+        rclcpp::Executor & executor_handle_;
 
         void cleanup();
         void publishMissionModeStatus();
