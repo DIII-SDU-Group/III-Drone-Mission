@@ -394,8 +394,7 @@ std::optional<CorridorInspectionRoute> iii_drone::behavior::BuildCorridorInspect
     if (
         resume &&
         resume_position_tolerance_m >= 0.0 &&
-        (start_position - resume->interrupted_position).norm() <= resume_position_tolerance_m &&
-        resume->active_waypoint_index >= resume->loop_start_index
+        (start_position - resume->interrupted_position).norm() <= resume_position_tolerance_m
     ) {
         const auto resumed_candidate = std::find_if(
             candidates.begin(),
@@ -404,8 +403,14 @@ std::optional<CorridorInspectionRoute> iii_drone::behavior::BuildCorridorInspect
                 return candidate.name == resume->selected_route;
             }
         );
+        // Interrupted on the one-time ingress leg: the ingress ends at the
+        // loop, and the aircraft is back where it was interrupted (possibly at
+        // the ingress point itself, which a fresh start rejects as inside the
+        // corridor), so continue at the loop's first waypoint.
         const std::size_t active_loop_index =
-            resume->active_waypoint_index - resume->loop_start_index;
+            resume->active_waypoint_index >= resume->loop_start_index
+                ? resume->active_waypoint_index - resume->loop_start_index
+                : 0;
         if (
             resumed_candidate != candidates.end() &&
             active_loop_index < resumed_candidate->waypoints.size()

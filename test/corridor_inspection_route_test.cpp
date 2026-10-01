@@ -341,6 +341,47 @@ TEST(CorridorInspectionRoute, ResumesInterruptedSegmentAtItsActiveTarget) {
     expectPointNear(route->waypoints[7], 4.0, -3.5, 7.5);
 }
 
+// HIL: interrupted at the ingress point while still heading for it (active
+// waypoint 0, loop start 1). Back there after charging, a fresh start is
+// rejected as inside the corridor; the resume continues at the loop start.
+TEST(CorridorInspectionRoute, ResumesIngressInterruptionAtLoopStart) {
+    // The ingress point of a fresh start from (5.0, 4.5, 9.0).
+    const point_t interrupted_position = point(5.0, 3.5, 6.0);
+    const CorridorInspectionResume resume{
+        "positive_start",
+        0,
+        1,
+        0,
+        interrupted_position,
+    };
+
+    const auto route = BuildCorridorInspectionRoute(
+        kConductors,
+        kPowerlineDirection,
+        kPylonStart,
+        kPylonEnd,
+        interrupted_position,
+        1.5,
+        2.0,
+        2.0,
+        2.0,
+        3.0,
+        0.5,
+        0.35,
+        resume,
+        0.75
+    );
+
+    ASSERT_TRUE(route);
+    EXPECT_EQ(route->selected_route, "positive_start");
+    EXPECT_TRUE(route->resumed);
+    EXPECT_EQ(route->loop_route_offset, 0U);
+    EXPECT_EQ(route->loop_start_index, 0U);
+    ASSERT_EQ(route->waypoints.size(), 8U);
+    expectPointNear(route->waypoints[0], 4.0, 3.5, 6.0);
+    expectPointNear(route->waypoints[1], 4.0, 3.5, 7.5);
+}
+
 TEST(CorridorInspectionRoute, AccumulatesResumeOffsetAcrossChargingCycles) {
     const point_t interrupted_position = point(5.0, -3.5, 6.0);
     const CorridorInspectionResume resume{
