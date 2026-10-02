@@ -299,6 +299,13 @@ void GenericModeExecutor::clearGlobalBlackboard(const std::string & reason) {
 
 void GenericModeExecutor::onModeCompleted(px4_ros2::Result result) {
 
+    // This executor now has the scheduled mode's completion (or its
+    // cancellation): the mode stops repeating its completion report.
+    const ManeuverMode::SharedPtr completed_mode = current_mode_.Load();
+    if (completed_mode != nullptr) {
+        completed_mode->AcknowledgeCompletion();
+    }
+
     switch (iii_drone::mission::classifyModeCompletion(
                 MissionControl::Process(),
                 result == px4_ros2::Result::Deactivated,
@@ -1170,7 +1177,7 @@ void GenericModeExecutor::modeExecutorActionAcceptedCallback(const std::shared_p
     current_goal_handle_ = goal_handle;
 
     (*current_mode_)->StayAliveOnNextDeactivate();
-    (*current_mode_)->completed(px4_ros2::Result::Success);
+    (*current_mode_)->ReportCompletion(px4_ros2::Result::Success);
 
 }
 

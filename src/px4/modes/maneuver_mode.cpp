@@ -6,6 +6,8 @@
 #include <iii_drone_core/diagnostics/hil_trace.hpp>
 #include <iii_drone_mission/mission/mission_exit.hpp>
 
+#include <px4_ros2/utils/message_version.hpp>
+
 #include <chrono>
 #include <exception>
 #include <future>
@@ -56,6 +58,12 @@ ManeuverMode::ManeuverMode(
         rclcpp::SystemDefaultsQoS()
     );
 
+    // Same topic and QoS as ModeBase::completed(), for repeated reports.
+    mode_completed_publisher_ = node.create_publisher<px4_msgs::msg::ModeCompleted>(
+        "/fmu/in/mode_completed" + px4_ros2::getMessageNameVersion<px4_msgs::msg::ModeCompleted>(),
+        1
+    );
+
     vehicle_status_subscription_ = node.create_subscription<px4_msgs::msg::VehicleStatus>(
         "/fmu/out/vehicle_status_v1",
         rclcpp::SensorDataQoS(),
@@ -85,6 +93,7 @@ ManeuverMode::ManeuverMode(
             if (message->timestamp != 0) {
                 vehicle_timestamp_ = message->timestamp;
             }
+            executor_in_charge_ = message->executor_in_charge;
             const auto callback_end = std::chrono::steady_clock::now();
             auto callback_exit = iii_drone::diagnostics::HilTrace::event("callback_group_callback_exit");
             callback_exit.text("callback", "maneuver_vehicle_status_v1");
@@ -119,6 +128,7 @@ ManeuverMode::ManeuverMode(
             timer_entry.text("callback_group_type", "MutuallyExclusive");
             timer_entry.commit();
             publishStatus();
+            repeatUnacknowledgedCompletion();
             const auto callback_end = std::chrono::steady_clock::now();
             auto timer_exit = iii_drone::diagnostics::HilTrace::event("mode_status_timer_exit");
             timer_exit.text("mode_key", mode_key_);
@@ -344,6 +354,10 @@ void ManeuverMode::onActivate() {
     RCLCPP_DEBUG(node().get_logger(), "ManeuverMode::onActivate(): Activating mode %s", mode_name_.c_str());
 
     active_ = true;
+    {
+        std::lock_guard<std::mutex> lock(completion_mutex_);
+        completion_report_.Reset();
+    }
     publishStatus();
     startExecutionIfReady();
 
@@ -408,7 +422,7 @@ void ManeuverMode::startExecutionIfReady() {
             maneuver_reference_client_->SetReferenceModeHover(true);
             publishHoldCommand();
             publishStatus();
-            completed(px4_ros2::Result::ModeFailureOther);
+            ReportCompletion(px4_ros2::Result::ModeFailureOther);
             return;
         }
 
@@ -428,7 +442,7 @@ void ManeuverMode::startExecutionIfReady() {
             stop_controls_ = false;
             publishHoldCommand();
             publishStatus();
-            completed(px4_ros2::Result::ModeFailureOther);
+            ReportCompletion(px4_ros2::Result::ModeFailureOther);
             return;
         }
 
@@ -456,7 +470,7 @@ void ManeuverMode::startExecutionIfReady() {
             maneuver_reference_client_->SetReferenceModeHover(true);
             publishHoldCommand();
             publishStatus();
-            completed(px4_ros2::Result::ModeFailureOther);
+            ReportCompletion(px4_ros2::Result::ModeFailureOther);
         } catch (...) {
             RCLCPP_ERROR(
                 node().get_logger(),
@@ -470,7 +484,7 @@ void ManeuverMode::startExecutionIfReady() {
             maneuver_reference_client_->SetReferenceModeHover(true);
             publishHoldCommand();
             publishStatus();
-            completed(px4_ros2::Result::ModeFailureOther);
+            ReportCompletion(px4_ros2::Result::ModeFailureOther);
         }
     
     } else {
@@ -485,6 +499,7 @@ void ManeuverMode::onDeactivate() {
 
     active_ = false;
     emergency_reference_hold_active_ = false;
+    AcknowledgeCompletion();
     publishStatus();
 
     if (!stay_alive_on_next_deactivate_) {
@@ -559,6 +574,69 @@ void ManeuverMode::PrepareForMissionExit() {
     stop_controls_ = true;
     tree_completion_reported_ = true;
     emergency_reference_hold_active_ = false;
+
+}
+
+void ManeuverMode::ReportCompletion(px4_ros2::Result result) {
+
+    {
+        std::lock_guard<std::mutex> lock(completion_mutex_);
+        completion_report_.Report(static_cast<uint8_t>(result), CompletionReport::Clock::now());
+    }
+
+    completed(result);
+
+}
+
+void ManeuverMode::AcknowledgeCompletion() {
+
+    std::lock_guard<std::mutex> lock(completion_mutex_);
+    completion_report_.Acknowledge();
+
+}
+
+void ManeuverMode::repeatUnacknowledgedCompletion() {
+
+    std::optional<CompletionReport::Repeat> repeat;
+    {
+        std::lock_guard<std::mutex> lock(completion_mutex_);
+        repeat = completion_report_.Due(
+            CompletionReport::Clock::now(),
+            active_,
+            executor_in_charge_.Load() != 0
+        );
+    }
+
+    if (!repeat) {
+        return;
+    }
+
+    px4_msgs::msg::ModeCompleted mode_completed{};
+    mode_completed.nav_state = static_cast<uint8_t>(id());
+    mode_completed.result = repeat->result;
+    mode_completed.timestamp = 0; // PX4 stamps it, as for ModeBase::completed()
+    mode_completed_publisher_->publish(mode_completed);
+
+    const double since_report_s = std::chrono::duration<double>(repeat->since_report).count();
+    if (repeat->warn) {
+        RCLCPP_WARN(
+            node().get_logger(),
+            "ManeuverMode::repeatUnacknowledgedCompletion(): Mode executor still has no completion of mode %s (result %s) %.1f s after the report; repeated it %u times",
+            mode_name_.c_str(),
+            px4_ros2::resultToString(static_cast<px4_ros2::Result>(repeat->result)),
+            since_report_s,
+            repeat->count
+        );
+    } else {
+        RCLCPP_INFO(
+            node().get_logger(),
+            "ManeuverMode::repeatUnacknowledgedCompletion(): Mode executor has no completion of mode %s (result %s) %.1f s after the report; repeating it (%u)",
+            mode_name_.c_str(),
+            px4_ros2::resultToString(static_cast<px4_ros2::Result>(repeat->result)),
+            since_report_s,
+            repeat->count
+        );
+    }
 
 }
 
@@ -661,7 +739,7 @@ void ManeuverMode::updateSetpoint(float dt) {
         stop_execution_wait_entered = true;
         tree_executor_->StopExecution(true, "MODE_COMPLETION_REAP");
 
-        // Retire this mode's stream before completed() can activate a successor.
+        // Retire this mode's stream before ReportCompletion() can activate a successor.
         // Do not publish another setpoint from this completed mode meanwhile.
         stop_controls_ = true;
         maneuver_reference_client_->ReleaseReferenceControl(reference_control_owner_.Load());
@@ -673,7 +751,7 @@ void ManeuverMode::updateSetpoint(float dt) {
             tree_success ? "successfully" : "unsuccessfully"
         );
         
-        completed(
+        ReportCompletion(
             tree_success ? px4_ros2::Result::Success : px4_ros2::Result::ModeFailureOther
         );
 

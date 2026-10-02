@@ -10,6 +10,7 @@
 #include <functional>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 
 /*****************************************************************************/
@@ -33,6 +34,8 @@
 
 #include <iii_drone_mission/px4/modes/pending_activation_callback.hpp>
 
+#include <iii_drone_mission/px4/modes/completion_report.hpp>
+
 #include <iii_drone_mission/behavior/trees/tree_executor.hpp>
 
 /*****************************************************************************/
@@ -50,6 +53,7 @@
 /*****************************************************************************/
 // PX4 messages:
 
+#include <px4_msgs/msg/mode_completed.hpp>
 #include <px4_msgs/msg/vehicle_status.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
 
@@ -101,6 +105,16 @@ namespace px4 {
 
         void StopExecution(const char * diagnostic_reason = "MODE_STOP_EXECUTION");
 
+        /**
+         * Report this activation's completion to the mode executor. Unlike
+         * ModeBase::completed(), the report is repeated until the executor
+         * acknowledges it or PX4 moves the mode off (see CompletionReport).
+         */
+        void ReportCompletion(px4_ros2::Result result);
+
+        /** The mode executor received this mode's completion (or cancelled it). */
+        void AcknowledgeCompletion();
+
         void updateSetpoint(float dt) override;
 
         std::string mode_name() const;
@@ -119,6 +133,9 @@ namespace px4 {
         typedef std::unique_ptr<ManeuverMode> UniquePtr;
     
     private:
+        // Completions go through ReportCompletion() so that they are repeated.
+        using px4_ros2::ModeBase::completed;
+
         iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client_;
 
         iii_drone::behavior::TreeExecutor::SharedPtr tree_executor_;
@@ -162,6 +179,16 @@ namespace px4 {
         utils::Atomic<uint8_t> vehicle_component_id_ = 1;
 
         utils::Atomic<uint64_t> vehicle_timestamp_ = 0;
+
+        utils::Atomic<uint8_t> executor_in_charge_ = 0;
+
+        std::mutex completion_mutex_;
+
+        CompletionReport completion_report_;
+
+        rclcpp::Publisher<px4_msgs::msg::ModeCompleted>::SharedPtr mode_completed_publisher_;
+
+        void repeatUnacknowledgedCompletion();
 
         rclcpp::Publisher<iii_drone_interfaces::msg::StringStamped>::SharedPtr status_publisher_;
 
