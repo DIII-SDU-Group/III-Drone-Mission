@@ -338,6 +338,12 @@ public:
         );
 
         operation_callback_group_ = node.create_callback_group(rclcpp::CallbackGroupType::Reentrant, false);
+        // The run_operation server handles its goal, cancel and result requests
+        // one at a time. rclcpp_action (Jazzy) sends the goal response before it
+        // registers the goal, so a result request handled concurrently in that
+        // window is answered STATUS_UNKNOWN and the client sees its accepted goal
+        // finish (HIL soak run 21: the ingress "failed" 5 ms after acceptance).
+        operation_server_callback_group_ = node.create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
         fly_to_position_client_ = createManeuverClient<iii_drone_interfaces::action::FlyToPosition>("fly_to_position");
         follow_waypoint_path_client_ = createManeuverClient<iii_drone_interfaces::action::FollowWaypointPath>("follow_waypoint_path");
@@ -365,7 +371,7 @@ public:
                 handleOperationAccepted(goal_handle);
             },
             rcl_action_server_get_default_options(),
-            operation_callback_group_
+            operation_server_callback_group_
         );
     }
 
@@ -480,6 +486,7 @@ private:
     rclcpp::Publisher<px4_msgs::msg::VehicleCommand>::SharedPtr vehicle_command_pub_;
     rclcpp::CallbackGroup::SharedPtr get_reference_callback_group_;
     rclcpp::CallbackGroup::SharedPtr operation_callback_group_;
+    rclcpp::CallbackGroup::SharedPtr operation_server_callback_group_;
     std::shared_ptr<iii_drone::configuration::Configurator<rclcpp::Node>> configurator_;
     iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client_;
 

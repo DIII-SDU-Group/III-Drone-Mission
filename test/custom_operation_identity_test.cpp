@@ -22,6 +22,10 @@ namespace {
 
 class CustomOperationModeTestAccess {
 public:
+    static rclcpp::CallbackGroup::SharedPtr operationServerCallbackGroup(CustomOperationMode & mode) {
+        return mode.operation_server_callback_group_;
+    }
+
     static rclcpp_action::GoalResponse offerGoal(
         CustomOperationMode & mode,
         const rclcpp_action::GoalUUID & uuid,
@@ -582,6 +586,18 @@ void assertStampedAndComplete(
     ASSERT_TRUE(waitWithoutSpinning([&] { return !fixture.mode.operationActive(); }));
 }
 
+// HIL soak run 21: in a Reentrant group, a result request handled while
+// rclcpp was accepting the goal (response sent before the goal is registered)
+// was answered STATUS_UNKNOWN and the client saw its ingress goal finish.
+TEST(CustomOperationIdentity, OperationServerHandlesItsRequestsOneAtATime) {
+    RclcppContext context;
+    Fixture fixture;
+    const auto group = CustomOperationModeTestAccess::operationServerCallbackGroup(fixture.mode);
+    ASSERT_NE(group, nullptr);
+    EXPECT_EQ(group->type(), rclcpp::CallbackGroupType::MutuallyExclusive);
+    EXPECT_NE(group, fixture.mode.operationCallbackGroup());
+}
+
 TEST(CustomOperationIdentity, AllProductionDispatchersStampAValidIdentity) {
     RclcppContext context;
     Fixture fixture;
@@ -728,12 +744,15 @@ TEST(CustomOperationIdentity, RetiredReservationRejectsLateAcceptedCallbackWitho
     EXPECT_FALSE(fixture.mode.operationActive());
     fixture.mode.onActivate();
     auto second_goal = fixture.send("fly_to_position", "{x: 1, y: 2, z: 3}");
-    ASSERT_TRUE(waitWithoutSpinning([&] { return fixture.fly_to_position.receivedGoal(); }));
+    // The server handles its requests one at a time: the successor's goal
+    // waits for the retired reservation's late accepted callback.
+    EXPECT_FALSE(waitWithoutSpinning([&] { return fixture.fly_to_position.receivedGoal(); }, 300ms));
     {
         std::lock_guard<std::mutex> lock(gate_mutex);
         release_first = true;
     }
     gate_cv.notify_all();
+    ASSERT_TRUE(waitWithoutSpinning([&] { return fixture.fly_to_position.receivedGoal(); }));
     EXPECT_EQ(fixture.mode.activeOperation(), "fly_to_position");
     EXPECT_FALSE(fixture.hover.receivedGoal());
     fixture.fly_to_position.succeedLatest();
