@@ -7,7 +7,6 @@
 /*****************************************************************************/
 // Std:
 
-#include <atomic>
 #include <deque>
 #include <limits>
 #include <vector>
@@ -46,6 +45,8 @@
 
 /*****************************************************************************/
 // III-Drone-Mission:
+
+#include <iii_drone_mission/behavior/latest_message_subscription.hpp>
 
 /*****************************************************************************/
 // BT.CPP:
@@ -100,9 +101,7 @@ namespace behavior {
 
         iii_drone::configuration::Configuration::SharedPtr configuration_;
 
-        rclcpp::Subscription<iii_drone_interfaces::msg::CombinedDroneAwareness>::SharedPtr combined_drone_awareness_sub_;
-
-        std::atomic<double> latest_ground_altitude_estimate_{std::numeric_limits<double>::quiet_NaN()};
+        LatestMessageSubscription<iii_drone_interfaces::msg::CombinedDroneAwareness> combined_drone_awareness_;
 
         // std::shared_ptr<std::deque<iii_drone::types::point_t>> applyLinearInterpolation(
         //     std::shared_ptr<std::deque<iii_drone::types::point_t>> points

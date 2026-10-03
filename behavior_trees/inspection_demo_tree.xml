@@ -89,7 +89,7 @@
                     name="apply_pending_manual_recharge_intents"
                 />
 
-                <Condition
+                <Action
                     ID="BlackboardBool"
                     name="manual_recharge_requested"
                     flag="inspection_demo.manual_recharge_requested"
@@ -120,7 +120,7 @@
                     name="apply_pending_battery_recharge_intents"
                 />
 
-                <Condition
+                <Action
                     ID="ShouldRechargeBatteryLow"
                     name="battery_low_should_recharge"
                 />

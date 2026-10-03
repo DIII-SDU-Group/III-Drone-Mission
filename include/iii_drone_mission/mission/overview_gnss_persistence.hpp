@@ -36,7 +36,8 @@ bool validGlobalPosition(const px4_msgs::msg::VehicleGlobalPosition & position);
 std::optional<WorldGnssReference> makeReference(
     const px4_msgs::msg::VehicleGlobalPosition & global_position,
     const tf2_ros::Buffer::SharedPtr & tf_buffer,
-    const rclcpp::Logger & logger
+    const rclcpp::Logger & logger,
+    const rclcpp::Clock::SharedPtr & clock
 );
 
 GnssPoint worldToGnss(

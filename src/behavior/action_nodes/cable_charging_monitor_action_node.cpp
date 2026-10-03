@@ -22,17 +22,13 @@ CableChargingMonitorActionNode::CableChargingMonitorActionNode(
     node_(node),
     configuration_(configuration),
     global_blackboard_(global_blackboard),
+    charger_status_(
+        *node_,
+        "/payload/charger_gripper/charger_status",
+        rclcpp::QoS(rclcpp::KeepLast(1)).best_effort()
+    ),
     start_time_(0, 0, node_->get_clock()->get_clock_type())
 {
-    charger_status_sub_ = node_->create_subscription<iii_drone_interfaces::msg::ChargerStatus>(
-        "/payload/charger_gripper/charger_status",
-        rclcpp::QoS(rclcpp::KeepLast(1)).best_effort(),
-        [this](const iii_drone_interfaces::msg::ChargerStatus::SharedPtr msg) {
-            std::lock_guard<std::mutex> lock(mutex_);
-            latest_charger_status_ = msg->charger_status;
-            has_status_ = true;
-        }
-    );
 }
 
 PortsList CableChargingMonitorActionNode::providedPorts() {
@@ -66,10 +62,14 @@ bool CableChargingMonitorActionNode::blackboardBool(
     bool fallback
 ) const {
     bool value = fallback;
-    if (config().blackboard && config().blackboard->get(key, value)) {
+    // The Cable Charging executor retains its local blackboard between
+    // cycles. An Inspection intent can update the shared flag after the
+    // previous Cable Charging cycle wrote a local false value, so read the
+    // shared value first to avoid shadowing the new cross-mode intent.
+    if (global_blackboard_ && global_blackboard_->get(key, value)) {
         return value;
     }
-    if (global_blackboard_ && global_blackboard_->get(key, value)) {
+    if (config().blackboard && config().blackboard->get(key, value)) {
         return value;
     }
     return fallback;
@@ -95,7 +95,8 @@ NodeStatus CableChargingMonitorActionNode::evaluateChargingState() {
     }
 
     if (blackboardBool("charging.interrupt_requested", false)) {
-        RCLCPP_WARN(node_->get_logger(), "CableChargingMonitorActionNode::evaluateChargingState(): Charging interrupted by runtime intent.");
+        // An explicit operator intent, not an anomaly.
+        RCLCPP_INFO(node_->get_logger(), "CableChargingMonitorActionNode::evaluateChargingState(): Charging interrupted by runtime intent.");
         return NodeStatus::SUCCESS;
     }
 
@@ -120,8 +121,8 @@ NodeStatus CableChargingMonitorActionNode::evaluateChargingState() {
         return NodeStatus::RUNNING;
     }
 
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!has_status_) {
+    const auto charger_status = charger_status_.latest();
+    if (!charger_status) {
         RCLCPP_WARN_THROTTLE(
             node_->get_logger(),
             *node_->get_clock(),
@@ -131,7 +132,7 @@ NodeStatus CableChargingMonitorActionNode::evaluateChargingState() {
         return NodeStatus::RUNNING;
     }
 
-    if (latest_charger_status_ == iii_drone_interfaces::msg::ChargerStatus::CHARGER_STATUS_FULLY_CHARGED) {
+    if (charger_status->message.charger_status == iii_drone_interfaces::msg::ChargerStatus::CHARGER_STATUS_FULLY_CHARGED) {
         RCLCPP_INFO(
             node_->get_logger(),
             "CableChargingMonitorActionNode::evaluateChargingState(): Charger reports fully charged after %.2f s.",

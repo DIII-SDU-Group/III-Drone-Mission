@@ -3,8 +3,11 @@
 /*****************************************************************************/
 
 #include <iii_drone_mission/mission/mission_executor.hpp>
+#include <iii_drone_core/diagnostics/hil_trace.hpp>
 
 #include <algorithm>
+#include <chrono>
+#include <thread>
 
 using namespace iii_drone::utils;
 using namespace iii_drone::mission;
@@ -18,9 +21,9 @@ using namespace iii_drone::adapters::px4;
 MissionExecutor::MissionExecutor(
     rclcpp_lifecycle::LifecycleNode * node,
     tf2_ros::Buffer::SharedPtr tf_buffer,
-    std::string mission_specification_file,
+    MissionSpecification::SharedPtr mission_specification,
     rclcpp::CallbackGroup::SharedPtr odometry_sub_callback_group,
-    rclcpp::executors::MultiThreadedExecutor & executor
+    rclcpp::Executor & executor
 ) : node_(node),
     tf_buffer_(tf_buffer),
     odometry_sub_callback_group_(odometry_sub_callback_group),
@@ -29,10 +32,10 @@ MissionExecutor::MissionExecutor(
 
     RCLCPP_INFO(node->get_logger(), "MissionExecutor::MissionExecutor(): Initializing.");
 
-    mission_specification_ = std::make_shared<MissionSpecification>(
-        mission_specification_file,
-        node
-    );
+    if (mission_specification == nullptr) {
+        throw std::runtime_error("MissionExecutor requires a catalog-backed mission specification");
+    }
+    mission_specification_ = std::move(mission_specification);
     runtime_intent_buffer_ = std::make_shared<RuntimeIntentBuffer>();
 
     // Subscription
@@ -50,8 +53,10 @@ MissionExecutor::MissionExecutor(
     odometry_sub_ = node->create_subscription<px4_msgs::msg::VehicleOdometry>(
         "/fmu/out/vehicle_odometry",
         px4_sub_qos,
-        [&](const px4_msgs::msg::VehicleOdometry::SharedPtr msg) {
-            vehicle_odometry_adapter_history_->Store(VehicleOdometryAdapter(*msg));
+        // Captures only the shared history: this callback runs on its own
+        // group and may still be delivering while the executor is destroyed.
+        [history = vehicle_odometry_adapter_history_](const px4_msgs::msg::VehicleOdometry::SharedPtr msg) {
+            history->Store(VehicleOdometryAdapter(*msg));
         },
         sub_opts
     );
@@ -145,8 +150,17 @@ void MissionExecutor::Cleanup() {
 }
 
 void MissionExecutor::Start(
-    iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator
+    iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator,
+    uint64_t lifecycle_activation_generation
 ) {
+
+    lifecycle_activation_generation_ = lifecycle_activation_generation;
+
+    auto start = iii_drone::diagnostics::HilTrace::event("mission_executor_start");
+    start.number("executor_address", reinterpret_cast<uintptr_t>(this));
+    start.number("lifecycle_activation_generation", lifecycle_activation_generation);
+    start.boolean("already_started", is_started_);
+    start.commit();
 
     if (is_started_) {
         RCLCPP_WARN(node_->get_logger(), "MissionExecutor::Start(): Already started.");
@@ -161,7 +175,8 @@ void MissionExecutor::Start(
         mission_specification_,
         node_,
         maneuver_reference_client_,
-        configurator->GetConfiguration("mode_provider")
+        configurator->GetConfiguration("mode_provider"),
+        lifecycle_activation_generation
     );
 
     RCLCPP_DEBUG(node_->get_logger(), "MissionExecutor::Start(): Initializing mode executor.");
@@ -189,9 +204,61 @@ void MissionExecutor::Start(
 
     is_started_ = true;
 
+    auto started = iii_drone::diagnostics::HilTrace::event("mission_executor_started");
+    started.number("executor_address", reinterpret_cast<uintptr_t>(this));
+    started.number("mode_provider_address", reinterpret_cast<uintptr_t>(mode_provider_.get()));
+    started.number("lifecycle_activation_generation", lifecycle_activation_generation);
+    started.number("mode_count", static_cast<uint64_t>(mode_provider_->mode_keys().size()));
+    started.commit();
+
 }
 
+namespace {
+
+// rclcpp's remove_node() stops new callbacks of a node but does not wait for
+// ones already running on other executor threads. The PX4 modes and the mode
+// executor capture raw `this` in their callbacks, so they may only be
+// destroyed once every callback group of their node is idle. All of the
+// node's executor-spun groups are MutuallyExclusive, whose
+// can_be_taken_from() is false exactly while one of their callbacks runs.
+void waitForNodeCallbacksIdle(const rclcpp::Node::SharedPtr & node) {
+    using namespace std::chrono_literals;
+    const auto start = std::chrono::steady_clock::now();
+    auto next_warning = start + 1s;
+    int consecutive_idle = 0;
+    // A callback taken just before the removal may start after one idle
+    // sample; require a few consecutive idle observations.
+    while (consecutive_idle < 3) {
+        bool idle = true;
+        node->for_each_callback_group([&idle](const rclcpp::CallbackGroup::SharedPtr & group) {
+            if (group->type() == rclcpp::CallbackGroupType::MutuallyExclusive &&
+                !group->can_be_taken_from().load()) {
+                idle = false;
+            }
+        });
+        consecutive_idle = idle ? consecutive_idle + 1 : 0;
+        const auto now = std::chrono::steady_clock::now();
+        if (!idle && now >= next_warning) {
+            RCLCPP_WARN(
+                node->get_logger(),
+                "MissionExecutor::Stop(): waiting %.1f s for running px4_mode callbacks before destroying the modes",
+                std::chrono::duration<double>(now - start).count()
+            );
+            next_warning = now + 1s;
+        }
+        std::this_thread::sleep_for(5ms);
+    }
+}
+
+} // namespace
+
 void MissionExecutor::Stop() {
+
+    auto stop = iii_drone::diagnostics::HilTrace::event("mission_executor_stop");
+    stop.number("executor_address", reinterpret_cast<uintptr_t>(this));
+    stop.boolean("started", is_started_);
+    stop.number("mode_provider_address", reinterpret_cast<uintptr_t>(mode_provider_.get()));
+    stop.commit();
 
     if (!is_started_ && generic_mode_executor_ == nullptr && mode_provider_ == nullptr) {
         RCLCPP_WARN(node_->get_logger(), "MissionExecutor::Stop(): Already stopped.");
@@ -203,6 +270,15 @@ void MissionExecutor::Stop() {
         mode_node = mode_provider_->mode_node();
     }
 
+    // Quiesce the mode node before destroying anything its callbacks use.
+    if (mode_node != nullptr) {
+        executor_.remove_node(
+            mode_node,
+            true
+        );
+        waitForNodeCallbacksIdle(mode_node);
+    }
+
     generic_mode_executor_.reset();
     generic_mode_executor_ = nullptr;
 
@@ -211,22 +287,19 @@ void MissionExecutor::Stop() {
         mode_provider_->Cleanup();
     }
 
-    if (mode_node != nullptr) {
-        executor_.remove_node(
-            mode_node,
-            true
-        );
-    }
-
     mode_provider_.reset();
     mode_provider_ = nullptr;
 
     is_started_ = false;
 
+    auto stopped = iii_drone::diagnostics::HilTrace::event("mission_executor_stopped");
+    stopped.number("executor_address", reinterpret_cast<uintptr_t>(this));
+    stopped.commit();
+
 }
 
-bool MissionExecutor::OverrideMissionSpecification(
-    const std::string & mission_specification_file,
+bool MissionExecutor::SelectMissionSpecification(
+    MissionSpecification::SharedPtr replacement,
     iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator,
     rclcpp::CallbackGroup::SharedPtr get_reference_cb_group,
     std::string & message
@@ -235,20 +308,19 @@ bool MissionExecutor::OverrideMissionSpecification(
     std::lock_guard<std::mutex> lock(lifecycle_mutex_);
 
     if (mission_active()) {
-        message = "mission specification override rejected because a mission is active";
+        message = "mission catalog selection rejected because a mission is active";
         return false;
     }
 
-    MissionSpecification::SharedPtr replacement;
+    if (replacement == nullptr) {
+        message = "mission catalog selection rejected because the replacement is null";
+        return false;
+    }
     try {
-        replacement = std::make_shared<MissionSpecification>(
-            mission_specification_file,
-            node_
-        );
         replacement->GetMissionSpecificationEntry(replacement->executor_owned_mode());
     } catch (const std::exception & exception) {
-        message = "mission specification override rejected while loading '" +
-            mission_specification_file + "': " + exception.what();
+        message = "mission catalog selection rejected while validating " +
+            replacement->catalog_id() + ": " + exception.what();
         return false;
     }
 
@@ -257,7 +329,7 @@ bool MissionExecutor::OverrideMissionSpecification(
     const auto previous_specification = mission_specification_;
 
     if (tree_provider_ != nullptr && was_configured) {
-        tree_provider_->ClearGlobalBlackboard("mission specification override");
+        tree_provider_->ClearGlobalBlackboard("mission catalog selection");
     }
     if (runtime_intent_buffer_ != nullptr) {
         runtime_intent_buffer_->Clear();
@@ -278,8 +350,7 @@ bool MissionExecutor::OverrideMissionSpecification(
         get_reference_cb_group,
         message
     )) {
-        message = "mission specification override applied: " +
-            replacement->mission_specification_file();
+        message = "mission catalog selection applied: " + replacement->catalog_id();
         return true;
     }
 
@@ -293,12 +364,12 @@ bool MissionExecutor::OverrideMissionSpecification(
         get_reference_cb_group,
         rollback_message
     )) {
-        message = "mission specification override failed and rollback failed. New spec failure: " +
+        message = "mission catalog selection failed and rollback failed. Replacement failure: " +
             replacement_failure + "; rollback failure: " + rollback_message;
         return false;
     }
 
-    message = "mission specification override failed and previous specification was restored. New spec failure: " +
+    message = "mission catalog selection failed and previous entry was restored. Replacement failure: " +
         replacement_failure;
     return false;
 
@@ -336,7 +407,7 @@ bool MissionExecutor::rebuildWithMissionSpecification(
             Configure(configurator, get_reference_cb_group);
         }
         if (start_after_rebuild) {
-            Start(configurator);
+            Start(configurator, lifecycle_activation_generation_);
         }
     } catch (const std::exception & exception) {
         message = exception.what();
@@ -346,7 +417,7 @@ bool MissionExecutor::rebuildWithMissionSpecification(
         return false;
     }
 
-    message = "mission executor rebuilt with " + mission_specification_->mission_specification_file();
+    message = "mission executor rebuilt with catalog entry " + mission_specification_->catalog_id();
     return true;
 
 }

@@ -14,6 +14,7 @@ using iii_drone::behavior::InspectionWaypointShouldBlendToNext;
 using iii_drone::behavior::NextInspectionWaypointIndex;
 using iii_drone::behavior::powerline_geometry::ComputePowerlineAlignedYaw;
 using iii_drone::behavior::powerline_geometry::ComputePylonAlignedAxes;
+using iii_drone::behavior::powerline_geometry::ComputeCableFacingYaw;
 using iii_drone::types::point_t;
 using iii_drone::types::vector_t;
 
@@ -71,6 +72,24 @@ TEST(CorridorInspectionYaw, AlignsWithHorizontalPowerlineDirection) {
 
     ASSERT_TRUE(yaw);
     EXPECT_NEAR(*yaw, M_PI_4, 1e-6);
+}
+
+TEST(PowerlineGeometry, FacesCableFromPositiveEntrySide) {
+    const auto yaw = ComputeCableFacingYaw(point(0.969, -0.246, 0.0), true);
+
+    ASSERT_TRUE(yaw);
+    EXPECT_NEAR(*yaw, std::atan2(0.246, -0.969), 1e-6);
+}
+
+TEST(PowerlineGeometry, FacesCableFromNegativeEntrySide) {
+    const auto yaw = ComputeCableFacingYaw(point(0.969, -0.246, 0.0), false);
+
+    ASSERT_TRUE(yaw);
+    EXPECT_NEAR(*yaw, std::atan2(-0.246, 0.969), 1e-6);
+}
+
+TEST(PowerlineGeometry, RejectsDegenerateCableFacingAxis) {
+    EXPECT_FALSE(ComputeCableFacingYaw(point(0.0, 0.0, 5.0), false));
 }
 
 TEST(CorridorInspectionYaw, SelectsNearestEquivalentAxisHeading) {
@@ -322,6 +341,47 @@ TEST(CorridorInspectionRoute, ResumesInterruptedSegmentAtItsActiveTarget) {
     expectPointNear(route->waypoints[7], 4.0, -3.5, 7.5);
 }
 
+// HIL: interrupted at the ingress point while still heading for it (active
+// waypoint 0, loop start 1). Back there after charging, a fresh start is
+// rejected as inside the corridor; the resume continues at the loop start.
+TEST(CorridorInspectionRoute, ResumesIngressInterruptionAtLoopStart) {
+    // The ingress point of a fresh start from (5.0, 4.5, 9.0).
+    const point_t interrupted_position = point(5.0, 3.5, 6.0);
+    const CorridorInspectionResume resume{
+        "positive_start",
+        0,
+        1,
+        0,
+        interrupted_position,
+    };
+
+    const auto route = BuildCorridorInspectionRoute(
+        kConductors,
+        kPowerlineDirection,
+        kPylonStart,
+        kPylonEnd,
+        interrupted_position,
+        1.5,
+        2.0,
+        2.0,
+        2.0,
+        3.0,
+        0.5,
+        0.35,
+        resume,
+        0.75
+    );
+
+    ASSERT_TRUE(route);
+    EXPECT_EQ(route->selected_route, "positive_start");
+    EXPECT_TRUE(route->resumed);
+    EXPECT_EQ(route->loop_route_offset, 0U);
+    EXPECT_EQ(route->loop_start_index, 0U);
+    ASSERT_EQ(route->waypoints.size(), 8U);
+    expectPointNear(route->waypoints[0], 4.0, 3.5, 6.0);
+    expectPointNear(route->waypoints[1], 4.0, 3.5, 7.5);
+}
+
 TEST(CorridorInspectionRoute, AccumulatesResumeOffsetAcrossChargingCycles) {
     const point_t interrupted_position = point(5.0, -3.5, 6.0);
     const CorridorInspectionResume resume{
@@ -433,4 +493,33 @@ TEST(InspectionWaypointProgress, BlendsEveryRepeatingLoopWaypoint) {
         EXPECT_EQ(InspectionWaypointShouldBlendToNext(index, 11, 3), true);
     }
     EXPECT_FALSE(InspectionWaypointShouldBlendToNext(0, 7, 0));
+}
+
+TEST(CorridorInspectionRoute, ReportsWhyAResumedStartCannotBeRouted) {
+    // A resume that does not apply (vehicle far from the interruption point)
+    // falls back to a fresh start; when that is rejected too, the reason must
+    // name both, so an in-flight failure is diagnosable from the log alone.
+    const CorridorInspectionResume resume{
+        "positive_start", 3, 1, 0, point(4.0, -3.5, 6.75)};
+    std::string reason;
+    const auto route = BuildCorridorInspectionRoute(
+        kConductors, kPowerlineDirection, kPylonStart, kPylonEnd,
+        point(5.0, 0.0, 2.0), 1.5, 2.0, 2.0, 2.0, 3.0, 0.5, 0.35,
+        resume, 0.75, &reason);
+
+    EXPECT_FALSE(route);
+    EXPECT_NE(reason.find("resume (route=positive_start waypoint=3 loop_start=1"), std::string::npos) << reason;
+    EXPECT_NE(reason.find("fresh start rejected:"), std::string::npos) << reason;
+    EXPECT_NE(reason.find("inside the corridor"), std::string::npos) << reason;
+}
+
+TEST(CorridorInspectionRoute, ReportsInvalidGeometry) {
+    std::string reason;
+    const auto route = BuildCorridorInspectionRoute(
+        {point(5.0, 0.0, 6.0)}, kPowerlineDirection, kPylonStart, kPylonEnd,
+        point(5.0, -5.0, 6.0), 1.5, 2.0, 2.0, 2.0, 3.0, 0.5, 0.35,
+        std::nullopt, 0.75, &reason);
+
+    EXPECT_FALSE(route);
+    EXPECT_EQ(reason, "inspection geometry or configuration is invalid");
 }

@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <limits>
 #include <optional>
+#include <iii_drone_core/utils/multi_threaded_executor.hpp>
 
 using namespace iii_drone::mission::powerline_overview_provider_node;
 using namespace iii_drone::adapters;
@@ -181,7 +182,7 @@ PowerlineOverviewProviderNode::PowerlineOverviewProviderNode(
                 status_msg.data = "No powerline stored";
             }
 
-            stored_powerline_status_pub_->publish(status_msg);
+            if (stored_powerline_status_pub_->is_activated()) stored_powerline_status_pub_->publish(status_msg);
             iii_drone_interfaces::msg::PowerlineOverviewStatus overview_status;
             overview_status.stamp = status_msg.stamp;
             overview_status.valid = has_stored_powerline_;
@@ -197,7 +198,7 @@ PowerlineOverviewProviderNode::PowerlineOverviewProviderNode(
                     ? "GNSS powerline data cannot be reprojected into the active world frame"
                     : "no powerline overview is stored";
             }
-            overview_status_pub_->publish(overview_status);
+            if (overview_status_pub_->is_activated()) overview_status_pub_->publish(overview_status);
 
         }
     );
@@ -245,8 +246,9 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Powerl
         return ret;
     }
 
-    tf_buffer_.reset();
+    // The listener's spin thread writes into the buffer: stop it first.
     tf_listener_.reset();
+    tf_buffer_.reset();
 
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
@@ -597,7 +599,7 @@ void PowerlineOverviewProviderNode::getPowerlineOverviewCallback(
 {
     (void)request_header;
     (void)request;
-    RCLCPP_INFO(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback()");
+    RCLCPP_DEBUG(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback()");
 
     const bool had_gnss_on_disk = has_persisted_gnss_powerline_ || std::filesystem::exists(gnss_persistence_path_);
 
@@ -606,7 +608,12 @@ void PowerlineOverviewProviderNode::getPowerlineOverviewCallback(
     }
 
     if (!has_stored_powerline_) {
-        RCLCPP_WARN(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback() - No stored powerline available");
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            *get_clock(),
+            10000,
+            "PowerlineOverviewProviderNode::getPowerlineOverviewCallback() - No stored powerline available"
+        );
         response->success = false;
         response->overview_in_frame = false;
         response->overview_gnss_only = had_gnss_on_disk;
@@ -622,7 +629,7 @@ void PowerlineOverviewProviderNode::getPowerlineOverviewCallback(
     response->overview_gnss_only = false;
     response->overview_source = overview_source_;
 
-    RCLCPP_INFO(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback() - Stored powerline sent");
+    RCLCPP_DEBUG(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback() - Stored powerline sent");
 
 }
 
@@ -633,7 +640,8 @@ bool PowerlineOverviewProviderNode::persistStoredPowerlineOverview(
     const auto reference = iii_drone::mission::overview_gnss::makeReference(
         latest_global_position_.Load(),
         tf_buffer_,
-        get_logger()
+        get_logger(),
+        get_clock()
     );
     if (!reference.has_value()) {
         return false;
@@ -665,7 +673,8 @@ bool PowerlineOverviewProviderNode::loadPersistedPowerlineOverviewToMemory()
     const auto reference = iii_drone::mission::overview_gnss::makeReference(
         latest_global_position_.Load(),
         tf_buffer_,
-        get_logger()
+        get_logger(),
+        get_clock()
     );
     if (!reference.has_value()) {
         return false;
@@ -708,7 +717,7 @@ int main(int argc, char * argv[])
 {
     rclcpp::init(argc, argv);
 
-    rclcpp::executors::MultiThreadedExecutor executor;
+    iii_drone::utils::MultiThreadedExecutor executor;
 
     auto node = std::make_shared<PowerlineOverviewProviderNode>();
 

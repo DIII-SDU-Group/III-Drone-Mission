@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <filesystem>
+#include <iii_drone_core/utils/multi_threaded_executor.hpp>
 
 using namespace iii_drone::mission::pylon_overview_provider_node;
 
@@ -52,8 +53,8 @@ PylonOverviewProviderNode::PylonOverviewProviderNode(
                 msg.data = "No valid pylon overview stored";
             }
 
-            status_pub_->publish(msg);
-            overview_status_pub_->publish(statusLocked());
+            if (status_pub_->is_activated()) status_pub_->publish(msg);
+            if (overview_status_pub_->is_activated()) overview_status_pub_->publish(statusLocked());
         }
     );
 }
@@ -298,7 +299,8 @@ bool PylonOverviewProviderNode::persistOverview(
     const auto reference = iii_drone::mission::overview_gnss::makeReference(
         latest_global_position_.Load(),
         tf_buffer_,
-        get_logger()
+        get_logger(),
+        get_clock()
     );
     if (!reference.has_value()) {
         return false;
@@ -330,7 +332,8 @@ bool PylonOverviewProviderNode::loadPersistedOverviewToMemoryLocked()
     const auto reference = iii_drone::mission::overview_gnss::makeReference(
         latest_global_position_.Load(),
         tf_buffer_,
-        get_logger()
+        get_logger(),
+        get_clock()
     );
     if (!reference.has_value()) {
         return false;
@@ -557,7 +560,7 @@ int main(int argc, char ** argv)
 
     auto node = std::make_shared<PylonOverviewProviderNode>();
 
-    rclcpp::executors::MultiThreadedExecutor executor;
+    iii_drone::utils::MultiThreadedExecutor executor;
     executor.add_node(node->get_node_base_interface());
     executor.spin();
 

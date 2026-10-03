@@ -26,12 +26,14 @@ void DeclareManagedParameters(NodeConfigurator & configurator)
     configurator.DeclareParameter("/behavior/tick_period_ms", int_t);
     configurator.DeclareParameter("/behavior/target_cable_distance", double_t);
     configurator.DeclareParameter("/control/maneuver_controller/minimum_target_altitude", double_t);
+    configurator.DeclareParameter("/control/maneuver_controller/reached_position_euclidean_distance_threshold", double_t);
     configurator.DeclareParameter("/control/maneuver_controller/cable_takeoff_min_target_cable_distance", double_t);
     configurator.DeclareParameter("/control/maneuver_controller/cable_takeoff_max_target_cable_distance", double_t);
     configurator.DeclareParameter("/behavior/line_min_height_above_drone", double_t);
     configurator.DeclareParameter("/behavior/select_target_line_method", string_t);
     configurator.DeclareParameter("/behavior/hover_on_cable_target_z_velocity", double_t);
     configurator.DeclareParameter("/behavior/hover_on_cable_target_yaw_rate", double_t);
+    configurator.DeclareParameter("/behavior/cable_release_push_acceleration", double_t);
     configurator.DeclareParameter("/behavior/top_clearance_m", double_t);
     configurator.DeclareParameter("/behavior/horizontal_clearance_m", double_t);
     configurator.DeclareParameter("/behavior/under_cable_clearance_m", double_t);
@@ -70,6 +72,7 @@ void DeclareManagedParameters(NodeConfigurator & configurator)
     configurator.CreateConfiguration("hover_on_cable_maneuver_action_node", {
         ConfigurationEntry("/behavior/hover_on_cable_target_z_velocity", double_t),
         ConfigurationEntry("/behavior/hover_on_cable_target_yaw_rate", double_t),
+        ConfigurationEntry("/behavior/cable_release_push_acceleration", double_t),
     });
     configurator.CreateConfiguration("powerline_waypoint_provider_action_node", {
         ConfigurationEntry("/behavior/line_min_height_above_drone", double_t),
@@ -78,6 +81,7 @@ void DeclareManagedParameters(NodeConfigurator & configurator)
         ConfigurationEntry("/behavior/inside_powerline_xy_distance_threshold_m", double_t),
         ConfigurationEntry("/behavior/under_cable_clearance_m", double_t),
         ConfigurationEntry("/control/maneuver_controller/minimum_target_altitude", double_t),
+        ConfigurationEntry("/control/maneuver_controller/reached_position_euclidean_distance_threshold", double_t),
         ConfigurationEntry("/inspection_demo/pylon_span_margin_m", double_t),
         ConfigurationEntry("/tf/world_frame_id", string_t),
         ConfigurationEntry("/tf/drone_frame_id", string_t),
