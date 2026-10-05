@@ -69,6 +69,7 @@ namespace px4 {
         void Cleanup();
         void Stop();
         void ClearGlobalBlackboard(const std::string & reason);
+        void BeginModeActivation(const std::string & mode_key);
 
         iii_drone::px4::ManeuverMode::SharedPtr GetMode(const std::string& name) const;
 

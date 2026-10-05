@@ -165,7 +165,10 @@ namespace mission {
 
         void registerIntentServices();
         void unregisterIntentServices();
-        bool intentServiceValidForCurrentMode(const mission_intent_service_t & intent_service) const;
+        bool intentServiceValidForMode(
+            const mission_intent_service_t & intent_service,
+            const std::string & active_mode_key
+        ) const;
         std::string activeModeKey() const;
         bool rebuildWithMissionSpecification(
             MissionSpecification::SharedPtr mission_specification,

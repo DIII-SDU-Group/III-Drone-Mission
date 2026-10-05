@@ -463,7 +463,16 @@ void MissionExecutor::registerIntentServices() {
                 builtin_interfaces::msg::Time stamp;
                 stamp.sec = static_cast<int32_t>(now_nanoseconds / 1000000000LL);
                 stamp.nanosec = static_cast<uint32_t>(now_nanoseconds % 1000000000LL);
-                if (!intentServiceValidForCurrentMode(intent_service)) {
+                const std::string active_mode_key = activeModeKey();
+                // 0: the mode it was validated against ended meanwhile.
+                const uint64_t sequence_id = intentServiceValidForMode(intent_service, active_mode_key)
+                    ? runtime_intent_buffer_->Enqueue(
+                        intent_service.flag_name,
+                        request->data,
+                        stamp,
+                        intent_service.valid_modes.empty() ? "" : active_mode_key)
+                    : 0;
+                if (sequence_id == 0) {
                     response->success = false;
                     response->message = "runtime intent service is not valid for active mode '" + activeModeKey() + "'";
                     {
@@ -482,11 +491,6 @@ void MissionExecutor::registerIntentServices() {
                     return;
                 }
 
-                const uint64_t sequence_id = runtime_intent_buffer_->Enqueue(
-                    intent_service.flag_name,
-                    request->data,
-                    stamp
-                );
                 response->success = true;
                 response->message = "runtime intent enqueued seq=" + std::to_string(sequence_id);
                 {
@@ -523,17 +527,27 @@ std::vector<iii_drone_interfaces::msg::MissionIntentStatus> MissionExecutor::int
     statuses.reserve(intent_statuses_.size());
     for (const auto & item : intent_statuses_) {
         statuses.push_back(item.second);
+        auto & status = statuses.back();
+        std::string ended_mode_key;
+        if (status.lifecycle == "acknowledged_onboard" &&
+            runtime_intent_buffer_->Expired(status.sequence_id, ended_mode_key)) {
+            status.lifecycle = "rejected";
+            status.detail = "runtime intent expired: " + ended_mode_key +
+                " ended before it was applied";
+        }
     }
     return statuses;
 }
 
-bool MissionExecutor::intentServiceValidForCurrentMode(const mission_intent_service_t & intent_service) const {
+bool MissionExecutor::intentServiceValidForMode(
+    const mission_intent_service_t & intent_service,
+    const std::string & active_mode_key
+) const {
 
     if (intent_service.valid_modes.empty()) {
         return true;
     }
 
-    const std::string active_mode_key = activeModeKey();
     return std::find(
         intent_service.valid_modes.begin(),
         intent_service.valid_modes.end(),

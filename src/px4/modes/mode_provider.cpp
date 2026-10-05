@@ -213,6 +213,12 @@ void ModeProvider::ClearGlobalBlackboard(const std::string & reason) {
     tree_provider_->ClearGlobalBlackboard(reason);
 }
 
+void ModeProvider::BeginModeActivation(const std::string & mode_key) {
+    if (tree_provider_) {
+        tree_provider_->BeginModeActivation(mode_key);
+    }
+}
+
 ManeuverMode::SharedPtr ModeProvider::GetMode(const std::string& name) const {
 
     auto it = modes_.find(name);

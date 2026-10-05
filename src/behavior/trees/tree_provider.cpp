@@ -292,6 +292,24 @@ void TreeProvider::ClearGlobalBlackboard(const std::string & reason) {
     }
 }
 
+void TreeProvider::BeginModeActivation(const std::string & mode_key) {
+    if (!runtime_intent_buffer_) {
+        return;
+    }
+    for (const auto & update : runtime_intent_buffer_->BeginModeActivation(mode_key)) {
+        RCLCPP_WARN(
+            get_logger(),
+            "TreeProvider::BeginModeActivation(): Expired runtime intent seq=%llu flag=%s value=%s: "
+            "%s ended before a tree applied it; %s begins",
+            static_cast<unsigned long long>(update.sequence_id),
+            update.flag_name.c_str(),
+            update.value ? "true" : "false",
+            update.mode_key.c_str(),
+            mode_key.c_str()
+        );
+    }
+}
+
 void TreeProvider::initializeTreeExecutors(
 ) {
 
