@@ -127,6 +127,20 @@ public:
         mode.test_after_handoff_prepare_hook_ = std::move(hook);
     }
 
+    static void replaySticks(CustomOperationMode & mode, float throttle, float roll = 0.0F) {
+        auto sticks = std::make_shared<px4_msgs::msg::ManualControlSetpoint>();
+        sticks->valid = true;
+        sticks->throttle = throttle;
+        sticks->roll = roll;
+        sticks->pitch = 0.0F;
+        sticks->yaw = 0.0F;
+        mode.manualControlSetpointCallback(sticks);
+    }
+
+    static bool positionControlTriggered(CustomOperationMode & mode) {
+        return mode.manual_position_control_triggered_.load();
+    }
+
     static void seedStationaryOdometry(CustomOperationMode & mode) {
         px4_msgs::msg::VehicleOdometry odometry;
         odometry.pose_frame = iii_drone::adapters::px4::POSE_FRAME_LOCAL_NED;
@@ -659,6 +673,25 @@ TEST(CustomOperationIdentity, OptiTrackRejectsOperationsOutsideItsAllowlistBefor
     assertStampedAndComplete(fixture, "hover", fixture.hover);
     assertStampedAndComplete(fixture, "fly_to_position", fixture.fly_to_position, "{x: 1, y: 2, z: 3}");
     assertStampedAndComplete(fixture, "follow_waypoint_path", fixture.follow_waypoint_path, "{waypoints: [{x: 1, y: 2, z: 3}]}");
+}
+
+TEST(CustomOperationIdentity, OnlyStickMovementSinceActivationTriggersPositionControl) {
+    RclcppContext context;
+    Fixture fixture;
+    ASSERT_TRUE(fixture.mode_node->set_parameter(
+        rclcpp::Parameter("/mission/manual_stick_input_threshold", 0.35)).successful);
+    // The throttle rests at the bottom (PX4 reports -1) while the mode activates.
+    fixture.mode.onDeactivate();
+    CustomOperationModeTestAccess::replaySticks(fixture.mode, -1.0F);
+    fixture.mode.onActivate();
+    for (int sample = 0; sample < 20; ++sample) {
+        CustomOperationModeTestAccess::replaySticks(fixture.mode, -1.0F);
+    }
+    CustomOperationModeTestAccess::replaySticks(fixture.mode, -1.0F, 0.3F);
+    EXPECT_FALSE(CustomOperationModeTestAccess::positionControlTriggered(fixture.mode));
+
+    CustomOperationModeTestAccess::replaySticks(fixture.mode, -1.0F, 0.5F);
+    EXPECT_TRUE(CustomOperationModeTestAccess::positionControlTriggered(fixture.mode));
 }
 
 TEST(CustomOperationIdentity, DeactivationClosesAdmissionBeforeValidatedGoalCanReserve) {

@@ -42,6 +42,7 @@
 #include <iii_drone_interfaces/srv/register_offboard_mode.hpp>
 #include <iii_drone_mission/mission/profile_restrictions.hpp>
 #include <iii_drone_mission/px4/setpoints/trajectory_setpoint.hpp>
+#include <iii_drone_mission/px4/stick_takeover.hpp>
 #include <px4_msgs/msg/manual_control_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
 #include <px4_msgs/msg/vehicle_odometry.hpp>
@@ -384,6 +385,7 @@ public:
             active_.store(false);
         }
         manual_position_control_triggered_.store(false);
+        stick_takeover_detector_.Rebaseline();
         runShutdownStep("retire stale operation", [this]() {
             abortCurrentOperation("CustomOperation mode activated while a prior operation was still owned");
         });
@@ -507,6 +509,7 @@ private:
 
     std::atomic_bool active_{false};
     std::atomic_bool manual_position_control_triggered_{false};
+    iii_drone::px4::StickTakeoverDetector stick_takeover_detector_;
     std::atomic_uint8_t vehicle_system_id_{1};
     std::atomic_uint8_t vehicle_component_id_{1};
     std::atomic_uint64_t vehicle_timestamp_{0};
@@ -673,16 +676,22 @@ private:
     }
 
     void manualControlSetpointCallback(const px4_msgs::msg::ManualControlSetpoint::SharedPtr msg) {
+        iii_drone::px4::StickTakeoverDetector::Sample sticks;
+        sticks.valid = msg->valid;
+        sticks.roll = msg->roll;
+        sticks.pitch = msg->pitch;
+        sticks.yaw = msg->yaw;
+        sticks.throttle = msg->throttle;
+
         if (!active_.load() || manual_position_control_triggered_.load()) {
+            stick_takeover_detector_.Observe(sticks);
             return;
         }
 
+        // A takeover is stick movement since activation, not a stick away
+        // from centre: PX4 reports throttle -1 with the stick at the bottom.
         const double threshold = configurator_->GetParameter("/mission/manual_stick_input_threshold").as_double();
-        const bool switch_to_position_control =
-            std::abs(msg->throttle) > threshold ||
-            std::abs(msg->yaw) > threshold ||
-            std::abs(msg->roll) > threshold ||
-            std::abs(msg->pitch) > threshold;
+        const bool switch_to_position_control = stick_takeover_detector_.ObserveActive(sticks, threshold);
 
         if (!switch_to_position_control) {
             return;
