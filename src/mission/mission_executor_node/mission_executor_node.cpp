@@ -233,15 +233,36 @@ MissionExecutorNode::MissionExecutorNode(
         }
     );
 
-    odometry_sub_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    // Not added to the node's executor: startOdometryIngress() spins it.
+    odometry_sub_callback_group_ = create_callback_group(
+        rclcpp::CallbackGroupType::MutuallyExclusive, false);
     get_reference_cb_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
     RCLCPP_INFO(get_logger(), "MissionExecutorNode::MissionExecutorNode()");
 
 }
 
+void MissionExecutorNode::startOdometryIngress() {
+    if (odometry_executor_) return;
+    odometry_executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+    odometry_executor_->add_callback_group(
+        odometry_sub_callback_group_, get_node_base_interface());
+    odometry_thread_ = std::thread([executor = odometry_executor_]() {
+        executor->spin();
+    });
+}
+
+void MissionExecutorNode::stopOdometryIngress() {
+    if (!odometry_executor_) return;
+    odometry_executor_->cancel();
+    if (odometry_thread_.joinable()) odometry_thread_.join();
+    odometry_executor_->remove_callback_group(odometry_sub_callback_group_);
+    odometry_executor_.reset();
+}
+
 MissionExecutorNode::~MissionExecutorNode() {
     RCLCPP_INFO(get_logger(), "MissionExecutorNode::~MissionExecutorNode()");
+    stopOdometryIngress();
 }
 
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn MissionExecutorNode::on_configure(
@@ -314,6 +335,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
         configurator_,
         get_reference_cb_group_
     );
+    startOdometryIngress();
 
     RCLCPP_INFO(get_logger(), "MissionExecutorNode::on_configure(): Configured");
     mission_status_degraded_reason_.clear();
@@ -631,6 +653,7 @@ void MissionExecutorNode::cleanup() {
         RCLCPP_INFO(get_logger(), "MissionExecutorNode::cleanup(): Cleaning up mission executor.");
         // Deactivation normally stopped it already.
         if (!mission_executor_->stopped()) mission_executor_->Stop();
+        stopOdometryIngress();
         mission_executor_->Cleanup();
         mission_executor_.reset();
         mission_executor_ = nullptr;

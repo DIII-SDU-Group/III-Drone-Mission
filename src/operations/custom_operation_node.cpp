@@ -284,13 +284,27 @@ public:
 
         configureReferenceClient();
 
+        // PX4 odometry (100 Hz) runs on its own single-threaded executor: in
+        // the node's default group every message woke the multi-threaded
+        // executor over a wait set of ~75 entities.
+        odometry_callback_group_ = node.create_callback_group(
+            rclcpp::CallbackGroupType::MutuallyExclusive, false);
+        rclcpp::SubscriptionOptions odometry_options;
+        odometry_options.callback_group = odometry_callback_group_;
         vehicle_odometry_sub_ = node.create_subscription<px4_msgs::msg::VehicleOdometry>(
             kVehicleOdometryTopic,
             rclcpp::SensorDataQoS(),
-            [this](const px4_msgs::msg::VehicleOdometry::SharedPtr msg) {
-                vehicle_odometry_history_->Store(iii_drone::adapters::px4::VehicleOdometryAdapter(*msg));
-            }
+            [history = vehicle_odometry_history_](const px4_msgs::msg::VehicleOdometry::SharedPtr msg) {
+                history->Store(iii_drone::adapters::px4::VehicleOdometryAdapter(*msg));
+            },
+            odometry_options
         );
+        odometry_executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+        odometry_executor_->add_callback_group(
+            odometry_callback_group_, node.get_node_base_interface());
+        odometry_thread_ = std::thread([executor = odometry_executor_]() {
+            executor->spin();
+        });
 
         // A HIL SITL instance intentionally has its own PX4 system ID.  Keep
         // commands bound to the identity observed on DDS instead of assuming
@@ -476,11 +490,22 @@ public:
         return operation_callback_group_;
     }
 
+    ~CustomOperationMode() override {
+        if (odometry_executor_) {
+            odometry_executor_->cancel();
+            if (odometry_thread_.joinable()) odometry_thread_.join();
+            odometry_executor_->remove_callback_group(odometry_callback_group_);
+        }
+    }
+
 private:
     rclcpp::Node & node_;
     std::shared_ptr<iii_drone::px4::TrajectorySetpoint> trajectory_setpoint_;
     std::shared_ptr<VehicleOdometryHistory> vehicle_odometry_history_;
+    rclcpp::CallbackGroup::SharedPtr odometry_callback_group_;
     rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr vehicle_odometry_sub_;
+    std::shared_ptr<rclcpp::executors::SingleThreadedExecutor> odometry_executor_;
+    std::thread odometry_thread_;
     rclcpp::Subscription<px4_msgs::msg::VehicleStatus>::SharedPtr vehicle_status_sub_;
     rclcpp::Subscription<px4_msgs::msg::ManualControlSetpoint>::SharedPtr manual_control_setpoint_sub_;
     rclcpp::Publisher<px4_msgs::msg::VehicleCommand>::SharedPtr vehicle_command_pub_;

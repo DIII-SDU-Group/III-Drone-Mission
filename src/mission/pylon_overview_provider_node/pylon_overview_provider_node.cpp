@@ -1,5 +1,7 @@
 #include <iii_drone_mission/mission/pylon_overview_provider_node/pylon_overview_provider_node.hpp>
 
+#include <iii_drone_core/adapters/px4/vehicle_odometry_adapter.hpp>
+
 #include <cmath>
 #include <filesystem>
 #include <iii_drone_core/utils/multi_threaded_executor.hpp>
@@ -59,6 +61,11 @@ PylonOverviewProviderNode::PylonOverviewProviderNode(
     );
 }
 
+PylonOverviewProviderNode::~PylonOverviewProviderNode()
+{
+    stopSensorIngress();
+}
+
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn PylonOverviewProviderNode::on_configure(
     const rclcpp_lifecycle::State & state
 )
@@ -70,8 +77,6 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn PylonO
         return ret;
     }
 
-    tf_buffer_ = std::make_shared<tf2_ros::Buffer>(get_clock());
-    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
     gnss_persistence_path_ = get_parameter("gnss_persistence_path").as_string();
     capture_max_horizontal_speed_mps_ = get_parameter("capture_max_horizontal_speed_mps").as_double();
     capture_stationary_dwell_s_ = get_parameter("capture_stationary_dwell_s").as_double();
@@ -98,9 +103,6 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn PylonO
     if (ret != rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS) {
         return ret;
     }
-
-    tf_listener_.reset();
-    tf_buffer_.reset();
 
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
@@ -159,13 +161,18 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn PylonO
         )
     );
 
+    sensor_callback_group_ = create_callback_group(
+        rclcpp::CallbackGroupType::MutuallyExclusive, false);
+    rclcpp::SubscriptionOptions sensor_options;
+    sensor_options.callback_group = sensor_callback_group_;
     vehicle_global_position_sub_ = create_subscription<px4_msgs::msg::VehicleGlobalPosition>(
         "/fmu/out/vehicle_global_position",
         rclcpp::SensorDataQoS(),
         [this](const px4_msgs::msg::VehicleGlobalPosition::SharedPtr msg) -> void
         {
             latest_global_position_.Store(*msg);
-        }
+        },
+        sensor_options
     );
     vehicle_odometry_sub_ = create_subscription<px4_msgs::msg::VehicleOdometry>(
         "/fmu/out/vehicle_odometry",
@@ -185,10 +192,36 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn PylonO
             } else {
                 stationary_dwell_active_ = false;
             }
-        }
+        },
+        sensor_options
     );
+    sensor_executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+    sensor_executor_->add_callback_group(sensor_callback_group_, get_node_base_interface());
+    sensor_thread_ = std::thread([executor = sensor_executor_]() { executor->spin(); });
 
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+}
+
+void PylonOverviewProviderNode::stopSensorIngress()
+{
+    if (!sensor_executor_) {
+        return;
+    }
+    sensor_executor_->cancel();
+    if (sensor_thread_.joinable()) {
+        sensor_thread_.join();
+    }
+    sensor_executor_->remove_callback_group(sensor_callback_group_);
+    sensor_executor_.reset();
+}
+
+std::optional<iii_drone::types::point_t> PylonOverviewProviderNode::droneWorldPosition() const
+{
+    const auto odometry = latest_vehicle_odometry_.Load();
+    if (odometry.timestamp == 0) {
+        return std::nullopt;
+    }
+    return iii_drone::adapters::px4::VehicleOdometryAdapter(odometry).position();
 }
 
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn PylonOverviewProviderNode::on_deactivate(
@@ -206,6 +239,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn PylonO
     get_pylon_overview_srv_.reset();
     clear_pylon_overview_srv_.reset();
     capture_current_pylon_srv_.reset();
+    stopSensorIngress();
     vehicle_global_position_sub_.reset();
     vehicle_odometry_sub_.reset();
 
@@ -298,7 +332,7 @@ bool PylonOverviewProviderNode::persistOverview(
 {
     const auto reference = iii_drone::mission::overview_gnss::makeReference(
         latest_global_position_.Load(),
-        tf_buffer_,
+        droneWorldPosition(),
         get_logger(),
         get_clock()
     );
@@ -331,7 +365,7 @@ bool PylonOverviewProviderNode::loadPersistedOverviewToMemoryLocked()
 
     const auto reference = iii_drone::mission::overview_gnss::makeReference(
         latest_global_position_.Load(),
-        tf_buffer_,
+        droneWorldPosition(),
         get_logger(),
         get_clock()
     );

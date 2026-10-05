@@ -113,6 +113,12 @@ void ModeProvider::Cleanup() {
 void ModeProvider::initializeDiagnosticProbes() {
     using namespace std::chrono_literals;
 
+    // The probes only record trace events: without a trace file they would
+    // wake the executor four times a second for nothing.
+    if (!iii_drone::diagnostics::HilTrace::enabled()) {
+        return;
+    }
+
     diagnostic_independent_callback_group_ = mode_node_->create_callback_group(
         rclcpp::CallbackGroupType::MutuallyExclusive
     );
