@@ -43,6 +43,8 @@
 
 #include <iii_drone_mission/px4/modes/mode_provider.hpp>
 
+#include <iii_drone_mission/px4/mode_executors/executor_activation.hpp>
+
 #include <iii_drone_mission/px4/mode_executors/handoff_failsafe_deferral.hpp>
 
 #include <iii_drone_mission/px4/stick_takeover.hpp>

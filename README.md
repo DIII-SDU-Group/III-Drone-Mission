@@ -109,8 +109,8 @@ included), yet need a default for every commissioned onboard profile.
 
 - **opti-track-hover and opti-track-maneuvers**: select them only while the
   vehicle hovers; the pilot hands over from a steady hover (at least 1.1 m for
-  the hover mission). The mode executor arms a disarmed vehicle when its owned
-  mode is selected, whatever the mission specification says.
+  the hover mission). Their modes may not run disarmed, so the mode executor
+  activates only while the vehicle is armed and never arms it.
 - **opti-track-cycle**: OT Takeoff takes off unless PX4 reports the vehicle
   airborne, flies to the centre and hovers until the operator calls
   `/mission/opti_track/proceed` (`std_srvs/SetBool`, accepted in OT Takeoff
@@ -125,6 +125,13 @@ included), yet need a default for every commissioned onboard profile.
 
 ## Mode Executor Behavior
 
+- A mission arms the vehicle only where its specification allows a mode to
+  run disarmed (`allow_activate_when_disarmed`). Selected while disarmed, the
+  executor arms only if its owned mode allows it; otherwise it logs an error
+  and stays idle. A mission none of whose modes may run disarmed registers
+  with px4_ros2 to activate only while armed (a disarm then ends it); one with
+  a mode that runs disarmed, such as charging on the cable, stays in charge
+  while disarmed.
 - A pilot takeover is stick movement: some axis moved by more than
   `/mission/manual_stick_input_threshold` from where it was when the executor
   became active. A stick resting away from centre (PX4 reports throttle -1 at

@@ -613,6 +613,9 @@ if(BUILD_TESTING)
   iii_drone_mission_add_isolated_gtest(iii_drone_handoff_failsafe_deferral_test
     test/handoff_failsafe_deferral_test.cpp
   )
+  iii_drone_mission_add_isolated_gtest(iii_drone_executor_activation_test
+    test/executor_activation_test.cpp
+  )
 
   if(TARGET iii_drone_mission_specification_test)
     target_include_directories(iii_drone_mission_specification_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
@@ -706,6 +709,11 @@ if(BUILD_TESTING)
   if(TARGET iii_drone_handoff_failsafe_deferral_test)
     target_include_directories(iii_drone_handoff_failsafe_deferral_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
     ament_target_dependencies(iii_drone_handoff_failsafe_deferral_test px4_msgs)
+  endif()
+  if(TARGET iii_drone_executor_activation_test)
+    target_include_directories(iii_drone_executor_activation_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+    target_link_libraries(iii_drone_executor_activation_test iii_drone_mission_lib)
+    ament_target_dependencies(iii_drone_executor_activation_test ${dependencies})
   endif()
 endif()
 

@@ -29,7 +29,7 @@ GenericModeExecutor::GenericModeExecutor(
     Configuration::SharedPtr parameters
 ) : ModeExecutorBase(
     *mode_provider->mode_node(), 
-    px4_ros2::ModeExecutorBase::Settings{.activation=px4_ros2::ModeExecutorBase::Settings::Activation::ActivateAlways}, 
+    px4_ros2::ModeExecutorBase::Settings{.activation=ExecutorActivation(mission_specification->entries())}, 
     owned_mode,
     "/"
 ),  node_(*mode_provider->mode_node()),
@@ -40,6 +40,16 @@ GenericModeExecutor::GenericModeExecutor(
     combined_drone_awareness_adapter_history_(1) {
 
     RCLCPP_DEBUG(node_.get_logger(), "GenericModeExecutor::GenericModeExecutor(): Initializing mode executor %s", mode_executor_name_.c_str());
+
+    if (ExecutorActivation(mission_specification_->entries()) ==
+        px4_ros2::ModeExecutorBase::Settings::Activation::ActivateOnlyWhenArmed) {
+        RCLCPP_INFO(
+            node_.get_logger(),
+            "GenericModeExecutor::GenericModeExecutor(): No mode of mission %s may run disarmed; "
+            "the mode executor activates only while the vehicle is armed.",
+            mission_specification_->catalog_id().c_str()
+        );
+    }
 
 	rclcpp::QoS px4_sub_qos(rclcpp::KeepLast(1));
 	px4_sub_qos.transient_local();
@@ -163,12 +173,36 @@ void GenericModeExecutor::onActivate() {
     std::string owned_mode_key = mission_specification_->executor_owned_mode();
     current_mode_ = mode_provider_->GetMode(owned_mode_key);
     current_mode_entry_ = mission_specification_->GetMissionSpecificationEntry(owned_mode_key);
-    deferFailsafesForHandoff((*current_mode_)->id(), "mission activation");
 
     schedule_next_ = schedule_next_mode;
     schedule_current_ = schedule_next_mode;
 
-    if (isArmed()) {
+    const ActivationArming arming = DecideActivationArming(
+        isArmed(),
+        (*current_mode_entry_).allow_activate_when_disarmed
+    );
+
+    if (arming == ActivationArming::Refuse) {
+
+        // The mission arms the vehicle only where its specification allows.
+        RCLCPP_ERROR(
+            node_.get_logger(),
+            "GenericModeExecutor::onActivate(): The vehicle is disarmed and mode %s does not allow "
+            "activation while disarmed; not arming. Arm (and take off) before selecting the mission.",
+            (*current_mode_entry_).mode_name.c_str()
+        );
+
+        is_active_ = false;
+        clearGlobalBlackboard("mission activation refused while disarmed");
+        releaseHandoffFailsafeDeferral("mission activation refused while disarmed");
+
+        return;
+
+    }
+
+    deferFailsafesForHandoff((*current_mode_)->id(), "mission activation");
+
+    if (arming == ActivationArming::ScheduleOwnedMode) {
 
         const bool force_disarmed_activation =
             !isArmed() && (*current_mode_entry_).allow_activate_when_disarmed;
