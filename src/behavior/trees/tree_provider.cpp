@@ -296,8 +296,10 @@ void TreeProvider::BeginModeActivation(const std::string & mode_key) {
     if (!runtime_intent_buffer_) {
         return;
     }
+    // A request that arrives as its mode ends is a handled race, not a
+    // fault; the intent status reports it as rejected.
     for (const auto & update : runtime_intent_buffer_->BeginModeActivation(mode_key)) {
-        RCLCPP_WARN(
+        RCLCPP_INFO(
             get_logger(),
             "TreeProvider::BeginModeActivation(): Expired runtime intent seq=%llu flag=%s value=%s: "
             "%s ended before a tree applied it; %s begins",
