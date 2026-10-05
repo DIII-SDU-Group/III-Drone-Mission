@@ -497,10 +497,18 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   # Each test gets its own ROS domain: tests that serve the same services or
   # topics (e.g. /control/trajectory_generator/compute_reference_trajectory)
-  # otherwise answer each other when ctest runs them in parallel. Run them
-  # without ROS_DOMAIN_ID set so the isolation can pick the domain.
+  # otherwise answer each other when ctest runs them in parallel. Unlike
+  # ament_add_ros_isolated_gtest, the runner also isolates when ROS_DOMAIN_ID
+  # is inherited (the devcontainer exports ROS_DOMAIN_ID=0) and never picks a
+  # live SIM/HIL domain.
   find_package(ament_cmake_ros REQUIRED)
   find_package(ament_cmake_pytest REQUIRED)
+  function(iii_drone_mission_add_isolated_gtest target)
+    ament_add_gtest("${target}"
+      RUNNER "${CMAKE_CURRENT_SOURCE_DIR}/test/ros_domain_isolated_runner.py"
+      ${ARGN}
+    )
+  endfunction()
 
   ament_add_pytest_test(iii_drone_mission_catalog_test
     test/test_mission_catalog.py
@@ -512,53 +520,53 @@ if(BUILD_TESTING)
     PYTHON_EXECUTABLE "${Python3_EXECUTABLE}"
   )
 
-  ament_add_ros_isolated_gtest(iii_drone_mission_specification_test
+  iii_drone_mission_add_isolated_gtest(iii_drone_mission_specification_test
     test/mission_specification_test.cpp
   )
 
-  ament_add_ros_isolated_gtest(iii_drone_behavior_node_registry_test
+  iii_drone_mission_add_isolated_gtest(iii_drone_behavior_node_registry_test
     test/behavior_node_registry_test.cpp
   )
 
-  ament_add_ros_isolated_gtest(iii_drone_waypoint_corridor_partition_test
+  iii_drone_mission_add_isolated_gtest(iii_drone_waypoint_corridor_partition_test
     test/waypoint_corridor_partition_test.cpp
   )
 
-  ament_add_ros_isolated_gtest(iii_drone_corridor_inspection_route_test
+  iii_drone_mission_add_isolated_gtest(iii_drone_corridor_inspection_route_test
     test/corridor_inspection_route_test.cpp
   )
 
-  ament_add_ros_isolated_gtest(iii_drone_cable_axis_yaw_settler_test
+  iii_drone_mission_add_isolated_gtest(iii_drone_cable_axis_yaw_settler_test
     test/cable_axis_yaw_settler_test.cpp
   )
-  ament_add_ros_isolated_gtest(iii_drone_cable_charging_blackboard_test
+  iii_drone_mission_add_isolated_gtest(iii_drone_cable_charging_blackboard_test
     test/cable_charging_blackboard_test.cpp
   )
-  ament_add_ros_isolated_gtest(iii_drone_latest_message_subscription_test
+  iii_drone_mission_add_isolated_gtest(iii_drone_latest_message_subscription_test
     test/latest_message_subscription_test.cpp
   )
-  ament_add_ros_isolated_gtest(iii_drone_wait_for_px4_airborne_test
+  iii_drone_mission_add_isolated_gtest(iii_drone_wait_for_px4_airborne_test
     test/wait_for_px4_airborne_test.cpp
   )
-  ament_add_ros_isolated_gtest(iii_drone_pending_activation_callback_test
+  iii_drone_mission_add_isolated_gtest(iii_drone_pending_activation_callback_test
     test/pending_activation_callback_test.cpp
   )
-  ament_add_ros_isolated_gtest(iii_drone_completion_report_test
+  iii_drone_mission_add_isolated_gtest(iii_drone_completion_report_test
     test/completion_report_test.cpp
   )
-  ament_add_ros_isolated_gtest(iii_drone_rosbag_qos_overrides_test
+  iii_drone_mission_add_isolated_gtest(iii_drone_rosbag_qos_overrides_test
     test/rosbag_qos_overrides_test.cpp
   )
-  ament_add_ros_isolated_gtest(iii_drone_maneuver_action_node_handoff_test
+  iii_drone_mission_add_isolated_gtest(iii_drone_maneuver_action_node_handoff_test
     test/maneuver_action_node_handoff_test.cpp
   )
-  ament_add_ros_isolated_gtest(iii_drone_custom_operation_identity_test
+  iii_drone_mission_add_isolated_gtest(iii_drone_custom_operation_identity_test
     test/custom_operation_identity_test.cpp
   )
-  ament_add_ros_isolated_gtest(iii_drone_overview_gnss_persistence_test
+  iii_drone_mission_add_isolated_gtest(iii_drone_overview_gnss_persistence_test
     test/overview_gnss_persistence_test.cpp
   )
-  ament_add_ros_isolated_gtest(iii_drone_mission_exit_test
+  iii_drone_mission_add_isolated_gtest(iii_drone_mission_exit_test
     test/mission_exit_test.cpp
   )
 
