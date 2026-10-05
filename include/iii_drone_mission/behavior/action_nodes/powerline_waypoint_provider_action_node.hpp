@@ -47,6 +47,7 @@
 // III-Drone-Mission:
 
 #include <iii_drone_mission/behavior/latest_message_subscription.hpp>
+#include <iii_drone_mission/behavior/port_types.hpp>
 
 /*****************************************************************************/
 // BT.CPP:
