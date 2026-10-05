@@ -259,8 +259,11 @@ public:
                 return rclcpp_action::CancelResponse::ACCEPT;
             },
             [this](const std::shared_ptr<GoalHandle> goal_handle) {
-                std::lock_guard<std::mutex> lock(mutex_);
-                handles_.push_back(goal_handle);
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    handles_.push_back(goal_handle);
+                }
+                accepted_cv_.notify_all();
             },
             rcl_action_server_get_default_options(),
             callback_group_
@@ -291,12 +294,8 @@ public:
     }
 
     void succeedLatest(bool success = true) {
-        std::shared_ptr<GoalHandle> handle;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            ASSERT_FALSE(handles_.empty());
-            handle = handles_.back();
-        }
+        const auto handle = latestAcceptedHandle();
+        ASSERT_NE(handle, nullptr);
         auto result = std::make_shared<typename ActionT::Result>();
         if constexpr (requires { result->success; }) {
             result->success = success;
@@ -305,12 +304,8 @@ public:
     }
 
     void completeLatestAfterCancel() {
-        std::shared_ptr<GoalHandle> handle;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            ASSERT_FALSE(handles_.empty());
-            handle = handles_.back();
-        }
+        const auto handle = latestAcceptedHandle();
+        ASSERT_NE(handle, nullptr);
         auto result = std::make_shared<typename ActionT::Result>();
         if constexpr (requires { result->success; }) {
             result->success = false;
@@ -323,12 +318,8 @@ public:
     }
 
     void abortLatest() {
-        std::shared_ptr<GoalHandle> handle;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            ASSERT_FALSE(handles_.empty());
-            handle = handles_.back();
-        }
+        const auto handle = latestAcceptedHandle();
+        ASSERT_NE(handle, nullptr);
         auto result = std::make_shared<typename ActionT::Result>();
         if constexpr (requires { result->success; }) {
             result->success = false;
@@ -337,10 +328,20 @@ public:
     }
 
 private:
+    // receivedGoal() turns true in the goal callback, before the action
+    // server runs the accepted callback that stores the handle; a background
+    // executor can still be between the two when a test completes the goal.
+    std::shared_ptr<GoalHandle> latestAcceptedHandle() {
+        std::unique_lock<std::mutex> lock(mutex_);
+        accepted_cv_.wait_for(lock, 2s, [this] { return !handles_.empty(); });
+        return handles_.empty() ? nullptr : handles_.back();
+    }
+
     rclcpp::Node::SharedPtr node_;
     rclcpp::CallbackGroup::SharedPtr callback_group_;
     rclcpp_action::Server<ActionT>::SharedPtr server_;
     mutable std::mutex mutex_;
+    std::condition_variable accepted_cv_;
     std::vector<std::string> request_identities_;
     std::vector<std::shared_ptr<GoalHandle>> handles_;
     std::atomic_bool accept_goal_{true};
