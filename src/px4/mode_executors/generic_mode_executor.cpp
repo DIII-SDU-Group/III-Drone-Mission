@@ -5,6 +5,7 @@
 #include <iii_drone_mission/px4/mode_executors/generic_mode_executor.hpp>
 
 #include <chrono>
+#include <cmath>
 
 #include <iii_drone_core/diagnostics/hil_trace.hpp>
 
@@ -802,7 +803,7 @@ bool GenericModeExecutor::scheduleActionIfAny(schedule_t & previous_schedule_cur
 
             throw std::runtime_error("GenericModeExecutor::scheduleActionIfAny(): Disarming should not be handled in onModeComplete but in a custom action callback - control should not reach this point.");
 
-        case schedule_takeoff:
+        case schedule_takeoff: {
 
             RCLCPP_INFO(
                 node_.get_logger(),
@@ -811,6 +812,23 @@ bool GenericModeExecutor::scheduleActionIfAny(schedule_t & previous_schedule_cur
 
             schedule_next_ = schedule_next_mode;
             schedule_current_ = schedule_takeoff;
+
+            // PX4 takes off to an altitude above mean sea level. Without a
+            // global position (e.g. indoors) there is no such reference; NaN
+            // makes PX4 use its default takeoff altitude (MIS_TAKEOFF_ALT).
+            const double ground_altitude_amsl =
+                combined_drone_awareness_adapter_history_[0].ground_altitude_estimate_amsl();
+            float takeoff_altitude_amsl = NAN;
+            if (std::isnan(ground_altitude_amsl)) {
+                RCLCPP_WARN(
+                    node_.get_logger(),
+                    "GenericModeExecutor::scheduleActionIfAny(): No global ground altitude estimate; "
+                    "PX4 takes off to its default takeoff altitude (MIS_TAKEOFF_ALT) instead of %.2f m.",
+                    static_cast<double>(takeoff_altitude_.Load())
+                );
+            } else {
+                takeoff_altitude_amsl = static_cast<float>(takeoff_altitude_.Load() + ground_altitude_amsl);
+            }
 
             (*current_mode_)->StartControls();
 
@@ -823,10 +841,12 @@ bool GenericModeExecutor::scheduleActionIfAny(schedule_t & previous_schedule_cur
                     }
                     onModeCompleted(result);
                 },
-                takeoff_altitude_ + combined_drone_awareness_adapter_history_[0].ground_altitude_estimate_amsl()
+                takeoff_altitude_amsl
             );
 
             return true;
+
+        }
 
         case schedule_arm_before_takeoff:
 
@@ -1690,16 +1710,19 @@ bool GenericModeExecutor::canTakeoff(float altitude) {
 
     // }
 
-    float gae_amsl = combined_drone_awareness_adapter_history_[0].ground_altitude_estimate_amsl();
+    const double gae_amsl = combined_drone_awareness_adapter_history_[0].ground_altitude_estimate_amsl();
 
-    if (gae_amsl == NAN) {
-    
+    if (std::isnan(gae_amsl)) {
+
+        // No global position: the takeoff cannot be given above mean sea
+        // level, so PX4 uses its default takeoff altitude.
         RCLCPP_WARN(
             node_.get_logger(),
-            "GenericModeExecutor::canTakeoff(): Taking off after current mode rejected: Does not have global ground altitude estimate."
+            "GenericModeExecutor::canTakeoff(): No global ground altitude estimate; PX4 will take off to "
+            "its default takeoff altitude (MIS_TAKEOFF_ALT) instead of %.2f m.",
+            static_cast<double>(altitude)
         );
 
-        return false;
     }
 
     if (altitude <= 0) {
