@@ -230,6 +230,13 @@ std::vector<rclcpp::Parameter> referenceClientParameters() {
     };
 }
 
+// The tests do not inherit III_SYSTEM_PROFILE: every fixture names its profile.
+std::vector<rclcpp::Parameter> modeParameters(const std::string & runtime_profile) {
+    auto parameters = referenceClientParameters();
+    parameters.emplace_back(iii_drone::mission::kRuntimeProfileParameter, runtime_profile);
+    return parameters;
+}
+
 template <typename ActionT>
 class ManeuverActionRecorder {
 public:
@@ -424,10 +431,10 @@ private:
 };
 
 struct Fixture {
-    Fixture()
+    explicit Fixture(const std::string & runtime_profile = "sim")
     : mode_node(std::make_shared<rclcpp::Node>(
           "custom_operation_identity_mode",
-          rclcpp::NodeOptions().parameter_overrides(referenceClientParameters())
+          rclcpp::NodeOptions().parameter_overrides(modeParameters(runtime_profile))
       )),
       client_node(std::make_shared<rclcpp::Node>("custom_operation_identity_client")),
       maneuver_node(std::make_shared<rclcpp::Node>("custom_operation_identity_maneuvers")),
@@ -616,6 +623,42 @@ TEST(CustomOperationIdentity, AllProductionDispatchersStampAValidIdentity) {
     assertStampedAndComplete(fixture, "hover_on_cable", fixture.hover_on_cable);
     assertStampedAndComplete(fixture, "cable_landing", fixture.cable_landing);
     assertStampedAndComplete(fixture, "cable_takeoff", fixture.cable_takeoff);
+}
+
+TEST(CustomOperationIdentity, OptiTrackRejectsOperationsOutsideItsAllowlistBeforeDispatch) {
+    RclcppContext context;
+    Fixture fixture("opti_track");
+    ASSERT_TRUE(fixture.waitForServer());
+    fixture.startBackgroundSpin();
+
+    const std::vector<std::string> rejected = {
+        "cable_aware_fly_to_position",
+        "fly_to_object",
+        "hover_by_object",
+        "hover_on_cable",
+        "cable_landing",
+        "cable_takeoff",
+    };
+    for (const auto & operation : rejected) {
+        auto outer_goal = fixture.send(operation, "{x: 1, y: 2, z: 3}");
+        ASSERT_TRUE(waitWithoutSpinning([&] { return outer_goal.wait_for(0ms) == std::future_status::ready; }));
+        EXPECT_EQ(outer_goal.get(), nullptr) << operation;
+        EXPECT_EQ(
+            fixture.mode.lastRejectionReason(),
+            "custom operation " + operation + " is not available in the opti_track profile"
+        );
+        EXPECT_FALSE(fixture.mode.operationActive());
+    }
+    EXPECT_FALSE(fixture.cable_aware_fly_to_position.receivedGoal());
+    EXPECT_FALSE(fixture.fly_to_object.receivedGoal());
+    EXPECT_FALSE(fixture.hover_by_object.receivedGoal());
+    EXPECT_FALSE(fixture.hover_on_cable.receivedGoal());
+    EXPECT_FALSE(fixture.cable_landing.receivedGoal());
+    EXPECT_FALSE(fixture.cable_takeoff.receivedGoal());
+
+    assertStampedAndComplete(fixture, "hover", fixture.hover);
+    assertStampedAndComplete(fixture, "fly_to_position", fixture.fly_to_position, "{x: 1, y: 2, z: 3}");
+    assertStampedAndComplete(fixture, "follow_waypoint_path", fixture.follow_waypoint_path, "{waypoints: [{x: 1, y: 2, z: 3}]}");
 }
 
 TEST(CustomOperationIdentity, DeactivationClosesAdmissionBeforeValidatedGoalCanReserve) {

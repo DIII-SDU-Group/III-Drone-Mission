@@ -40,6 +40,7 @@
 #include <iii_drone_interfaces/msg/target.hpp>
 #include <iii_drone_interfaces/srv/clear_maneuver_queue.hpp>
 #include <iii_drone_interfaces/srv/register_offboard_mode.hpp>
+#include <iii_drone_mission/mission/profile_restrictions.hpp>
 #include <iii_drone_mission/px4/setpoints/trajectory_setpoint.hpp>
 #include <px4_msgs/msg/manual_control_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
@@ -283,6 +284,7 @@ public:
       vehicle_odometry_history_(std::make_shared<VehicleOdometryHistory>(2)) {
 
         configureReferenceClient();
+        configureRuntimeProfile();
 
         vehicle_odometry_sub_ = node.create_subscription<px4_msgs::msg::VehicleOdometry>(
             kVehicleOdometryTopic,
@@ -509,6 +511,7 @@ private:
     std::atomic_uint8_t vehicle_component_id_{1};
     std::atomic_uint64_t vehicle_timestamp_{0};
     bool maneuver_registered_as_offboard_{false};
+    std::string runtime_profile_;
 
     enum class OperationPhase {
         Reserved,
@@ -643,6 +646,23 @@ private:
         );
     }
 
+    void configureRuntimeProfile() {
+        using iii_drone::mission::kRuntimeProfileParameter;
+        if (!node_.has_parameter(kRuntimeProfileParameter)) {
+            node_.declare_parameter<std::string>(kRuntimeProfileParameter, "");
+        }
+        runtime_profile_ = iii_drone::mission::ResolveRuntimeProfile(
+            node_.get_parameter(kRuntimeProfileParameter).as_string()
+        );
+        if (iii_drone::mission::CustomOperationAllowlists().count(runtime_profile_) != 0) {
+            RCLCPP_INFO(
+                node_.get_logger(),
+                "CustomOperationMode::configureRuntimeProfile(): The %s profile restricts custom operations.",
+                runtime_profile_.c_str()
+            );
+        }
+    }
+
     template <typename ActionT>
     typename rclcpp_action::Client<ActionT>::SharedPtr createManeuverClient(const std::string & action_name) {
         return rclcpp_action::create_client<ActionT>(
@@ -724,6 +744,18 @@ private:
                 last_rejection_reason_ = reason;
             }
             RCLCPP_WARN(node_.get_logger(), "CustomOperationMode::handleOperationGoal(): Rejecting %s because it is unsupported.", goal->operation.c_str());
+            return rclcpp_action::GoalResponse::REJECT;
+        }
+        if (!iii_drone::mission::CustomOperationAllowedInProfile(goal->operation, runtime_profile_)) {
+            const std::string reason = iii_drone::mission::NotAvailableInProfileMessage(
+                "custom operation " + goal->operation,
+                runtime_profile_
+            );
+            {
+                std::lock_guard<std::mutex> lock(operation_mutex_);
+                last_rejection_reason_ = reason;
+            }
+            RCLCPP_WARN(node_.get_logger(), "CustomOperationMode::handleOperationGoal(): Rejecting: %s.", reason.c_str());
             return rclcpp_action::GoalResponse::REJECT;
         }
 
