@@ -4,7 +4,7 @@
             ID="RosbagRecordingScope"
             name="reach_cable_rosbag_recording_scope"
             all_topics="false"
-            topics="/fmu/out/vehicle_status_v1,/fmu/out/vehicle_odometry,/fmu/out/vehicle_land_detected,/fmu/in/trajectory_setpoint,/control/maneuver_controller/reference,/control/maneuver_controller/reference_mode,/mission_executor/maneuver_reference_client/reference_mode,/perception/pl_mapper/powerline,/payload/charger_gripper/gripper_status,/payload/charger_gripper/sim_state,/tf,/tf_static"
+            topics="/fmu/out/vehicle_status_v1,/fmu/out/vehicle_odometry,/fmu/out/vehicle_land_detected,/fmu/in/trajectory_setpoint,/control/maneuver_controller/reference,/control/maneuver_controller/reference_mode,/mission/mission_executor/maneuver_reference_client/reference_mode,/perception/pl_mapper/powerline,/payload/charger_gripper/gripper_status,/payload/charger_gripper/sim_state,/tf,/tf_static"
             include_hidden_topics="false"
             owner="reach_cable"
             stop_timeout_sec="10.0"
