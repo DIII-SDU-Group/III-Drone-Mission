@@ -3,6 +3,7 @@
 /*****************************************************************************/
 
 #include <iii_drone_mission/mission/mission_executor.hpp>
+#include <iii_drone_mission/mission/profile_restrictions.hpp>
 #include <iii_drone_core/diagnostics/hil_trace.hpp>
 
 #include <algorithm>
@@ -23,11 +24,13 @@ MissionExecutor::MissionExecutor(
     tf2_ros::Buffer::SharedPtr tf_buffer,
     MissionSpecification::SharedPtr mission_specification,
     rclcpp::CallbackGroup::SharedPtr odometry_sub_callback_group,
-    rclcpp::Executor & executor
+    rclcpp::Executor & executor,
+    std::string runtime_profile
 ) : node_(node),
     tf_buffer_(tf_buffer),
     odometry_sub_callback_group_(odometry_sub_callback_group),
-    executor_(executor)
+    executor_(executor),
+    runtime_profile_(std::move(runtime_profile))
 {
 
     RCLCPP_INFO(node->get_logger(), "MissionExecutor::MissionExecutor(): Initializing.");
@@ -112,6 +115,10 @@ void MissionExecutor::Configure(
     }
 
     RCLCPP_DEBUG(node_->get_logger(), "MissionExecutor::Configure()");
+
+    // Defense in depth behind the catalog build: never load a tree that uses
+    // a behavior node the runtime profile does not allow.
+    RequireMissionAllowedInProfile(*mission_specification_, runtime_profile_);
 
     // Maneuver reference client
     maneuver_reference_client_ = std::make_shared<ManeuverReferenceClient>(
@@ -318,6 +325,7 @@ bool MissionExecutor::SelectMissionSpecification(
     }
     try {
         replacement->GetMissionSpecificationEntry(replacement->executor_owned_mode());
+        RequireMissionAllowedInProfile(*replacement, runtime_profile_);
     } catch (const std::exception & exception) {
         message = "mission catalog selection rejected while validating " +
             replacement->catalog_id() + ": " + exception.what();

@@ -73,12 +73,17 @@ namespace mission {
 
     class MissionExecutor {
     public:
+        /**
+         * runtime_profile restricts the behavior trees the executor loads
+         * (see profile_restrictions.hpp); empty restricts nothing.
+         */
         explicit MissionExecutor(
             rclcpp_lifecycle::LifecycleNode * node,
             tf2_ros::Buffer::SharedPtr tf_buffer,
             MissionSpecification::SharedPtr mission_specification,
             rclcpp::CallbackGroup::SharedPtr odometry_sub_callback_group,
-            rclcpp::Executor & executor
+            rclcpp::Executor & executor,
+            std::string runtime_profile = ""
         );
 
         ~MissionExecutor();
@@ -152,6 +157,8 @@ namespace mission {
         iii_drone::px4::GenericModeExecutor::SharedPtr generic_mode_executor_;
 
         rclcpp::Executor & executor_;
+
+        std::string runtime_profile_;
 
         bool is_started_ = false;
         bool is_configured_ = false;

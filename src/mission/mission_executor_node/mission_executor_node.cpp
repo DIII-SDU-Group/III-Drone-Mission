@@ -6,6 +6,7 @@
 #include <iii_drone_mission/behavior/action_nodes/phase_waypoint_provider_action_node.hpp>
 #include <iii_drone_core/diagnostics/hil_trace.hpp>
 #include <iii_drone_mission/mission/mission_exit.hpp>
+#include <iii_drone_mission/mission/profile_restrictions.hpp>
 
 #include <iii_drone_core/adapters/powerline_adapter.hpp>
 
@@ -29,9 +30,11 @@ using LifecycleConfigurator = Configurator<rclcpp_lifecycle::LifecycleNode>;
 using ParameterType = rclcpp::ParameterType;
 using ConfigurationEntry = iii_drone::configuration::configuration_entry_t;
 
-std::string ConfigurationProfile()
+// The runtime profile (iii_runtime_profile parameter, else III_SYSTEM_PROFILE)
+// with the legacy fallbacks that pick a catalog default for unprofiled starts.
+std::string ConfigurationProfile(const std::string & runtime_profile_parameter)
 {
-    if (const char * profile = std::getenv("III_SYSTEM_PROFILE"); profile != nullptr && *profile != '\0') {
+    if (const auto profile = ResolveRuntimeProfile(runtime_profile_parameter); !profile.empty()) {
         return profile;
     }
     if (const char * profile = std::getenv("III_DRONE_PROFILE"); profile != nullptr && *profile != '\0') {
@@ -207,6 +210,8 @@ MissionExecutorNode::MissionExecutorNode(
 
 	}
 
+    declare_parameter<std::string>(kRuntimeProfileParameter, "");
+
     get_mission_catalog_service_ = create_service<iii_drone_interfaces::srv::GetMissionCatalog>(
         "get_mission_catalog",
         std::bind(&MissionExecutorNode::getMissionCatalogService, this, std::placeholders::_1, std::placeholders::_2)
@@ -275,7 +280,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     );
     DeclareManagedParameters(*configurator_);
     configurator_->validate();
-    active_profile_ = ConfigurationProfile();
+    active_profile_ = ConfigurationProfile(get_parameter(kRuntimeProfileParameter).as_string());
 
     try {
         mission_catalog_ = MissionCatalog::LoadInstalled();
@@ -297,23 +302,32 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Missio
     }
 
     // Mission Executor
-    auto mission_specification = std::make_shared<MissionSpecification>(
-        mission_catalog_,
-        mission_catalog_->entryForProfile(active_catalog_id_, active_profile_),
-        this
-    );
-    mission_executor_ = std::make_shared<MissionExecutor>(
-        this, 
-        tf_buffer_,
-        mission_specification,
-        odometry_sub_callback_group_,
-        executor_handle_
-    );
+    try {
+        auto mission_specification = std::make_shared<MissionSpecification>(
+            mission_catalog_,
+            mission_catalog_->entryForProfile(active_catalog_id_, active_profile_),
+            this
+        );
+        mission_executor_ = std::make_shared<MissionExecutor>(
+            this, 
+            tf_buffer_,
+            mission_specification,
+            odometry_sub_callback_group_,
+            executor_handle_,
+            active_profile_
+        );
 
-    mission_executor_->Configure(
-        configurator_,
-        get_reference_cb_group_
-    );
+        mission_executor_->Configure(
+            configurator_,
+            get_reference_cb_group_
+        );
+    } catch (const std::exception & exception) {
+        mission_executor_.reset();
+        mission_status_degraded_reason_ = exception.what();
+        RCLCPP_ERROR(get_logger(), "Mission executor configuration failed: %s", exception.what());
+        publishMissionModeStatus();
+        return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
+    }
 
     RCLCPP_INFO(get_logger(), "MissionExecutorNode::on_configure(): Configured");
     mission_status_degraded_reason_.clear();
@@ -694,7 +708,9 @@ void MissionExecutorNode::publishMissionModeStatus() {
     msg.active_catalog_id = active_catalog_id_;
     msg.catalog_hash = mission_catalog_ != nullptr ? mission_catalog_->catalogHash() : "";
     msg.default_catalog_id = default_catalog_id_;
-    msg.configuration_profile = active_profile_.empty() ? ConfigurationProfile() : active_profile_;
+    msg.configuration_profile = active_profile_.empty()
+        ? ConfigurationProfile(get_parameter(kRuntimeProfileParameter).as_string())
+        : active_profile_;
     msg.temporary_override = temporary_override_;
     msg.catalog_ready = mission_catalog_ != nullptr;
     msg.catalog_error = mission_status_degraded_reason_;
