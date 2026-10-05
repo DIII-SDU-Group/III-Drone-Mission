@@ -278,12 +278,6 @@ iii_register_mission(
   PROFILES sim
 )
 iii_register_mission(
-  ID opti-track-up-down-test
-  SPECIFICATION mission_specification/mission_specification.yaml.opti_track
-  CLASSIFICATION test
-  PROFILES opti_track sim
-)
-iii_register_mission(
   ID reach-cable-simple-test
   SPECIFICATION mission_specification/mission_specification.yaml.simple_test
   CLASSIFICATION test
