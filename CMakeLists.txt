@@ -293,6 +293,12 @@ iii_register_mission(
   DEFAULT_FOR opti_track
 )
 iii_register_mission(
+  ID opti-track-maneuvers
+  SPECIFICATION mission_specification/mission_specification_opti_track_maneuvers.yaml
+  CLASSIFICATION experimental
+  PROFILES opti_track sim hil
+)
+iii_register_mission(
   ID reach-cable-simple-test
   SPECIFICATION mission_specification/mission_specification.yaml.simple_test
   CLASSIFICATION test

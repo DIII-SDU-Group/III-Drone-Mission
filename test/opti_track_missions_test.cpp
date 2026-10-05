@@ -25,6 +25,7 @@ constexpr std::size_t kMaximumModeNameLength = 24;
 
 const std::vector<std::string> kOptiTrackMissions = {
     "opti-track-hover",
+    "opti-track-maneuvers",
 };
 
 struct Target
@@ -178,4 +179,26 @@ TEST(OptiTrackMissionsTest, TreesLoadAndKeepWorldTargetsAboveTheMinimumAltitude)
             }
         }
     }
+}
+
+TEST(OptiTrackMissionsTest, ManeuversPathUsesTheLiteralWaypointList)
+{
+    const auto catalog = mission::MissionCatalog::LoadInstalled();
+    const auto entry = Specification(catalog, "opti-track-maneuvers").GetMissionSpecificationEntry("ot_maneuvers");
+    std::vector<Target> targets;
+    BT::BehaviorTreeFactory factory;
+    RegisterRecordingNodes(factory, &targets);
+    auto tree = factory.createTreeFromFile(entry.behavior_tree_xml_file);
+    ASSERT_EQ(tree.tickWhileRunning(), BT::NodeStatus::SUCCESS);
+
+    std::vector<point_t> path;
+    for (const auto & target : targets) {
+        if (target.node == "follow_path_waypoints") {
+            path.push_back(target.position);
+        }
+    }
+    ASSERT_EQ(path.size(), 5U);
+    EXPECT_FLOAT_EQ(path[1][1], 0.5F);
+    EXPECT_FLOAT_EQ(path[1][2], 1.4F);
+    EXPECT_FLOAT_EQ(path[3][2], 1.1F);
 }
