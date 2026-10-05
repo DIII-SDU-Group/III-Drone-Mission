@@ -43,6 +43,8 @@
 
 #include <iii_drone_mission/px4/modes/mode_provider.hpp>
 
+#include <iii_drone_mission/px4/stick_takeover.hpp>
+
 #include <iii_drone_mission/mission/mission_exit.hpp>
 
 /*****************************************************************************/
@@ -182,6 +184,8 @@ namespace px4 {
 
         rclcpp::Subscription<px4_msgs::msg::ManualControlSetpoint>::SharedPtr manual_control_setpoint_sub_;
         void manualControlSetpointCallback(const px4_msgs::msg::ManualControlSetpoint::SharedPtr msg);
+
+        StickTakeoverDetector stick_takeover_detector_;
 
         // rclcpp::Service<iii_drone_interfaces::srv::ModeExecutorScheduleRequest>::SharedPtr schedule_request_srv_;
         // void scheduleRequestCallback(

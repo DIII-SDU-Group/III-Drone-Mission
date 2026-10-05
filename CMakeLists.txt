@@ -607,6 +607,9 @@ if(BUILD_TESTING)
   iii_drone_mission_add_isolated_gtest(iii_drone_opti_track_missions_test
     test/opti_track_missions_test.cpp
   )
+  iii_drone_mission_add_isolated_gtest(iii_drone_stick_takeover_test
+    test/stick_takeover_test.cpp
+  )
 
   if(TARGET iii_drone_mission_specification_test)
     target_include_directories(iii_drone_mission_specification_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
@@ -693,6 +696,9 @@ if(BUILD_TESTING)
     target_include_directories(iii_drone_opti_track_missions_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
     target_link_libraries(iii_drone_opti_track_missions_test iii_drone_mission_lib)
     ament_target_dependencies(iii_drone_opti_track_missions_test ${dependencies})
+  endif()
+  if(TARGET iii_drone_stick_takeover_test)
+    target_include_directories(iii_drone_stick_takeover_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
   endif()
 endif()
 

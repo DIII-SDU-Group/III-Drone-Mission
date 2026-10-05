@@ -146,6 +146,7 @@ void GenericModeExecutor::onActivate() {
     // A new mission run: clears any earlier Mission Exit latch and reopens
     // the tree dispatch gate before any mode of this run can start.
     MissionControl::Process().BeginRun();
+    stick_takeover_detector_.Rebaseline();
     is_active_ = true;
     triggered_position_control_ = false;
     constexpr int kActivationFailsafeDeferTimeoutS = 5;
@@ -917,31 +918,24 @@ void GenericModeExecutor::onNormalModeSuccess(bool & last_mode) {
 
 void GenericModeExecutor::manualControlSetpointCallback(const px4_msgs::msg::ManualControlSetpoint::SharedPtr msg) {
 
+    StickTakeoverDetector::Sample sticks;
+    sticks.valid = msg->valid;
+    sticks.roll = msg->roll;
+    sticks.pitch = msg->pitch;
+    sticks.yaw = msg->yaw;
+    sticks.throttle = msg->throttle;
+
     if (!is_active_) {
+        stick_takeover_detector_.Observe(sticks);
         return;
     }
 
-    bool switch_to_position_control = false;
-
-    double manual_stick_input_threshold = configuration_->GetParameter("/mission/manual_stick_input_threshold").as_double();
-
-    if (abs(msg->throttle) > manual_stick_input_threshold) {
-
-        switch_to_position_control = true;
-
-    } else if (abs(msg->yaw) > manual_stick_input_threshold) {
-
-        switch_to_position_control = true;
-
-    } else if (abs(msg->roll) > manual_stick_input_threshold) {
-
-        switch_to_position_control = true;
-
-    } else if (abs(msg->pitch) > manual_stick_input_threshold) {
-
-        switch_to_position_control = true;
-
-    }
+    // A takeover is stick movement since activation, not a stick away from
+    // centre: PX4 reports throttle -1 with the stick at the bottom.
+    const bool switch_to_position_control = stick_takeover_detector_.ObserveActive(
+        sticks,
+        configuration_->GetParameter("/mission/manual_stick_input_threshold").as_double()
+    );
 
     if (switch_to_position_control) {
 
