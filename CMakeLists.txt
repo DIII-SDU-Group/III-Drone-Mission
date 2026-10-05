@@ -305,6 +305,12 @@ iii_register_mission(
   PROFILES opti_track sim hil
 )
 iii_register_mission(
+  ID opti-track-mode-loop
+  SPECIFICATION mission_specification/mission_specification_opti_track_mode_loop.yaml
+  CLASSIFICATION experimental
+  PROFILES opti_track sim hil
+)
+iii_register_mission(
   ID reach-cable-simple-test
   SPECIFICATION mission_specification/mission_specification.yaml.simple_test
   CLASSIFICATION test

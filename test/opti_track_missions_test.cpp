@@ -27,6 +27,7 @@ const std::vector<std::string> kOptiTrackMissions = {
     "opti-track-hover",
     "opti-track-maneuvers",
     "opti-track-cycle",
+    "opti-track-mode-loop",
 };
 
 struct Target
