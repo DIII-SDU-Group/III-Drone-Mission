@@ -43,6 +43,8 @@
 
 #include <iii_drone_mission/px4/modes/mode_provider.hpp>
 
+#include <iii_drone_mission/px4/mode_executors/handoff_failsafe_deferral.hpp>
+
 #include <iii_drone_mission/px4/stick_takeover.hpp>
 
 #include <iii_drone_mission/mission/mission_exit.hpp>
@@ -186,6 +188,17 @@ namespace px4 {
         void manualControlSetpointCallback(const px4_msgs::msg::ManualControlSetpoint::SharedPtr msg);
 
         StickTakeoverDetector stick_takeover_detector_;
+
+        /**
+         * PX4 failsafes are deferred only while a mode handoff is pending:
+         * from scheduling a mode until PX4 runs it.
+         */
+        HandoffFailsafeDeferral handoff_failsafe_deferral_;
+        rclcpp::Subscription<px4_msgs::msg::VehicleStatus>::SharedPtr handoff_vehicle_status_sub_;
+
+        void deferFailsafesForHandoff(uint8_t target_nav_state, const char * handoff);
+        void releaseHandoffFailsafeDeferral(const char * reason);
+        void onHandoffVehicleStatus(const px4_msgs::msg::VehicleStatus::SharedPtr msg);
 
         // rclcpp::Service<iii_drone_interfaces::srv::ModeExecutorScheduleRequest>::SharedPtr schedule_request_srv_;
         // void scheduleRequestCallback(

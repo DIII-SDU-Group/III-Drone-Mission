@@ -73,6 +73,16 @@ GenericModeExecutor::GenericModeExecutor(
         )
     );
 
+    // Ends the failsafe deferral of a mode handoff once PX4 runs the scheduled
+    // mode; on the default callback group, where the handoffs are scheduled.
+    handoff_vehicle_status_sub_ = node_.create_subscription<px4_msgs::msg::VehicleStatus>(
+        "/fmu/out/vehicle_status_v1",
+        rclcpp::QoS(1).best_effort(),
+        [this](const px4_msgs::msg::VehicleStatus::SharedPtr msg) {
+            onHandoffVehicleStatus(msg);
+        }
+    );
+
     combined_drone_awareness_sub_ = node_.create_subscription<iii_drone_interfaces::msg::CombinedDroneAwareness>(
         "/control/maneuver_controller/combined_drone_awareness",
         10,
@@ -149,33 +159,10 @@ void GenericModeExecutor::onActivate() {
     stick_takeover_detector_.Rebaseline();
     is_active_ = true;
     triggered_position_control_ = false;
-    constexpr int kActivationFailsafeDeferTimeoutS = 5;
-    bool failsafe_defer_enabled = false;
-    try {
-        failsafe_defer_enabled = deferFailsafesSync(true, kActivationFailsafeDeferTimeoutS);
-    } catch (const std::exception & exception) {
-        RCLCPP_WARN(
-            node_.get_logger(),
-            "GenericModeExecutor::onActivate(): Failed while confirming PX4 failsafe deferral: %s. "
-            "Continuing activation because aborting here makes the external mode unresponsive.",
-            exception.what()
-        );
-    }
-    if (failsafe_defer_enabled) {
-        RCLCPP_INFO(
-            node_.get_logger(),
-            "GenericModeExecutor::onActivate(): Deferring PX4 failsafes for %d s during mission-mode handoff.",
-            kActivationFailsafeDeferTimeoutS
-        );
-    } else {
-        RCLCPP_WARN(
-            node_.get_logger(),
-            "GenericModeExecutor::onActivate(): Failed to confirm PX4 failsafe deferral during mission-mode handoff."
-        );
-    }
     std::string owned_mode_key = mission_specification_->executor_owned_mode();
     current_mode_ = mode_provider_->GetMode(owned_mode_key);
     current_mode_entry_ = mission_specification_->GetMissionSpecificationEntry(owned_mode_key);
+    deferFailsafesForHandoff((*current_mode_)->id(), "mission activation");
 
     schedule_next_ = schedule_next_mode;
     schedule_current_ = schedule_next_mode;
@@ -209,6 +196,7 @@ void GenericModeExecutor::onActivate() {
 
                     is_active_ = false;
                     clearGlobalBlackboard("mission executor activation arming failed");
+                    releaseHandoffFailsafeDeferral("mission activation arming failed");
 
                     return;
 
@@ -245,6 +233,7 @@ void GenericModeExecutor::onDeactivate(DeactivateReason reason) {
 
     is_active_ = false;
     clearGlobalBlackboard("mission executor deactivated");
+    handoff_failsafe_deferral_.Abandon();
     try {
         deferFailsafesSync(false, 0);
     } catch (const std::exception & exception) {
@@ -441,6 +430,8 @@ void GenericModeExecutor::handleModeCompleted(px4_ros2::Result result) {
         const bool force_disarmed_activation =
             !isArmed() && (*current_mode_entry_).allow_activate_when_disarmed;
 
+        deferFailsafesForHandoff((*current_mode_)->id(), "mission mode handoff");
+
         scheduleMode(
             (*current_mode_)->id(),
             [this](px4_ros2::Result result) {
@@ -476,6 +467,7 @@ bool GenericModeExecutor::checkScheduleAndActionValidity() {
 
             is_active_ = false;
             clearGlobalBlackboard("mission executor invalid action state: action schedule without goal handle");
+            releaseHandoffFailsafeDeferral("invalid mode executor action state");
 
             stopModeIfWaiting();
 
@@ -496,6 +488,7 @@ bool GenericModeExecutor::checkScheduleAndActionValidity() {
 
             is_active_ = false;
             clearGlobalBlackboard("mission executor invalid action state: goal handle without action schedule");
+            releaseHandoffFailsafeDeferral("invalid mode executor action state");
 
             stopModeIfWaiting();
 
@@ -548,6 +541,7 @@ bool GenericModeExecutor::checkPositionControlTriggered() {
 
         is_active_ = false;
         clearGlobalBlackboard("manual position control triggered");
+        releaseHandoffFailsafeDeferral("manual position control triggered");
 
         stopModeIfWaiting();
 
@@ -582,6 +576,7 @@ bool GenericModeExecutor::checkNextModeSucceeded(
             );
             is_active_ = false;
             clearGlobalBlackboard("mode rejected");
+            releaseHandoffFailsafeDeferral("mode rejected");
             scheduleMode(
                 missionDoneSelectModeId(),
                 [](px4_ros2::Result) { }
@@ -602,6 +597,7 @@ bool GenericModeExecutor::checkNextModeSucceeded(
             RCLCPP_WARN(node_.get_logger(), "GenericModeExecutor::checkNextModeSucceeded(): Mode %s interrupted, deactivating mode executor %s", (*current_mode_)->mode_name().c_str(), mode_executor_name_.c_str());
             is_active_ = false;
             clearGlobalBlackboard("mode interrupted");
+            releaseHandoffFailsafeDeferral("mode interrupted");
             scheduleMode(
                 missionDoneSelectModeId(),
                 [](px4_ros2::Result) { }
@@ -622,6 +618,7 @@ bool GenericModeExecutor::checkNextModeSucceeded(
             RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::checkNextModeSucceeded(): Mode %s timed out, deactivating mode executor %s", (*current_mode_)->mode_name().c_str(), mode_executor_name_.c_str());
             is_active_ = false;
             clearGlobalBlackboard("mode timed out");
+            releaseHandoffFailsafeDeferral("mode timed out");
             scheduleMode(
                 missionDoneSelectModeId(),
                 [](px4_ros2::Result) { }
@@ -642,6 +639,7 @@ bool GenericModeExecutor::checkNextModeSucceeded(
             RCLCPP_WARN(node_.get_logger(), "GenericModeExecutor::checkNextModeSucceeded(): Mode %s deactivated, deactivating mode executor %s", (*current_mode_)->mode_name().c_str(), mode_executor_name_.c_str());
             is_active_ = false;
             clearGlobalBlackboard("mode deactivated");
+            releaseHandoffFailsafeDeferral("mode deactivated");
             scheduleMode(
                 missionDoneSelectModeId(),
                 [](px4_ros2::Result) { }
@@ -662,6 +660,7 @@ bool GenericModeExecutor::checkNextModeSucceeded(
             RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::checkNextModeSucceeded(): Mode %s failed with result %s, deactivating mode executor %s", (*current_mode_)->mode_name().c_str(), px4_ros2::resultToString(result), mode_executor_name_.c_str());
             is_active_ = false;
             clearGlobalBlackboard("mode failed");
+            releaseHandoffFailsafeDeferral("mode failed");
             scheduleMode(
                 missionDoneSelectModeId(),
                 [](px4_ros2::Result) { }
@@ -770,6 +769,8 @@ bool GenericModeExecutor::scheduleActionIfAny(schedule_t & previous_schedule_cur
             schedule_next_ = schedule_next_mode;
             schedule_current_ = schedule_land;
 
+            deferFailsafesForHandoff(px4_ros2::ModeBase::kModeIDLand, "landing handoff");
+
             land(
                 [this](px4_ros2::Result result) {
                     if (result != px4_ros2::Result::Success) {
@@ -812,6 +813,8 @@ bool GenericModeExecutor::scheduleActionIfAny(schedule_t & previous_schedule_cur
             schedule_current_ = schedule_takeoff;
 
             (*current_mode_)->StartControls();
+
+            deferFailsafesForHandoff(px4_ros2::ModeBase::kModeIDTakeoff, "takeoff handoff");
 
             takeoff(
                 [this](px4_ros2::Result result) {
@@ -902,6 +905,7 @@ void GenericModeExecutor::onNormalModeSuccess(bool & last_mode) {
 
         is_active_ = false;
         clearGlobalBlackboard("terminal mission completion");
+        releaseHandoffFailsafeDeferral("terminal mission completion");
 
         last_mode = true;
 
@@ -952,6 +956,7 @@ void GenericModeExecutor::manualControlSetpointCallback(const px4_msgs::msg::Man
 
         is_active_ = false;
         triggered_position_control_ = true;
+        releaseHandoffFailsafeDeferral("pilot stick takeover");
 
         scheduleMode(
             px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_POSCTL,
@@ -959,6 +964,101 @@ void GenericModeExecutor::manualControlSetpointCallback(const px4_msgs::msg::Man
         );
 
     }
+
+}
+
+void GenericModeExecutor::deferFailsafesForHandoff(uint8_t target_nav_state, const char * handoff) {
+
+    handoff_failsafe_deferral_.Begin(target_nav_state);
+
+    bool failsafe_defer_enabled = false;
+    try {
+        failsafe_defer_enabled = deferFailsafesSync(true, HandoffFailsafeDeferral::kTimeoutS);
+    } catch (const std::exception & exception) {
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::deferFailsafesForHandoff(): Failed while confirming PX4 failsafe deferral "
+            "for the %s: %s. Continuing because aborting here makes the external mode unresponsive.",
+            handoff,
+            exception.what()
+        );
+    }
+    if (failsafe_defer_enabled) {
+        RCLCPP_INFO(
+            node_.get_logger(),
+            "GenericModeExecutor::deferFailsafesForHandoff(): Deferring PX4 failsafes (%d s each) during the %s "
+            "until PX4 runs mode %u.",
+            HandoffFailsafeDeferral::kTimeoutS,
+            handoff,
+            static_cast<unsigned>(target_nav_state)
+        );
+    } else {
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::deferFailsafesForHandoff(): Failed to confirm PX4 failsafe deferral during the %s.",
+            handoff
+        );
+    }
+
+}
+
+void GenericModeExecutor::releaseHandoffFailsafeDeferral(const char * reason) {
+
+    // Only a handoff that never reached its mode still defers failsafes.
+    if (!handoff_failsafe_deferral_.Abandon()) {
+        return;
+    }
+    try {
+        deferFailsafesSync(false, 0);
+    } catch (const std::exception & exception) {
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::releaseHandoffFailsafeDeferral(): Failed while clearing PX4 failsafe deferral (%s): %s",
+            reason,
+            exception.what()
+        );
+        return;
+    }
+    RCLCPP_INFO(
+        node_.get_logger(),
+        "GenericModeExecutor::releaseHandoffFailsafeDeferral(): PX4 failsafes act again: %s.",
+        reason
+    );
+
+}
+
+void GenericModeExecutor::onHandoffVehicleStatus(const px4_msgs::msg::VehicleStatus::SharedPtr msg) {
+
+    if (!handoff_failsafe_deferral_.pending()) {
+        return;
+    }
+    // A mission mode runs once px4_ros2 has activated it (not while the
+    // executor still arms); PX4 runs its own modes as soon as it reports them.
+    bool target_running = true;
+    for (const auto & mode : *mode_provider_) {
+        if (mode->mode_id() == msg->nav_state) {
+            target_running = mode->active();
+            break;
+        }
+    }
+    if (!handoff_failsafe_deferral_.Reached(msg->nav_state, target_running)) {
+        return;
+    }
+    try {
+        deferFailsafesSync(false, 0);
+    } catch (const std::exception & exception) {
+        RCLCPP_WARN(
+            node_.get_logger(),
+            "GenericModeExecutor::onHandoffVehicleStatus(): Failed while clearing PX4 failsafe deferral: %s",
+            exception.what()
+        );
+        return;
+    }
+    RCLCPP_INFO(
+        node_.get_logger(),
+        "GenericModeExecutor::onHandoffVehicleStatus(): PX4 runs mode %u; failsafes act again.",
+        static_cast<unsigned>(msg->nav_state)
+    );
 
 }
 
