@@ -279,7 +279,7 @@ const MissionCatalogEntry & MissionCatalog::entryForProfile(
     const auto & result = entry(catalog_id);
     if (!result.allowedForProfile(profile)) {
         throw std::runtime_error(
-            "mission catalog ID " + catalog_id + " is unavailable for active profile " + profile
+            "mission catalog ID " + catalog_id + " is not available in the " + profile + " profile"
         );
     }
     return result;

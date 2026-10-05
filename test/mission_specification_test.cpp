@@ -41,6 +41,15 @@ TEST(MissionCatalogTest, SelectionAcceptsLogicalIdsAndRejectsPathLikeValues)
     EXPECT_EQ(catalog->entryForProfile("inspection-production", "real").classification, "production");
     EXPECT_THROW(static_cast<void>(catalog->entryForProfile("/tmp/mission.yaml", "real")), std::runtime_error);
     EXPECT_THROW(static_cast<void>(catalog->entryForProfile("ftp-legacy", "real")), std::runtime_error);
+    try {
+        static_cast<void>(catalog->entryForProfile("inspection-production", "opti_track"));
+        FAIL() << "inspection-production selected under opti_track";
+    } catch (const std::runtime_error & error) {
+        EXPECT_STREQ(
+            error.what(),
+            "mission catalog ID inspection-production is not available in the opti_track profile"
+        );
+    }
 }
 
 TEST(MissionSpecificationTest, ResolvesOnlyVerifiedContentAddressedAssets)
