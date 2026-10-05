@@ -277,6 +277,21 @@ iii_register_mission(
   STATUS deprecated
   PROFILES sim
 )
+# OptiTrack lab missions: flight basics without cable, gripper or perception.
+# Registered for sim and hil too so they can be qualified there. Missions
+# registered for opti_track may use only the opti_track behavior-node
+# allowlist (profile_restrictions.cpp); the catalog build enforces it.
+# opti-track-hover is production because a commissioned onboard profile needs
+# exactly one default in the qualified and field-candidate catalogs, which
+# carry no test entries (and no experimental entry unless explicitly
+# included), so a test mission cannot be its default.
+iii_register_mission(
+  ID opti-track-hover
+  SPECIFICATION mission_specification/mission_specification_opti_track_hover.yaml
+  CLASSIFICATION production
+  PROFILES opti_track sim hil
+  DEFAULT_FOR opti_track
+)
 iii_register_mission(
   ID reach-cable-simple-test
   SPECIFICATION mission_specification/mission_specification.yaml.simple_test
@@ -571,6 +586,9 @@ if(BUILD_TESTING)
   iii_drone_mission_add_isolated_gtest(iii_drone_profile_restrictions_test
     test/profile_restrictions_test.cpp
   )
+  iii_drone_mission_add_isolated_gtest(iii_drone_opti_track_missions_test
+    test/opti_track_missions_test.cpp
+  )
 
   if(TARGET iii_drone_mission_specification_test)
     target_include_directories(iii_drone_mission_specification_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
@@ -652,6 +670,11 @@ if(BUILD_TESTING)
     target_include_directories(iii_drone_profile_restrictions_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
     target_link_libraries(iii_drone_profile_restrictions_test iii_drone_mission_lib)
     ament_target_dependencies(iii_drone_profile_restrictions_test ${dependencies})
+  endif()
+  if(TARGET iii_drone_opti_track_missions_test)
+    target_include_directories(iii_drone_opti_track_missions_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+    target_link_libraries(iii_drone_opti_track_missions_test iii_drone_mission_lib)
+    ament_target_dependencies(iii_drone_opti_track_missions_test ${dependencies})
   endif()
 endif()
 

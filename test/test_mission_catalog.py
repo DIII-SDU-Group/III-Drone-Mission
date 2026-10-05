@@ -305,8 +305,9 @@ def test_qualified_and_field_catalog_classification_is_fail_closed(tmp_path: Pat
     assert [(entry["id"], entry["classification"]) for entry in qualified["entries"]] == [
         ("inspection-production", "production")
     ]
-    assert set(qualified["profiles"]) == {"hil", "real"}
-    assert qualified["entries"][0]["profiles"] == ["hil", "real"]
+    assert set(qualified["profiles"]) == {"hil", "opti_track", "real"}
+    assert qualified["entries"][0]["profiles"] == ["hil", "opti_track", "real"]
+    assert qualified["profiles"]["opti_track"]["default_entry_id"] == "inspection-production"
 
     selected = tmp_path / "selected-field"
     field = materialize_field_catalog(
@@ -424,6 +425,14 @@ def test_opti_track_allowlist_binds_only_missions_registered_for_it(tmp_path: Pa
         "behavior_trees/cable.xml": ["CableLanding", "Sequence"],
         "behavior_trees/main.xml": ["Sequence", "TestAction"],
     }
+    assert catalog["profiles"]["opti_track"] == {
+        "commissioned": True,
+        "default_entry_id": "lab-production",
+        "onboard": True,
+    }
+    qualified = verify_catalog(paths["qualified"], expected_scope="qualified")
+    assert qualified["profiles"]["opti_track"]["default_entry_id"] == "lab-production"
+    assert [entry["profiles"] for entry in qualified["entries"]] == [["hil", "real"], ["opti_track"]]
 
 
 def test_opti_track_tree_including_other_files_fails(tmp_path: Path):

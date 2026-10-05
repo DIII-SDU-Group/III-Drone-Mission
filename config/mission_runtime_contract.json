@@ -10,7 +10,7 @@
   },
   "profiles": {
     "hil": {"commissioned": true, "onboard": true},
-    "opti_track": {"commissioned": false, "onboard": false},
+    "opti_track": {"commissioned": true, "onboard": true},
     "real": {"commissioned": true, "onboard": true},
     "sim": {"commissioned": true, "onboard": false}
   },

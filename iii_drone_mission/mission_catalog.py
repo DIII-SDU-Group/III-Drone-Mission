@@ -30,11 +30,12 @@ FIELD_POLICY_SCHEMA = "iii.mission-field-policy/v1"
 SOURCE_STATE_SCHEMA = "iii.mission-source-state/v1"
 GROOT_PROJECT_SCHEMA = "iii.groot2-project/v1"
 KNOWN_PROFILES = ("hil", "opti_track", "real", "sim")
-COMMISSIONED_PROFILES = frozenset({"hil", "real", "sim"})
-# OptiTrack remains a known development profile, but it cannot appear in an
-# onboard catalog until its NatNet ingress and PX4 external-vision bridge are
-# actually present and validated.
-ONBOARD_PROFILES = frozenset({"hil", "real"})
+# Every commissioned profile needs exactly one default mission in each catalog
+# that carries the profile. opti_track is the OptiTrack-lab flight-basics
+# profile (no cable); its missions run onboard, fed by the NatNet pose relay
+# and PX4 external vision.
+COMMISSIONED_PROFILES = frozenset({"hil", "opti_track", "real", "sim"})
+ONBOARD_PROFILES = frozenset({"hil", "opti_track", "real"})
 # Missions registered for these profiles may use only the profile's allowlist of
 # III behavior nodes (BehaviorTree.CPP built-ins are always available). The
 # behavior-node contract carries the allowlists the runtime itself enforces.

@@ -14,7 +14,7 @@ TEST(MissionCatalogTest, InstalledCatalogHasStableProfileDefaults)
     const auto catalog = mission::MissionCatalog::LoadInstalled();
     EXPECT_EQ(catalog->scope(), "local");
     EXPECT_EQ(catalog->defaultEntry("real").id, "inspection-production");
-    EXPECT_THROW(static_cast<void>(catalog->defaultEntry("opti_track")), std::runtime_error);
+    EXPECT_EQ(catalog->defaultEntry("opti_track").id, "opti-track-hover");
     EXPECT_EQ(catalog->defaultEntry("sim").id, "inspection-production");
     EXPECT_EQ(catalog->defaultEntry("hil").id, "inspection-production");
 }
@@ -25,7 +25,7 @@ TEST(MissionCatalogTest, CatalogJsonExplainsUnavailableEntriesWithoutPaths)
     const auto compatible = nlohmann::json::parse(catalog->catalogJson("real", false));
     const auto all = nlohmann::json::parse(catalog->catalogJson("real", true));
     ASSERT_EQ(compatible.at("entries").size(), 2U);
-    ASSERT_EQ(all.at("entries").size(), 6U);
+    ASSERT_EQ(all.at("entries").size(), 7U);
     for (const auto & entry : all.at("entries")) {
         EXPECT_TRUE(entry.contains("available"));
         EXPECT_TRUE(entry.contains("unavailable_reason"));
