@@ -25,7 +25,7 @@ TEST(MissionCatalogTest, CatalogJsonExplainsUnavailableEntriesWithoutPaths)
     const auto compatible = nlohmann::json::parse(catalog->catalogJson("real", false));
     const auto all = nlohmann::json::parse(catalog->catalogJson("real", true));
     ASSERT_EQ(compatible.at("entries").size(), 2U);
-    ASSERT_EQ(all.at("entries").size(), 8U);
+    ASSERT_EQ(all.at("entries").size(), 9U);
     for (const auto & entry : all.at("entries")) {
         EXPECT_TRUE(entry.contains("available"));
         EXPECT_TRUE(entry.contains("unavailable_reason"));

@@ -26,6 +26,7 @@ constexpr std::size_t kMaximumModeNameLength = 24;
 const std::vector<std::string> kOptiTrackMissions = {
     "opti-track-hover",
     "opti-track-maneuvers",
+    "opti-track-cycle",
 };
 
 struct Target
@@ -169,7 +170,8 @@ TEST(OptiTrackMissionsTest, TreesLoadAndKeepWorldTargetsAboveTheMinimumAltitude)
             auto tree = factory.createTreeFromFile(entry.behavior_tree_xml_file);
             EXPECT_EQ(tree.tickWhileRunning(), BT::NodeStatus::SUCCESS);
 
-            EXPECT_FALSE(targets.empty());
+            const bool lands = entry.key == "ot_cycle_land";
+            EXPECT_EQ(targets.empty(), lands);
             for (const auto & target : targets) {
                 if (target.frame_id == "drone") {
                     continue;
