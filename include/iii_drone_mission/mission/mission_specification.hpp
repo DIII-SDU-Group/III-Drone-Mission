@@ -32,6 +32,7 @@ namespace mission {
         std::string key;
         std::string mode_name;
         std::string behavior_tree_xml_file;
+        std::string behavior_tree_logical_name;
         std::string next_mode;
 
         bool allow_activate_when_disarmed;

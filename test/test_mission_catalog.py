@@ -19,25 +19,30 @@ from iii_drone_mission.mission_catalog import (
 )
 
 
-def _node_contract(path: Path) -> Path:
+def _node_contract(path: Path, *, allowlists: dict[str, list[str]] | None = None) -> Path:
+    def action(node_id: str) -> dict:
+        return {
+            "builtin": False,
+            "id": node_id,
+            "ports": [
+                {
+                    "default": "",
+                    "description": "target",
+                    "direction": "INPUT",
+                    "name": "target",
+                    "type": "std::string",
+                }
+            ],
+            "type": "ACTION",
+        }
+
     payload = {
         "nodes": [
             {"builtin": True, "id": "Sequence", "ports": [], "type": "CONTROL"},
-            {
-                "builtin": False,
-                "id": "TestAction",
-                "ports": [
-                    {
-                        "default": "",
-                        "description": "target",
-                        "direction": "INPUT",
-                        "name": "target",
-                        "type": "std::string",
-                    }
-                ],
-                "type": "ACTION",
-            },
+            action("CableLanding"),
+            action("TestAction"),
         ],
+        "profile_node_allowlists": {"opti_track": ["TestAction"]} if allowlists is None else allowlists,
         "schema": "iii.behavior-node-contract/v1",
     }
     payload["contract_hash"] = content_hash(payload)
@@ -371,4 +376,78 @@ def test_invalid_profile_defaults_fail(tmp_path: Path):
     )
     paths["registrations"].write_text(content)
     with pytest.raises(CatalogError, match="exactly one default"):
+        _generate(paths)
+
+
+def test_opti_track_missions_may_use_only_allowlisted_and_builtin_nodes(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    _tree(paths["source"] / "behavior_trees/main.xml", node="CableLanding")
+    with pytest.raises(
+        CatalogError,
+        match=r"mission inspection-(experimental|production) \(behavior tree behavior_trees/main.xml "
+        r"uses CableLanding\) is not available in the opti_track profile",
+    ):
+        _generate(paths)
+
+
+def test_node_outside_the_allowlist_in_any_tree_of_the_file_fails(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    (paths["source"] / "behavior_trees/main.xml").write_text(
+        '<root BTCPP_format="4" main_tree_to_execute="Main">'
+        '<BehaviorTree ID="Main"><Sequence><Action ID="TestAction" target="a"/><SubTree ID="Inner"/></Sequence>'
+        '</BehaviorTree>'
+        '<BehaviorTree ID="Inner"><CableLanding target="b"/></BehaviorTree>'
+        "</root>\n"
+    )
+    with pytest.raises(CatalogError, match="uses CableLanding.*not available in the opti_track profile"):
+        _generate(paths)
+
+
+def test_opti_track_allowlist_binds_only_missions_registered_for_it(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    source = paths["source"]
+    _tree(source / "behavior_trees/cable.xml", node="CableLanding")
+    _spec(source / "mission_specification/production.yaml", "behavior_trees/cable.xml")
+    paths["registrations"].write_text(
+        "cable-production\t"
+        f"{source / 'mission_specification/production.yaml'}\tproduction\tactive\t"
+        "hil,real,sim\thil,real,sim\n"
+        "inspection-experimental\t"
+        f"{source / 'mission_specification/experimental.yaml'}\texperimental\tactive\thil,real,sim\t\n"
+        "lab-production\t"
+        f"{source / 'mission_specification/test.yaml'}\tproduction\tactive\topti_track,sim\topti_track\n"
+    )
+    _generate(paths)
+    catalog = verify_catalog(paths["local"], expected_scope="local")
+    nodes = {asset["logical_name"]: asset["behavior_nodes"] for asset in catalog["assets"] if "behavior_nodes" in asset}
+    assert nodes == {
+        "behavior_trees/cable.xml": ["CableLanding", "Sequence"],
+        "behavior_trees/main.xml": ["Sequence", "TestAction"],
+    }
+
+
+def test_opti_track_tree_including_other_files_fails(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    (paths["source"] / "behavior_trees/main.xml").write_text(
+        '<root BTCPP_format="4" main_tree_to_execute="Main"><include path="other.xml"/>'
+        '<BehaviorTree ID="Main"><Sequence><Action ID="TestAction" target="a"/></Sequence></BehaviorTree>'
+        "</root>\n"
+    )
+    with pytest.raises(CatalogError, match="includes other tree files.*not available in the opti_track profile"):
+        _generate(paths)
+
+
+@pytest.mark.parametrize(
+    ("allowlists", "message"),
+    [
+        ({}, "defines no opti_track node allowlist"),
+        ({"opti_track": ["Unregistered"]}, "allowlist names unavailable III nodes: Unregistered"),
+        ({"opti_track": ["Sequence"]}, "allowlist names unavailable III nodes: Sequence"),
+        ({"moon": ["TestAction"]}, "malformed node allowlist for profile 'moon'"),
+    ],
+)
+def test_missing_or_invalid_node_allowlists_fail_closed(tmp_path: Path, allowlists, message):
+    paths = _fixture(tmp_path)
+    _node_contract(paths["node"], allowlists=allowlists)
+    with pytest.raises(CatalogError, match=message):
         _generate(paths)

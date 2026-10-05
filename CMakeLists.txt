@@ -128,6 +128,7 @@ set(III_DRONE_MISSION_HDRS
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/mission_specification.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/mission_catalog.hpp"
+  "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/profile_restrictions.hpp"
 
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/mission_executor.hpp"
   "${PROJECT_SOURCE_DIR}/include/iii_drone_mission/mission/overview_gnss_persistence.hpp"
@@ -191,6 +192,7 @@ set(III_DRONE_MISSION_SRCS
 
   "${PROJECT_SOURCE_DIR}/src/mission/mission_specification.cpp"
   "${PROJECT_SOURCE_DIR}/src/mission/mission_catalog.cpp"
+  "${PROJECT_SOURCE_DIR}/src/mission/profile_restrictions.cpp"
 
   "${PROJECT_SOURCE_DIR}/src/mission/mission_executor.cpp"
   "${PROJECT_SOURCE_DIR}/src/mission/mission_exit.cpp"
@@ -260,7 +262,7 @@ iii_register_mission(
   ID reach-charge-leave-experimental
   SPECIFICATION mission_specification/mission_specification_reach_charge_leave.yaml
   CLASSIFICATION experimental
-  PROFILES real opti_track sim hil
+  PROFILES real sim hil
 )
 iii_register_mission(
   ID ftp-blend-loop-test
@@ -572,6 +574,9 @@ if(BUILD_TESTING)
   iii_drone_mission_add_isolated_gtest(iii_drone_literal_waypoints_test
     test/literal_waypoints_test.cpp
   )
+  iii_drone_mission_add_isolated_gtest(iii_drone_profile_restrictions_test
+    test/profile_restrictions_test.cpp
+  )
 
   if(TARGET iii_drone_mission_specification_test)
     target_include_directories(iii_drone_mission_specification_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
@@ -648,6 +653,11 @@ if(BUILD_TESTING)
     target_include_directories(iii_drone_literal_waypoints_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
     target_link_libraries(iii_drone_literal_waypoints_test iii_drone_mission_lib)
     ament_target_dependencies(iii_drone_literal_waypoints_test ${dependencies})
+  endif()
+  if(TARGET iii_drone_profile_restrictions_test)
+    target_include_directories(iii_drone_profile_restrictions_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+    target_link_libraries(iii_drone_profile_restrictions_test iii_drone_mission_lib)
+    ament_target_dependencies(iii_drone_profile_restrictions_test ${dependencies})
   endif()
 endif()
 

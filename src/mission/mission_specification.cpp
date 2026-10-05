@@ -37,6 +37,7 @@ MissionSpecification::MissionSpecification(
         throw std::runtime_error("mission specification requires an installed mission catalog");
     }
     std::set<std::string> declared_behavior_tree_asset_ids;
+    std::map<std::string, std::string> behavior_tree_logical_names;
     for (const auto & asset : catalog_entry.assets) {
         if (asset.kind == "mission_specification") {
             if (!specification_asset_id_.empty()) {
@@ -45,6 +46,7 @@ MissionSpecification::MissionSpecification(
             specification_asset_id_ = asset.asset_id;
         } else if (asset.kind == "behavior_tree") {
             declared_behavior_tree_asset_ids.insert(asset.asset_id);
+            behavior_tree_logical_names[asset.asset_id] = asset.logical_name;
         }
     }
     if (specification_asset_id_.empty() || declared_behavior_tree_asset_ids.empty()) {
@@ -67,6 +69,7 @@ MissionSpecification::MissionSpecification(
         }
         behavior_tree_asset_ids_.push_back(behavior_tree_asset_id);
         entry.behavior_tree_xml_file = catalog_->resolveAsset(behavior_tree_asset_id).string();
+        entry.behavior_tree_logical_name = behavior_tree_logical_names.at(behavior_tree_asset_id);
         entry.next_mode = item.value("next_mode", "");
         entry.allow_activate_when_disarmed = item.value("allow_activate_when_disarmed", false);
         if (!mission_specification_entries_.emplace(entry.key, entry).second) {

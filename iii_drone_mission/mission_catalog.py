@@ -35,6 +35,10 @@ COMMISSIONED_PROFILES = frozenset({"hil", "real", "sim"})
 # onboard catalog until its NatNet ingress and PX4 external-vision bridge are
 # actually present and validated.
 ONBOARD_PROFILES = frozenset({"hil", "real"})
+# Missions registered for these profiles may use only the profile's allowlist of
+# III behavior nodes (BehaviorTree.CPP built-ins are always available). The
+# behavior-node contract carries the allowlists the runtime itself enforces.
+NODE_RESTRICTED_PROFILES = frozenset({"opti_track"})
 CLASSIFICATIONS = frozenset({"production", "experimental", "test", "legacy"})
 STATUSES = frozenset({"active", "deprecated"})
 ID_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9.-]{0,126}[a-z0-9])?")
@@ -191,7 +195,9 @@ def read_registrations(path: Path, source_root: Path) -> list[Registration]:
     return sorted(registrations, key=lambda item: item.catalog_id)
 
 
-def _node_contract(path: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]], str]:
+def _node_contract(
+    path: Path,
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]], str, dict[str, frozenset[str]]]:
     contract = _load_json(path, label="behavior-node contract")
     if not isinstance(contract, dict) or contract.get("schema") != NODE_CONTRACT_SCHEMA:
         raise CatalogError(f"behavior-node contract must use {NODE_CONTRACT_SCHEMA}")
@@ -216,7 +222,26 @@ def _node_contract(path: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]
         if any(not isinstance(name, str) or not name for name in port_names) or len(port_names) != len(set(port_names)):
             raise CatalogError(f"behavior node {node_id} has invalid or duplicate port names")
         by_id[node_id] = node
-    return contract, by_id, declared_hash
+    allowlists_raw = contract.get("profile_node_allowlists", {})
+    if not isinstance(allowlists_raw, dict):
+        raise CatalogError("behavior-node contract has malformed profile node allowlists")
+    allowlists: dict[str, frozenset[str]] = {}
+    for profile, node_ids in allowlists_raw.items():
+        if (
+            profile not in KNOWN_PROFILES
+            or not isinstance(node_ids, list)
+            or any(not isinstance(node_id, str) for node_id in node_ids)
+        ):
+            raise CatalogError(f"behavior-node contract has a malformed node allowlist for profile {profile!r}")
+        unavailable = sorted(
+            node_id for node_id in node_ids if node_id not in by_id or by_id[node_id].get("builtin") is True
+        )
+        if unavailable:
+            raise CatalogError(
+                f"behavior-node contract {profile} allowlist names unavailable III nodes: {', '.join(unavailable)}"
+            )
+        allowlists[profile] = frozenset(node_ids)
+    return contract, by_id, declared_hash, allowlists
 
 
 def _interface_contract(paths: Sequence[Path], source_root: Path) -> tuple[dict[str, str], str]:
@@ -305,10 +330,45 @@ def _validate_xml(
     return sorted(tree_ids), sorted(used_nodes)
 
 
+def _require_profile_node_allowlists(
+    registration: Registration,
+    tree_path: Path,
+    tree_logical: str,
+    nodes: Sequence[str],
+    node_by_id: Mapping[str, Mapping[str, Any]],
+    node_allowlists: Mapping[str, frozenset[str]],
+) -> None:
+    restricted = sorted(set(registration.profiles) & (NODE_RESTRICTED_PROFILES | set(node_allowlists)))
+    for profile in restricted:
+        allowlist = node_allowlists.get(profile)
+        if allowlist is None:
+            raise CatalogError(
+                f"mission {registration.catalog_id} lists the {profile} profile, but the behavior-node "
+                f"contract defines no {profile} node allowlist"
+            )
+        # An included file would add nodes this check never saw.
+        if any(child.tag == "include" for child in ET.fromstring(tree_path.read_bytes())):
+            raise CatalogError(
+                f"mission {registration.catalog_id} (behavior tree {tree_logical} includes other tree files) "
+                f"is not available in the {profile} profile"
+            )
+        disallowed = [
+            node_id
+            for node_id in nodes
+            if node_by_id[node_id].get("builtin") is not True and node_id not in allowlist
+        ]
+        if disallowed:
+            raise CatalogError(
+                f"mission {registration.catalog_id} (behavior tree {tree_logical} uses {', '.join(disallowed)}) "
+                f"is not available in the {profile} profile"
+            )
+
+
 def _validate_specification(
     registration: Registration,
     source_root: Path,
     node_by_id: Mapping[str, Mapping[str, Any]],
+    node_allowlists: Mapping[str, frozenset[str]],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     document = _yaml_mapping(registration.specification, catalog_id=registration.catalog_id)
     executor_owned_mode = document.get("executor_owned_mode")
@@ -344,6 +404,9 @@ def _validate_specification(
                 tree_path,
                 catalog_id=registration.catalog_id,
                 node_by_id=node_by_id,
+            )
+            _require_profile_node_allowlists(
+                registration, tree_path, logical, nodes, node_by_id, node_allowlists
             )
             raw = tree_path.read_bytes()
             tree_assets[logical] = {
@@ -608,7 +671,7 @@ def generate_catalogs(
 ) -> dict[str, str]:
     source_root = source_root.resolve(strict=True)
     registrations = read_registrations(registrations_path, source_root)
-    _node_document, node_by_id, node_hash = _node_contract(node_contract_path)
+    _node_document, node_by_id, node_hash, node_allowlists = _node_contract(node_contract_path)
     interface_files, interface_hash = _interface_contract(interface_contract_paths, source_root)
     _runtime_document, runtime_hash = _runtime_contract(runtime_contract_path)
     compatibility = {
@@ -620,7 +683,7 @@ def generate_catalogs(
     all_assets: dict[str, dict[str, Any]] = {}
     all_source_asset_paths: dict[str, Path] = {}
     for registration in registrations:
-        resolved, assets = _validate_specification(registration, source_root, node_by_id)
+        resolved, assets = _validate_specification(registration, source_root, node_by_id, node_allowlists)
         public_assets = [_public_asset(asset) for asset in assets]
         for asset in assets:
             all_source_asset_paths[asset["logical_name"]] = Path(asset["source_path"])

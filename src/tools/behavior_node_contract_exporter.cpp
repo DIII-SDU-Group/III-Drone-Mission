@@ -1,4 +1,5 @@
 #include <iii_drone_mission/behavior/behavior_node_registry.hpp>
+#include <iii_drone_mission/mission/profile_restrictions.hpp>
 
 #include <behaviortree_cpp/contrib/json.hpp>
 #include <behaviortree_cpp/xml_parsing.h>
@@ -122,8 +123,24 @@ int main(int argc, char ** argv)
                 }
             );
         }
+        // The catalog build holds every mission registered for a restricted
+        // profile to the same node allowlist the runtime enforces.
+        nlohmann::json profile_node_allowlists = nlohmann::json::object();
+        for (const auto & [profile, node_ids] : iii_drone::mission::BehaviorNodeAllowlists()) {
+            nlohmann::json allowed = nlohmann::json::array();
+            for (const auto & id : node_ids) {
+                if (factory.manifests().count(id) == 0 || factory.builtinNodes().count(id) != 0) {
+                    throw std::runtime_error(
+                        "the " + profile + " node allowlist names a node that is not a registered III behavior node: " + id
+                    );
+                }
+                allowed.push_back(id);
+            }
+            profile_node_allowlists[profile] = allowed;
+        }
         nlohmann::json contract = {
             {"nodes", nodes},
+            {"profile_node_allowlists", profile_node_allowlists},
             {"schema", "iii.behavior-node-contract/v1"},
         };
         contract["contract_hash"] = Sha256(contract.dump());
