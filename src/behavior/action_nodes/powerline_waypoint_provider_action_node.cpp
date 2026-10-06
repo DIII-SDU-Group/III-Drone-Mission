@@ -28,16 +28,13 @@ PowerlineWaypointProviderActionNode::PowerlineWaypointProviderActionNode(
     const NodeConfiguration & conf,
     tf2_ros::Buffer::SharedPtr tf_buffer,
     rclcpp::Node * node,
-    Configuration::SharedPtr params
+    Configuration::SharedPtr params,
+    std::shared_ptr<CombinedDroneAwarenessCache> combined_drone_awareness
 ) : SyncActionNode(name, conf),
     tf_buffer_(tf_buffer),
     node_(node),
     configuration_(params),
-    combined_drone_awareness_(
-        *node_,
-        "/control/maneuver_controller/combined_drone_awareness",
-        rclcpp::QoS(1)
-    ) {
+    combined_drone_awareness_(std::move(combined_drone_awareness)) {
 }
 
 PortsList PowerlineWaypointProviderActionNode::providedPorts() {
@@ -78,7 +75,7 @@ double PowerlineWaypointProviderActionNode::minimumWaypointZ() const {
     ).as_double();
     const double mission_waypoint_margin = 0.5;
     const double fallback_minimum_z = minimum_target_altitude + mission_waypoint_margin;
-    const auto awareness = combined_drone_awareness_.latest();
+    const auto awareness = combined_drone_awareness_->latest();
     const double ground_altitude_estimate = awareness
         ? awareness->message.ground_altitude_estimate
         : std::numeric_limits<double>::quiet_NaN();
