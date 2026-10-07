@@ -75,13 +75,23 @@ namespace behavior {
          * @param tf_buffer The tf buffer.
          * @param node The ROS2 node.
          * @param params Read-only live configuration view
+         * @param combined_drone_awareness Awareness cache that outlives the
+         *        tree. This node reads it once, synchronously, right after
+         *        its tree is built: a subscription of its own had not always
+         *        received its first sample by then, and the ground-relative
+         *        waypoint floor silently fell back to an absolute height
+         *        (HIL soak run 37).
          */
+        typedef LatestMessageSubscription<iii_drone_interfaces::msg::CombinedDroneAwareness>
+            CombinedDroneAwarenessCache;
+
         PowerlineWaypointProviderActionNode(
             const std::string & name, 
             const BT::NodeConfiguration & conf,
             tf2_ros::Buffer::SharedPtr tf_buffer,
             rclcpp::Node * node,
-            iii_drone::configuration::Configuration::SharedPtr params
+            iii_drone::configuration::Configuration::SharedPtr params,
+            std::shared_ptr<CombinedDroneAwarenessCache> combined_drone_awareness
         );
 
         static BT::PortsList providedPorts();
@@ -102,7 +112,7 @@ namespace behavior {
 
         iii_drone::configuration::Configuration::SharedPtr configuration_;
 
-        LatestMessageSubscription<iii_drone_interfaces::msg::CombinedDroneAwareness> combined_drone_awareness_;
+        std::shared_ptr<CombinedDroneAwarenessCache> combined_drone_awareness_;
 
         // std::shared_ptr<std::deque<iii_drone::types::point_t>> applyLinearInterpolation(
         //     std::shared_ptr<std::deque<iii_drone::types::point_t>> points

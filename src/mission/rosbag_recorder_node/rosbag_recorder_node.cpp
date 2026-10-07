@@ -4,6 +4,7 @@
 
 #include <iii_drone_mission/mission/rosbag_recorder_node/rosbag_recorder_node.hpp>
 #include <iii_drone_mission/mission/rosbag_recorder_node/rosbag_qos_overrides.hpp>
+#include <iii_drone_mission/mission/rosbag_recorder_node/rosbag_retention.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -63,6 +64,7 @@ RosbagRecorderNode::RosbagRecorderNode(
     declare_parameter<std::string>("artifact_root", "/tmp/iii_drone/rosbags");
     declare_parameter<std::string>("log_root", "/tmp/iii_drone/rosbag_recorder/logs");
     declare_parameter<double>("default_stop_timeout_sec", 10.0);
+    declare_parameter<int64_t>("retention_max_bytes", 10'000'000'000LL);
 
     RCLCPP_INFO(get_logger(), "RosbagRecorderNode::RosbagRecorderNode()");
 }
@@ -86,6 +88,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Rosbag
     artifact_root_ = get_parameter("artifact_root").as_string();
     log_root_ = get_parameter("log_root").as_string();
     default_stop_timeout_sec_ = get_parameter("default_stop_timeout_sec").as_double();
+    retention_max_bytes_ = static_cast<std::uint64_t>(
+        std::max<int64_t>(0, get_parameter("retention_max_bytes").as_int()));
 
     try {
         std::filesystem::create_directories(artifact_root_);
@@ -98,6 +102,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Rosbag
         );
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
     }
+
+    applyRetention("configure");
 
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
@@ -336,6 +342,9 @@ void RosbagRecorderNode::stopRecordingCallback(
     response->success = stopRecording(timeout_sec, message, was_running);
     response->message = message;
     response->was_running = was_running;
+    if (was_running) {
+        applyRetention("recording stopped");
+    }
 }
 
 void RosbagRecorderNode::recordingStatusCallback(
@@ -403,6 +412,25 @@ bool RosbagRecorderNode::stopRecording(double timeout_sec, std::string & message
     message = "recording killed after timeout";
     clearRecordingState();
     return true;
+}
+
+void RosbagRecorderNode::applyRetention(const char * when) {
+    if (retention_max_bytes_ == 0) {
+        return;
+    }
+    const auto result = pruneRecordings(
+        artifact_root_, retention_max_bytes_,
+        isRecording() ? output_dir_ : std::filesystem::path{});
+    if (result.removed > 0) {
+        RCLCPP_INFO(
+            get_logger(),
+            "RosbagRecorderNode: removed %zu recording(s) (%.2f GB) beyond the newest %.2f GB (%s); %.2f GB kept",
+            result.removed,
+            static_cast<double>(result.removed_bytes) / 1e9,
+            static_cast<double>(retention_max_bytes_) / 1e9,
+            when,
+            static_cast<double>(result.kept_bytes) / 1e9);
+    }
 }
 
 void RosbagRecorderNode::clearRecordingState() {

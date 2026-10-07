@@ -130,6 +130,15 @@
                     flag="inspection_demo.recharge_reason"
                     value="battery_low"
                 />
+
+                <!-- A recharge request applied in this tick is served by this
+                     recharge; left set, it would start a second one when the
+                     inspection resumes. -->
+                <SetBlackboardBool
+                    name="clear_served_manual_recharge_request"
+                    flag="inspection_demo.manual_recharge_requested"
+                    value="false"
+                />
             </Sequence>
         </Fallback>
     </BehaviorTree>

@@ -588,11 +588,19 @@ void TreeExecutor::registerNodes() {
     }
 
     {
+        // One awareness subscription for the life of this executor: the
+        // provider reads it synchronously right after each tree is built.
+        combined_drone_awareness_ = std::make_shared<
+            PowerlineWaypointProviderActionNode::CombinedDroneAwarenessCache>(
+                *node_,
+                "/control/maneuver_controller/combined_drone_awareness",
+                rclcpp::QoS(1));
         factory_.registerNodeType<PowerlineWaypointProviderActionNode>(
             "PowerlineWaypointProvider",
             tf_buffer_,
             node_,
-            configurator_->GetConfiguration("powerline_waypoint_provider_action_node")
+            configurator_->GetConfiguration("powerline_waypoint_provider_action_node"),
+            combined_drone_awareness_
         );
     }
 

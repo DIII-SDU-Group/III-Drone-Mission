@@ -30,6 +30,14 @@
                 value="false"
             />
 
+            <!-- A stay request holds this charge only; left set, every later
+                 charge of the run would wait on the cable for Leave. -->
+            <SetBlackboardBool
+                name="clear_consumed_stay_on_cable"
+                flag="charging.stay_on_cable"
+                value="false"
+            />
+
         </Sequence>
      </BehaviorTree>
  </root>

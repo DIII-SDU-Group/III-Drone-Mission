@@ -140,6 +140,14 @@ namespace mission {
         rclcpp::CallbackGroup::SharedPtr odometry_sub_callback_group_;
         rclcpp::CallbackGroup::SharedPtr get_reference_cb_group_;
 
+        // PX4 odometry (100 Hz) runs on its own single-threaded executor: on
+        // the node's executor every message woke a pool thread over a wait
+        // set of ~80 entities.
+        std::shared_ptr<rclcpp::executors::SingleThreadedExecutor> odometry_executor_;
+        std::thread odometry_thread_;
+        void startOdometryIngress();
+        void stopOdometryIngress();
+
     };
 
 } // namespace mission

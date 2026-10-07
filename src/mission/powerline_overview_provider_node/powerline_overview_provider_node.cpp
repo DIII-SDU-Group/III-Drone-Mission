@@ -205,8 +205,22 @@ PowerlineOverviewProviderNode::PowerlineOverviewProviderNode(
 
 }
 
+void PowerlineOverviewProviderNode::stopSensorIngress()
+{
+    if (!sensor_executor_) {
+        return;
+    }
+    sensor_executor_->cancel();
+    if (sensor_thread_.joinable()) {
+        sensor_thread_.join();
+    }
+    sensor_executor_->remove_callback_group(sensor_callback_group_);
+    sensor_executor_.reset();
+}
+
 PowerlineOverviewProviderNode::~PowerlineOverviewProviderNode()
 {
+    stopSensorIngress();
 
 }
 
@@ -272,8 +286,10 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Powerl
         cb_group_1_
     );
 
+    sensor_callback_group_ = create_callback_group(
+        rclcpp::CallbackGroupType::MutuallyExclusive, false);
     auto sub_options = rclcpp::SubscriptionOptions();
-    sub_options.callback_group = cb_group_1_;
+    sub_options.callback_group = sensor_callback_group_;
 
     powerline_sub_ = create_subscription<iii_drone_interfaces::msg::Powerline>(
         "/perception/pl_mapper/powerline",
@@ -294,6 +310,9 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Powerl
         },
         sub_options
     );
+    sensor_executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+    sensor_executor_->add_callback_group(sensor_callback_group_, get_node_base_interface());
+    sensor_thread_ = std::thread([executor = sensor_executor_]() { executor->spin(); });
 
     update_powerline_overview_srv_ = create_service<iii_drone_interfaces::srv::UpdatePowerlineOverview>(
         "update_powerline_overview",
@@ -364,6 +383,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Powerl
     }
 
     pl_mapper_command_client_.reset();
+    stopSensorIngress();
     powerline_sub_.reset();
     vehicle_global_position_sub_.reset();
     update_powerline_overview_srv_.reset();

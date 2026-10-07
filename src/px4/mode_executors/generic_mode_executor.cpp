@@ -171,6 +171,9 @@ void GenericModeExecutor::onActivate() {
     is_active_ = true;
     triggered_position_control_ = false;
     std::string owned_mode_key = mission_specification_->executor_owned_mode();
+    // Before current_mode_ changes: an intent validated against the new mode
+    // then always lands in the new activation.
+    mode_provider_->BeginModeActivation(owned_mode_key);
     current_mode_ = mode_provider_->GetMode(owned_mode_key);
     current_mode_entry_ = mission_specification_->GetMissionSpecificationEntry(owned_mode_key);
 
@@ -967,6 +970,7 @@ void GenericModeExecutor::onNormalModeSuccess(bool & last_mode) {
 
     }
 
+    mode_provider_->BeginModeActivation(next_mode_key);
     current_mode_ = mode_provider_->GetMode(next_mode_key);
     current_mode_entry_ = mission_specification_->GetMissionSpecificationEntry(next_mode_key);
 

@@ -586,6 +586,12 @@ if(BUILD_TESTING)
   iii_drone_mission_add_isolated_gtest(iii_drone_rosbag_qos_overrides_test
     test/rosbag_qos_overrides_test.cpp
   )
+  iii_drone_mission_add_isolated_gtest(iii_drone_rosbag_retention_test
+    test/rosbag_retention_test.cpp
+  )
+  iii_drone_mission_add_isolated_gtest(iii_drone_runtime_intent_buffer_test
+    test/runtime_intent_buffer_test.cpp
+  )
   iii_drone_mission_add_isolated_gtest(iii_drone_maneuver_action_node_handoff_test
     test/maneuver_action_node_handoff_test.cpp
   )
@@ -672,6 +678,13 @@ if(BUILD_TESTING)
   endif()
   if(TARGET iii_drone_rosbag_qos_overrides_test)
     target_include_directories(iii_drone_rosbag_qos_overrides_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+  endif()
+  if(TARGET iii_drone_rosbag_retention_test)
+    target_include_directories(iii_drone_rosbag_retention_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+  endif()
+  if(TARGET iii_drone_runtime_intent_buffer_test)
+    target_include_directories(iii_drone_runtime_intent_buffer_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+    ament_target_dependencies(iii_drone_runtime_intent_buffer_test builtin_interfaces)
   endif()
   if(TARGET iii_drone_maneuver_action_node_handoff_test)
     target_include_directories(iii_drone_maneuver_action_node_handoff_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})

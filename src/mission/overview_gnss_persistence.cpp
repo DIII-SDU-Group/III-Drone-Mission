@@ -152,6 +152,40 @@ std::optional<WorldGnssReference> makeReference(
     return reference;
 }
 
+std::optional<WorldGnssReference> makeReference(
+    const px4_msgs::msg::VehicleGlobalPosition & global_position,
+    const std::optional<iii_drone::types::point_t> & drone_world,
+    const rclcpp::Logger & logger,
+    const rclcpp::Clock::SharedPtr & clock
+)
+{
+    if (!validGlobalPosition(global_position)) {
+        RCLCPP_WARN_THROTTLE(
+            logger,
+            *clock,
+            10000,
+            "GNSS overview persistence unavailable: latest PX4 global position is invalid"
+        );
+        return std::nullopt;
+    }
+    if (!drone_world.has_value()) {
+        RCLCPP_WARN_THROTTLE(
+            logger,
+            *clock,
+            10000,
+            "GNSS overview persistence unavailable: no PX4 odometry received"
+        );
+        return std::nullopt;
+    }
+
+    WorldGnssReference reference;
+    reference.drone_gnss.latitude_deg = global_position.lat;
+    reference.drone_gnss.longitude_deg = global_position.lon;
+    reference.drone_gnss.altitude_m = global_position.alt;
+    reference.drone_world = drone_world.value();
+    return reference;
+}
+
 GnssPoint worldToGnss(
     const iii_drone::types::point_t & world_point,
     const WorldGnssReference & reference

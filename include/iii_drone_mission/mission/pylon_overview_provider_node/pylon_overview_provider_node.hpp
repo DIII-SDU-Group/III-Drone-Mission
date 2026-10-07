@@ -11,8 +11,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <rclcpp_lifecycle/lifecycle_publisher.hpp>
-#include <tf2_ros/buffer.h>
-#include <tf2_ros/transform_listener.h>
+#include <optional>
 
 #include <iii_drone_core/utils/atomic.hpp>
 #include <iii_drone_interfaces/msg/pylon_overview.hpp>
@@ -37,6 +36,8 @@ namespace pylon_overview_provider_node {
             std::string node_namespace = "/mission/pylon_overview_provider",
             const rclcpp::NodeOptions & options = rclcpp::NodeOptions()
         );
+
+        ~PylonOverviewProviderNode() override;
 
         rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_configure(
             const rclcpp_lifecycle::State & state
@@ -85,8 +86,16 @@ namespace pylon_overview_provider_node {
         rclcpp::Subscription<px4_msgs::msg::VehicleGlobalPosition>::SharedPtr vehicle_global_position_sub_;
         rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr vehicle_odometry_sub_;
 
-        tf2_ros::Buffer::SharedPtr tf_buffer_;
-        std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+        // PX4 global position and odometry (100 Hz each) run on their own
+        // single-threaded executor instead of waking the node's executor for
+        // every message; the drone's world position for GNSS persistence
+        // comes from the odometry (as drone_frame_broadcaster's world->drone
+        // TF does), so the node needs no TF listener.
+        rclcpp::CallbackGroup::SharedPtr sensor_callback_group_;
+        std::shared_ptr<rclcpp::executors::SingleThreadedExecutor> sensor_executor_;
+        std::thread sensor_thread_;
+        void stopSensorIngress();
+        std::optional<iii_drone::types::point_t> droneWorldPosition() const;
 
         rclcpp_lifecycle::LifecyclePublisher<iii_drone_interfaces::msg::StringStamped>::SharedPtr status_pub_;
         rclcpp_lifecycle::LifecyclePublisher<iii_drone_interfaces::msg::PylonOverviewStatus>::SharedPtr overview_status_pub_;

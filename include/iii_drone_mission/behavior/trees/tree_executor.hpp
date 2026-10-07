@@ -136,6 +136,9 @@ namespace behavior {
 
         rclcpp::Node * node_;
 
+        std::shared_ptr<PowerlineWaypointProviderActionNode::CombinedDroneAwarenessCache>
+            combined_drone_awareness_;
+
         BT::BehaviorTreeFactory factory_;
 
         BT::Tree tree_;

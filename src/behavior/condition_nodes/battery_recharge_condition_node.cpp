@@ -71,18 +71,35 @@ bool ShouldRechargeBatteryLowConditionNode::boolParameterOr(
     return fallback;
 }
 
+const ShouldRechargeBatteryLowConditionNode::ConfiguredSettings &
+ShouldRechargeBatteryLowConditionNode::configuredSettings() {
+    const auto now = std::chrono::steady_clock::now();
+    if (configured_read_at_ == std::chrono::steady_clock::time_point{} ||
+        now - configured_read_at_ >= std::chrono::seconds(1)) {
+        configured_.bypass = boolParameterOr("/mission/bypass_battery_checks", false);
+        configured_.threshold_v = parameterOr("/inspection_demo/battery_voltage_threshold_v", 14.0);
+        configured_.debounce_s = parameterOr("/inspection_demo/battery_voltage_debounce_s", 2.0);
+        configured_.timeout_s = parameterOr("/inspection_demo/battery_topic_timeout_s", 2.0);
+        configured_.retry_count = parameterOr("/inspection_demo/battery_check_retry_count", 3);
+        configured_.retry_interval_s = parameterOr("/inspection_demo/battery_check_retry_interval_s", 0.2);
+        configured_read_at_ = now;
+    }
+    return configured_;
+}
+
 NodeStatus ShouldRechargeBatteryLowConditionNode::tick() {
-    bool bypass = boolParameterOr("/mission/bypass_battery_checks", false);
+    const ConfiguredSettings & configured = configuredSettings();
+    bool bypass = configured.bypass;
     getInput("bypass_battery_checks", bypass);
     if (bypass) {
         return NodeStatus::FAILURE;
     }
 
-    double threshold_v = parameterOr("/inspection_demo/battery_voltage_threshold_v", 14.0);
-    double debounce_s = parameterOr("/inspection_demo/battery_voltage_debounce_s", 2.0);
-    double timeout_s = parameterOr("/inspection_demo/battery_topic_timeout_s", 2.0);
-    int retry_count = parameterOr("/inspection_demo/battery_check_retry_count", 3);
-    double retry_interval_s = parameterOr("/inspection_demo/battery_check_retry_interval_s", 0.2);
+    double threshold_v = configured.threshold_v;
+    double debounce_s = configured.debounce_s;
+    double timeout_s = configured.timeout_s;
+    int retry_count = configured.retry_count;
+    double retry_interval_s = configured.retry_interval_s;
 
     double input_double = -1.0;
     if (getInput("battery_voltage_threshold_v", input_double) && input_double >= 0.0) {

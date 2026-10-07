@@ -81,6 +81,9 @@ namespace behavior {
 
         TreeExecutor::SharedPtr GetTreeExecutor(const std::string& name) const;
         void ClearGlobalBlackboard(const std::string & reason);
+        // Expires the runtime intents of the previous mode activation that no
+        // tree applied (see RuntimeIntentBuffer).
+        void BeginModeActivation(const std::string & mode_key);
         iii_drone::configuration::Configuration::SharedPtr phaseWaypointConfiguration() const;
 
         const BT::BehaviorTreeFactory & factory() const {

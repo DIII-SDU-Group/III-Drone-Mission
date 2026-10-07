@@ -7,6 +7,7 @@
 /*****************************************************************************/
 // Std:
 
+#include <chrono>
 #include <memory>
 #include <cstdint>
 
@@ -61,6 +62,22 @@ namespace behavior {
         rclcpp::Time low_voltage_since_;
         rclcpp::Time last_stale_retry_time_;
         unsigned int stale_failure_count_ = 0;
+
+        // The configured values, read at most once a second: the reactive
+        // inspection tree evaluates this condition on every tick, and six
+        // configuration lookups per tick were most of its cost. Tuning still
+        // takes effect within a second.
+        struct ConfiguredSettings {
+            bool bypass = false;
+            double threshold_v = 14.0;
+            double debounce_s = 2.0;
+            double timeout_s = 2.0;
+            int retry_count = 3;
+            double retry_interval_s = 0.2;
+        };
+        ConfiguredSettings configured_;
+        std::chrono::steady_clock::time_point configured_read_at_{};
+        const ConfiguredSettings & configuredSettings();
 
         double parameterOr(const std::string & name, double fallback) const;
         int parameterOr(const std::string & name, int fallback) const;
