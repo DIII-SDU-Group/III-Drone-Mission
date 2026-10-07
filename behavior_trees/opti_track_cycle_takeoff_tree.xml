@@ -9,8 +9,8 @@
 
          The vehicle then hovers at the cage centre until the operator's
          Proceed intent (/mission/opti_track/proceed), for at most 60 s. On
-         Proceed the hover is halted and the mission continues with OT
-         Shuttle. Without Proceed it sets opti_track.cycle_land_now: OT
+         Proceed the mission continues with OT Shuttle once the current 2 s
+         hover slice ends. Without Proceed it sets opti_track.cycle_land_now: OT
          Shuttle then skips the shuttle and OT Land lands.
 
          The recording started here (owner "mission") covers every mode of
@@ -73,6 +73,7 @@
                     name="already_airborne"
                     hold_ms="500"
                     timeout_ms="1500"
+                    probe="true"
                 />
                 <Sequence name="take_off_from_the_ground">
                     <Action
@@ -111,30 +112,37 @@
                 log_level="1"
             />
 
-            <!-- The Proceed check runs before the hover on every tick; when it
-                 succeeds the running hover is halted (a controlled stop). A
-                 failing hover fails the mode. -->
-            <ReactiveFallback name="hover_until_proceed">
-                <Sequence name="proceed_requested">
-                    <ApplyPendingIntentUpdates name="apply_pending_cycle_intents"/>
-                    <BlackboardBool name="proceed_flag_set" flag="opti_track.proceed" expected="true"/>
-                </Sequence>
-                <Sequence name="hover_then_land_without_proceed">
-                    <Action
-                        ID="Hover"
-                        name="hover_waiting_for_proceed"
-                        duration_s="60"
-                        sustain_action="true"
-                    />
+            <!-- The hover runs in 2 s slices and Proceed is checked between
+                 them, so no running maneuver is interrupted: each slice ends
+                 on its own and keeps holding position (sustain_action). After
+                 30 slices without Proceed the mission lands. -->
+            <Fallback name="hover_until_proceed">
+                <RetryUntilSuccessful name="check_proceed_between_hover_slices" num_attempts="30">
+                    <Fallback name="proceed_or_hover_slice">
+                        <Sequence name="proceed_requested">
+                            <ApplyPendingIntentUpdates name="apply_pending_cycle_intents"/>
+                            <BlackboardBool name="proceed_flag_set" flag="opti_track.proceed" expected="true"/>
+                        </Sequence>
+                        <ForceFailure name="check_proceed_again_after_the_slice">
+                            <Action
+                                ID="Hover"
+                                name="hover_waiting_for_proceed"
+                                duration_s="2"
+                                sustain_action="true"
+                            />
+                        </ForceFailure>
+                    </Fallback>
+                </RetryUntilSuccessful>
+                <Sequence name="land_without_proceed">
                     <Action
                         ID="LogMessage"
                         name="log_no_proceed"
                         message="OT Cycle: no Proceed within 60 s, landing"
-                        log_level="2"
+                        log_level="1"
                     />
                     <SetBlackboardBool name="request_cycle_land_now" flag="opti_track.cycle_land_now" value="true"/>
                 </Sequence>
-            </ReactiveFallback>
+            </Fallback>
 
         </Sequence>
     </BehaviorTree>

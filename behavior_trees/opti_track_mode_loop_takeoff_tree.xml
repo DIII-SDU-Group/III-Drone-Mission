@@ -71,6 +71,7 @@
                     name="already_airborne"
                     hold_ms="500"
                     timeout_ms="1500"
+                    probe="true"
                 />
                 <Sequence name="take_off_from_the_ground">
                     <Action

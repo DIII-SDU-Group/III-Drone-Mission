@@ -2,6 +2,7 @@
 // Includes
 /*****************************************************************************/
 
+#include <cstdio>
 #include <iii_drone_mission/behavior/action_nodes/wait_for_px4_airborne_action_node.hpp>
 
 #include <cmath>
@@ -37,7 +38,8 @@ PortsList WaitForPX4AirborneActionNode::providedPorts() {
     return {
         InputPort<int>("hold_ms", 1000, "How long PX4 must report airborne without interruption"),
         InputPort<int>("timeout_ms", 8000, "Fail when not held airborne within this time"),
-        InputPort<double>("min_thrust", 0.1, "Normalized upward thrust PX4 must command (zero before PX4 takes off)")
+        InputPort<double>("min_thrust", 0.1, "Normalized upward thrust PX4 must command (zero before PX4 takes off)"),
+        InputPort<bool>("probe", false, "Not being airborne is an expected outcome (a branch condition): report it at INFO, not ERROR")
     };
 }
 
@@ -67,6 +69,8 @@ NodeStatus WaitForPX4AirborneActionNode::onStart() {
     getInput("hold_ms", hold_ms);
     getInput("timeout_ms", timeout_ms);
     getInput("min_thrust", min_thrust_);
+    probe_ = false;
+    getInput("probe", probe_);
     if (hold_ms < 0 || timeout_ms <= hold_ms) {
         RCLCPP_ERROR(
             node_->get_logger(),
@@ -104,10 +108,11 @@ NodeStatus WaitForPX4AirborneActionNode::onRunning() {
     }
 
     if ((now - start_time_).seconds() > timeout_s_) {
+        char report[320];
         if (sample && setpoint) {
-            RCLCPP_ERROR(
-                node_->get_logger(),
-                "WaitForPX4AirborneActionNode::onRunning(): %s: PX4 not held airborne with thrust within %.1f s: "
+            std::snprintf(
+                report, sizeof(report),
+                "%s: PX4 not held airborne with thrust within %.1f s: "
                 "landed=%d maybe_landed=%d ground_contact=%d (age %.2f s), thrust %.3f (age %.2f s).",
                 name().c_str(), timeout_s_,
                 sample->message.landed, sample->message.maybe_landed, sample->message.ground_contact,
@@ -115,11 +120,15 @@ NodeStatus WaitForPX4AirborneActionNode::onRunning() {
                 -setpoint->message.thrust[2], (now - setpoint->receive_time).seconds()
             );
         } else {
-            RCLCPP_ERROR(
-                node_->get_logger(),
-                "WaitForPX4AirborneActionNode::onRunning(): %s: no PX4 %s sample within %.1f s.",
+            std::snprintf(
+                report, sizeof(report), "%s: no PX4 %s sample within %.1f s.",
                 name().c_str(), sample ? "position setpoint" : "land-detector", timeout_s_
             );
+        }
+        if (probe_) {
+            RCLCPP_INFO(node_->get_logger(), "WaitForPX4AirborneActionNode::onRunning(): %s", report);
+        } else {
+            RCLCPP_ERROR(node_->get_logger(), "WaitForPX4AirborneActionNode::onRunning(): %s", report);
         }
         return NodeStatus::FAILURE;
     }

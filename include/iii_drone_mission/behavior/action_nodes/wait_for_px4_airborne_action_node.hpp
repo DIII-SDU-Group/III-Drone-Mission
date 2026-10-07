@@ -100,6 +100,7 @@ namespace behavior {
         double hold_s_ = 1.0;
         double timeout_s_ = 8.0;
         double min_thrust_ = 0.1;
+        bool probe_ = false;
     };
 
 } // namespace behavior

@@ -225,20 +225,19 @@ void GenericModeExecutor::onActivate() {
             "GenericModeExecutor::onActivate(): Arming."
         );
 
-        arm(
-            [this](px4_ros2::Result result) {
+        armForActivation(kActivationArmingAttempts);
 
-                if (result != px4_ros2::Result::Success) {
+    }
+}
 
-                    RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::onActivate(): Arming failed, deactivating mode executor %s", mode_executor_name_.c_str());
+void GenericModeExecutor::armForActivation(int attempts_left) {
 
-                    is_active_ = false;
-                    clearGlobalBlackboard("mission executor activation arming failed");
-                    releaseHandoffFailsafeDeferral("mission activation arming failed");
+    arm(
+        [this, attempts_left](px4_ros2::Result result) {
 
-                    return;
+            if (!is_active_) return;
 
-                }
+            if (result == px4_ros2::Result::Success) {
 
                 scheduleMode(
                     (*current_mode_)->id(),
@@ -247,10 +246,40 @@ void GenericModeExecutor::onActivate() {
                     }
                 );
 
-            }
-        );
+                return;
 
-    }
+            }
+
+            if (attempts_left > 1) {
+
+                // PX4 denies arming until it has heard from modes registered
+                // moments ago (a mission selected just before its start).
+                RCLCPP_INFO(
+                    node_.get_logger(),
+                    "GenericModeExecutor::armForActivation(): PX4 denied arming; retrying (%d attempts left).",
+                    attempts_left - 1
+                );
+
+                activation_arming_retry_timer_ = node_.create_wall_timer(
+                    kActivationArmingRetryPeriod,
+                    [this, attempts_left]() {
+                        activation_arming_retry_timer_->cancel();
+                        if (is_active_) armForActivation(attempts_left - 1);
+                    }
+                );
+
+                return;
+
+            }
+
+            RCLCPP_ERROR(node_.get_logger(), "GenericModeExecutor::onActivate(): Arming failed, deactivating mode executor %s", mode_executor_name_.c_str());
+
+            is_active_ = false;
+            clearGlobalBlackboard("mission executor activation arming failed");
+            releaseHandoffFailsafeDeferral("mission activation arming failed");
+
+        }
+    );
 }
 
 void GenericModeExecutor::onDeactivate(DeactivateReason reason) {
@@ -809,6 +838,15 @@ bool GenericModeExecutor::scheduleActionIfAny(schedule_t & previous_schedule_cur
 
             deferFailsafesForHandoff(px4_ros2::ModeBase::kModeIDLand, "landing handoff");
 
+            // PX4 flies the landing: retire the hold Core still streams for
+            // this consumer, or Core reports it as a lost consumer.
+            if (const auto client = mode_provider_->maneuver_reference_client()) {
+                client->ReleaseConsumerControl(
+                    iii_drone_interfaces::srv::ReleaseConsumerControl::Request::REASON_OTHER,
+                    px4_ros2::ModeBase::kModeIDLand
+                );
+            }
+
             land(
                 [this](px4_ros2::Result result) {
                     if (result != px4_ros2::Result::Success) {
@@ -943,6 +981,16 @@ void GenericModeExecutor::onNormalModeSuccess(bool & last_mode) {
         scheduleMode(
             mission_done_mode_id,
             [this, mission_done_mode_id](px4_ros2::Result result) {
+                if (result == px4_ros2::Result::Deactivated) {
+                    // PX4 runs the mission-done mode and has released this
+                    // executor: the intended end of the mission.
+                    RCLCPP_INFO(
+                        node_.get_logger(),
+                        "GenericModeExecutor::onNormalModeSuccess(): Mission-done mode id %d took over; mode executor released.",
+                        mission_done_mode_id
+                    );
+                    return;
+                }
                 if (result != px4_ros2::Result::Success) {
                     RCLCPP_ERROR(
                         node_.get_logger(),

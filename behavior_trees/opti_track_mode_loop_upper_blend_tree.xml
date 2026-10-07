@@ -2,8 +2,8 @@
     <!-- OT Upper Blended (mission opti-track-mode-loop).
 
          One blended lap around the rectangle at the upper altitude
-         (1.6 m): every leg blends into the next except the final
-         return to A, which stops; then a 1 s hover at A.
+         (1.6 m): a waypoint path through B, C and D that blends at
+         those corners and stops back at A; then a 1 s hover at A.
          Next mode: OT Lower Stop-and-Go. -->
     <BehaviorTree ID="OptiTrackModeLoopUpperBlend">
         <Sequence name="otl_upper_blend_sequence">
@@ -60,11 +60,23 @@
                 owner="mission"
             />
 
-            <Action ID="FlyToPosition" name="leg_1_through_corner_a" frame_id="world" target_position="{corner_a}" target_yaw="{yaw_zero}" blend_to_next="true"/>
-            <Action ID="FlyToPosition" name="leg_2_through_corner_b" frame_id="world" target_position="{corner_b}" target_yaw="{yaw_zero}" blend_to_next="true"/>
-            <Action ID="FlyToPosition" name="leg_3_through_corner_c" frame_id="world" target_position="{corner_c}" target_yaw="{yaw_zero}" blend_to_next="true"/>
-            <Action ID="FlyToPosition" name="leg_4_through_corner_d" frame_id="world" target_position="{corner_d}" target_yaw="{yaw_zero}" blend_to_next="true"/>
-            <Action ID="FlyToPosition" name="leg_5_stop_at_corner_a" frame_id="world" target_position="{corner_a}" target_yaw="{yaw_zero}"/>
+            <!-- The previous mode ends in a hover at A: one waypoint path
+                 B, C, D, A, blended at B, C and D and stopping at A. -->
+            <SetBlackboard
+                name="set_lap_waypoints"
+                output_key="lap_waypoints"
+                value="-0.6,0.4,1.6; -0.6,-0.4,1.6; 0.6,-0.4,1.6; 0.6,0.4,1.6"
+            />
+            <Action
+                ID="FollowWaypointPath"
+                name="blended_lap"
+                frame_id="world"
+                waypoints="{lap_waypoints}"
+                repeat="false"
+                target_yaw="{yaw_zero}"
+                nominal_speed_m_s="0.3"
+                blend_radius_m="0.2"
+            />
             <Action ID="Hover" name="hover_at_corner_a" duration_s="1" sustain_action="true"/>
 
         </Sequence>

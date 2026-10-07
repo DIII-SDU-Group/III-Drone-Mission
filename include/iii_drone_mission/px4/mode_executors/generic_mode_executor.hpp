@@ -7,6 +7,7 @@
 /*****************************************************************************/
 // Std:
 
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -146,6 +147,13 @@ namespace px4 {
         rclcpp::Subscription<px4_msgs::msg::VehicleStatus>::SharedPtr mission_exit_vehicle_status_sub_;
         rclcpp::Client<iii_drone_interfaces::srv::PLMapperCommand>::SharedPtr pl_mapper_command_client_;
         rclcpp::TimerBase::SharedPtr deferred_deactivation_timer_;
+
+        // Arming for a ground start is retried briefly: PX4 denies it until
+        // freshly registered modes have answered its arming checks.
+        static constexpr int kActivationArmingAttempts = 6;
+        static constexpr std::chrono::milliseconds kActivationArmingRetryPeriod{500};
+        rclcpp::TimerBase::SharedPtr activation_arming_retry_timer_;
+        void armForActivation(int attempts_left);
         // The Mission Exit monitor runs on its own executor thread so no
         // other callback of the Mission process can delay its latest sample.
         std::shared_ptr<rclcpp::executors::SingleThreadedExecutor> mission_exit_executor_;

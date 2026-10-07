@@ -62,6 +62,11 @@
                 <SetBlackboard name="set_box_corner_3" output_key="box_corner_3" value="-0.5,-0.5,1.2"/>
                 <SetBlackboard name="set_box_corner_4" output_key="box_corner_4" value="0.5,-0.5,1.2"/>
                 <SetBlackboard
+                    name="set_box_waypoints"
+                    output_key="box_waypoints"
+                    value="0.5,0.5,1.2; -0.5,0.5,1.2; -0.5,-0.5,1.2; 0.5,-0.5,1.2"
+                />
+                <SetBlackboard
                     name="set_path_waypoints"
                     output_key="path_waypoints"
                     value="0.5,0,1.2; 0,0.5,1.4; -0.5,0,1.2; 0,-0.5,1.1; 0.5,0,1.2"
@@ -95,12 +100,19 @@
                 <Action ID="FlyToPosition" name="stop_and_go_to_center" frame_id="world" target_position="{center}" target_yaw="{yaw_zero}"/>
                 <Action ID="Hover" name="hover_after_stop_and_go_box" duration_s="3" sustain_action="true"/>
 
-                <!-- 3. Blended box: no stop at corners 1 to 3 -->
+                <!-- 3. Blended box: one waypoint path through the corners, blended
+                     at corners 1 to 3 and stopping at corner 4 -->
                 <Action ID="LogMessage" name="log_blended_box" message="OT Maneuvers: blended box" log_level="1"/>
-                <Action ID="FlyToPosition" name="blend_through_corner_1" frame_id="world" target_position="{box_corner_1}" target_yaw="{yaw_zero}" blend_to_next="true"/>
-                <Action ID="FlyToPosition" name="blend_through_corner_2" frame_id="world" target_position="{box_corner_2}" target_yaw="{yaw_zero}" blend_to_next="true"/>
-                <Action ID="FlyToPosition" name="blend_through_corner_3" frame_id="world" target_position="{box_corner_3}" target_yaw="{yaw_zero}" blend_to_next="true"/>
-                <Action ID="FlyToPosition" name="stop_at_corner_4" frame_id="world" target_position="{box_corner_4}" target_yaw="{yaw_zero}"/>
+                <Action
+                    ID="FollowWaypointPath"
+                    name="blend_through_the_box_corners"
+                    frame_id="world"
+                    waypoints="{box_waypoints}"
+                    repeat="false"
+                    target_yaw="{yaw_zero}"
+                    nominal_speed_m_s="0.3"
+                    blend_radius_m="0.2"
+                />
                 <Action ID="FlyToPosition" name="blended_box_to_center" frame_id="world" target_position="{center}" target_yaw="{yaw_zero}"/>
                 <Action ID="Hover" name="hover_after_blended_box" duration_s="3" sustain_action="true"/>
 
