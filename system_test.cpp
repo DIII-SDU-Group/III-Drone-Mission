@@ -43,7 +43,6 @@ int main(int argc, char **argv) {
     // mode_test.doRegister();
 
     Configurator<rclcpp::Node>::SharedPtr configurator = std::make_shared<Configurator<rclcpp::Node>>(node.get(), node->get_name());
-    configurator->DeclareParameter("/mission/mission_specification_file", rclcpp::ParameterType::PARAMETER_STRING);
     configurator->DeclareParameter("/mission/use_nans_when_hovering", rclcpp::ParameterType::PARAMETER_BOOL);
     configurator->DeclareParameter("/mission/max_failed_attempts_during_maneuver", rclcpp::ParameterType::PARAMETER_INTEGER);
     configurator->DeclareParameter("/mission/wait_for_maneuver_start_timeout_ms", rclcpp::ParameterType::PARAMETER_INTEGER);

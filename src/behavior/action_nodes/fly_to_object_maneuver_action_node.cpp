@@ -46,11 +46,11 @@ PortsList FlyToObjectManeuverActionNode::providedPorts() {
 
 }
 
-bool FlyToObjectManeuverActionNode::setGoal(Goal & goal) {
+bool FlyToObjectManeuverActionNode::setManeuverGoal(Goal & goal) {
 
     RCLCPP_INFO(
         node_ptr_->get_logger(),
-        "FlyToObjectManeuverActionNode::setGoal(): Setting goal"
+        "FlyToObjectManeuverActionNode::setManeuverGoal(): Setting goal"
     );
     
     // getInput("target_cable_id", goal.target.target_id);
@@ -58,7 +58,7 @@ bool FlyToObjectManeuverActionNode::setGoal(Goal & goal) {
     // if (goal.target.target_id < 0) {
     //     RCLCPP_DEBUG(
     //         node_ptr_->get_logger(),
-    //         "FlyToObjectManeuverActionNode::setGoal(): %s: Invalid target ID",
+    //         "FlyToObjectManeuverActionNode::setManeuverGoal(): %s: Invalid target ID",
     //         name_.c_str()
     //     );
     //     return false;
@@ -85,7 +85,7 @@ bool FlyToObjectManeuverActionNode::setGoal(Goal & goal) {
 
     //     RCLCPP_ERROR(
     //         node_ptr_->get_logger(),
-    //         "FlyToObjectManeuverActionNode::setGoal(): %s: Failed to transform gripper quaternion to drone frame: %s",
+    //         "FlyToObjectManeuverActionNode::setManeuverGoal(): %s: Failed to transform gripper quaternion to drone frame: %s",
     //         name_.c_str(),
     //         e.what()
     //     );
@@ -108,7 +108,7 @@ bool FlyToObjectManeuverActionNode::setGoal(Goal & goal) {
     if (goal.target.target_id < 0) {
         RCLCPP_DEBUG(
             node_ptr_->get_logger(),
-            "FlyToObjectManeuverActionNode::setGoal(): %s: Invalid target ID",
+            "FlyToObjectManeuverActionNode::setManeuverGoal(): %s: Invalid target ID",
             name_.c_str()
         );
         return false;
@@ -117,7 +117,7 @@ bool FlyToObjectManeuverActionNode::setGoal(Goal & goal) {
     if (goal.target.target_type == iii_drone_interfaces::msg::Target::TARGET_TYPE_NONE) {
         RCLCPP_DEBUG(
             node_ptr_->get_logger(),
-            "FlyToObjectManeuverActionNode::setGoal(): %s: Invalid target type",
+            "FlyToObjectManeuverActionNode::setManeuverGoal(): %s: Invalid target type",
             name_.c_str()
         );
         return false;

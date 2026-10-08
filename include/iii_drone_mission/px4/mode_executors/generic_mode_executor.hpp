@@ -7,7 +7,10 @@
 /*****************************************************************************/
 // Std:
 
+#include <chrono>
 #include <memory>
+#include <mutex>
+#include <thread>
 
 /*****************************************************************************/
 // ROS2:
@@ -41,6 +44,14 @@
 
 #include <iii_drone_mission/px4/modes/mode_provider.hpp>
 
+#include <iii_drone_mission/px4/mode_executors/executor_activation.hpp>
+
+#include <iii_drone_mission/px4/mode_executors/handoff_failsafe_deferral.hpp>
+
+#include <iii_drone_mission/px4/stick_takeover.hpp>
+
+#include <iii_drone_mission/mission/mission_exit.hpp>
+
 /*****************************************************************************/
 // III-Drone-Interfaces:
 
@@ -48,7 +59,8 @@
 
 #include <iii_drone_interfaces/msg/combined_drone_awareness.hpp>
 
-#include <iii_drone_interfaces/srv/clear_maneuver_queue.hpp>
+#include <iii_drone_interfaces/srv/pl_mapper_command.hpp>
+
 
 /*****************************************************************************/
 // PX4:
@@ -83,6 +95,8 @@ namespace px4 {
             iii_drone::configuration::Configuration::SharedPtr parameters
         ); 
         
+        ~GenericModeExecutor() override;
+
         void onActivate() override;
 
         void onDeactivate(DeactivateReason reason) override;
@@ -112,6 +126,38 @@ namespace px4 {
         utils::Atomic<iii_drone::mission::mission_specification_entry_t> current_mode_entry_;
 
         void onModeCompleted(px4_ros2::Result result);
+
+        void handleModeCompleted(px4_ros2::Result result);
+
+        /**
+         * Mission Exit: PX4 took command authority away from this executor
+         * for anything the mission did not initiate. Runs the ordered cleanup
+         * of MissionExitSteps once per run (first observer wins).
+         */
+        void triggerMissionExit(const iii_drone::mission::MissionExitDecision & decision);
+
+        void onMissionExitVehicleStatus(const px4_msgs::msg::VehicleStatus::SharedPtr msg);
+
+        void completeActionGoalForMissionExit();
+
+        void sendPlMapperExitCommand(uint8_t command);
+
+        std::mutex mission_exit_mutex_;
+        rclcpp::CallbackGroup::SharedPtr mission_exit_callback_group_;
+        rclcpp::Subscription<px4_msgs::msg::VehicleStatus>::SharedPtr mission_exit_vehicle_status_sub_;
+        rclcpp::Client<iii_drone_interfaces::srv::PLMapperCommand>::SharedPtr pl_mapper_command_client_;
+        rclcpp::TimerBase::SharedPtr deferred_deactivation_timer_;
+
+        // Arming for a ground start is retried briefly: PX4 denies it until
+        // freshly registered modes have answered its arming checks.
+        static constexpr int kActivationArmingAttempts = 6;
+        static constexpr std::chrono::milliseconds kActivationArmingRetryPeriod{500};
+        rclcpp::TimerBase::SharedPtr activation_arming_retry_timer_;
+        void armForActivation(int attempts_left);
+        // The Mission Exit monitor runs on its own executor thread so no
+        // other callback of the Mission process can delay its latest sample.
+        std::shared_ptr<rclcpp::executors::SingleThreadedExecutor> mission_exit_executor_;
+        std::thread mission_exit_thread_;
 
         bool checkScheduleAndActionValidity();
 
@@ -150,6 +196,19 @@ namespace px4 {
 
         rclcpp::Subscription<px4_msgs::msg::ManualControlSetpoint>::SharedPtr manual_control_setpoint_sub_;
         void manualControlSetpointCallback(const px4_msgs::msg::ManualControlSetpoint::SharedPtr msg);
+
+        StickTakeoverDetector stick_takeover_detector_;
+
+        /**
+         * PX4 failsafes are deferred only while a mode handoff is pending:
+         * from scheduling a mode until PX4 runs it.
+         */
+        HandoffFailsafeDeferral handoff_failsafe_deferral_;
+        rclcpp::Subscription<px4_msgs::msg::VehicleStatus>::SharedPtr handoff_vehicle_status_sub_;
+
+        void deferFailsafesForHandoff(uint8_t target_nav_state, const char * handoff);
+        void releaseHandoffFailsafeDeferral(const char * reason);
+        void onHandoffVehicleStatus(const px4_msgs::msg::VehicleStatus::SharedPtr msg);
 
         // rclcpp::Service<iii_drone_interfaces::srv::ModeExecutorScheduleRequest>::SharedPtr schedule_request_srv_;
         // void scheduleRequestCallback(
@@ -192,8 +251,6 @@ namespace px4 {
         rclcpp::Subscription<iii_drone_interfaces::msg::CombinedDroneAwareness>::SharedPtr combined_drone_awareness_sub_;
         utils::History<adapters::CombinedDroneAwarenessAdapter> combined_drone_awareness_adapter_history_;
 
-        rclcpp::Client<iii_drone_interfaces::srv::ClearManeuverQueue>::SharedPtr clear_maneuver_queue_client_;
-        void clearManeuverQueue(const std::string & reason);
         void clearGlobalBlackboard(const std::string & reason);
 
     };

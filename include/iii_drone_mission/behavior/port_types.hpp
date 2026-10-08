@@ -8,6 +8,7 @@
 // Behaviortree.CPP:
 
 #include "behaviortree_cpp/bt_factory.h"
+#include "behaviortree_cpp/decorators/loop_node.h"
 
 /*****************************************************************************/
 // Dynamic message introspection:
@@ -20,7 +21,10 @@
 /*****************************************************************************/
 // Std:
 
+#include <deque>
+#include <memory>
 #include <string>
+#include <string_view>
 
 /*****************************************************************************/
 // III-Drone-Interfaces:
@@ -142,6 +146,15 @@ namespace behavior {
 
     }
 
+    /**
+     * Parses a literal point list "x,y,z;x,y,z;..." (e.g. waypoints written in
+     * a behavior-tree XML attribute). Whitespace around numbers and separators
+     * is ignored. Throws std::invalid_argument for an empty list, an empty
+     * entry (including a trailing ';'), an entry without exactly three
+     * coordinates, or a coordinate that is not a finite number.
+     */
+    std::deque<iii_drone::types::point_t> ParsePointListLiteral(std::string_view text);
+
 }
 }
 
@@ -184,6 +197,18 @@ namespace BT {
         }
 
         return point;
+
+    }
+
+    // Literal waypoint queues, e.g. FollowWaypointPath waypoints="1,0,1.2;0,1,1.2".
+    // Every translation unit that declares a SharedQueue<point_t> port must see
+    // this specialization (include this header), or BT.CPP's unspecialized
+    // template rejects the literal.
+    template <> inline SharedQueue<iii_drone::types::point_t> convertFromString(StringView str) {
+
+        return std::make_shared<std::deque<iii_drone::types::point_t>>(
+            iii_drone::behavior::ParsePointListLiteral(str)
+        );
 
     }
 

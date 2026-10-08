@@ -7,6 +7,7 @@
 using namespace iii_drone::behavior;
 using namespace iii_drone::configuration;
 using namespace iii_drone::types;
+using namespace iii_drone::math;
 using namespace BT;
 
 
@@ -144,7 +145,19 @@ bool TargetProvider::getFlyToCableTarget(
 
     }
 
-    quaternion_t drone_q_cable = quaternionFromQuaternionMsg(drone_q_cable_msg.quaternion);
+    const quaternion_t full_drone_q_cable =
+        quaternionFromQuaternionMsg(drone_q_cable_msg.quaternion);
+
+    // The gripper frame is rolled relative to the airframe. Carrying that roll
+    // into the homogeneous drone-to-cable target rotates the requested
+    // vertical stand-off into a horizontal offset when ComputeTargetTransform
+    // inverts the transform. Fly-to-object controls position and yaw only, so
+    // retain the gripper-derived cable-axis yaw while keeping the target frame
+    // level with the aircraft.
+    euler_angles_t drone_eul_cable = quatToEul(full_drone_q_cable);
+    drone_eul_cable[0] = 0.0;
+    drone_eul_cable[1] = 0.0;
+    const quaternion_t drone_q_cable = eulToQuat(drone_eul_cable);
 
     vector_t drone_v_cable(0, 0, configuration_->GetParameter("/behavior/target_cable_distance").as_double());
 
@@ -155,10 +168,14 @@ bool TargetProvider::getFlyToCableTarget(
 
     RCLCPP_DEBUG(
         node_->get_logger(),
-        "TargetProvider::getFlyToCableTarget(): target_id=%d reference_frame=%s target_cable_distance=%.3f drone_q_cable=[%.3f, %.3f, %.3f, %.3f]",
+        "TargetProvider::getFlyToCableTarget(): target_id=%d reference_frame=%s target_cable_distance=%.3f full_drone_q_cable=[%.3f, %.3f, %.3f, %.3f] planar_drone_q_cable=[%.3f, %.3f, %.3f, %.3f]",
         target_id,
         target.reference_frame_id.c_str(),
         configuration_->GetParameter("/behavior/target_cable_distance").as_double(),
+        full_drone_q_cable.x(),
+        full_drone_q_cable.y(),
+        full_drone_q_cable.z(),
+        full_drone_q_cable.w(),
         drone_q_cable.x(),
         drone_q_cable.y(),
         drone_q_cable.z(),

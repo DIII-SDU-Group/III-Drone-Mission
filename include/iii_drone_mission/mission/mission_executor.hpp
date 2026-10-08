@@ -73,12 +73,17 @@ namespace mission {
 
     class MissionExecutor {
     public:
+        /**
+         * runtime_profile restricts the behavior trees the executor loads
+         * (see profile_restrictions.hpp); empty restricts nothing.
+         */
         explicit MissionExecutor(
             rclcpp_lifecycle::LifecycleNode * node,
             tf2_ros::Buffer::SharedPtr tf_buffer,
-            std::string mission_specification_file,
+            MissionSpecification::SharedPtr mission_specification,
             rclcpp::CallbackGroup::SharedPtr odometry_sub_callback_group,
-            rclcpp::executors::MultiThreadedExecutor & executor
+            rclcpp::Executor & executor,
+            std::string runtime_profile = ""
         );
 
         ~MissionExecutor();
@@ -89,11 +94,12 @@ namespace mission {
         );
         void Cleanup();
         void Start(
-            iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator
+            iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator,
+            uint64_t lifecycle_activation_generation
         );
         void Stop();
-        bool OverrideMissionSpecification(
-            const std::string & mission_specification_file,
+        bool SelectMissionSpecification(
+            MissionSpecification::SharedPtr mission_specification,
             iii_drone::configuration::Configurator<rclcpp_lifecycle::LifecycleNode>::SharedPtr configurator,
             rclcpp::CallbackGroup::SharedPtr get_reference_cb_group,
             std::string & message
@@ -111,6 +117,10 @@ namespace mission {
 
         iii_drone::px4::ModeProvider::SharedPtr mode_provider() const {
             return mode_provider_;
+        }
+
+        bool stopped() const {
+            return !is_started_ && generic_mode_executor_ == nullptr && mode_provider_ == nullptr;
         }
 
         bool mission_active() const {
@@ -146,10 +156,13 @@ namespace mission {
 
         iii_drone::px4::GenericModeExecutor::SharedPtr generic_mode_executor_;
 
-        rclcpp::executors::MultiThreadedExecutor & executor_;
+        rclcpp::Executor & executor_;
+
+        std::string runtime_profile_;
 
         bool is_started_ = false;
         bool is_configured_ = false;
+        uint64_t lifecycle_activation_generation_ = 0;
         mutable std::mutex lifecycle_mutex_;
 
         std::shared_ptr<RuntimeIntentBuffer> runtime_intent_buffer_;
@@ -159,7 +172,10 @@ namespace mission {
 
         void registerIntentServices();
         void unregisterIntentServices();
-        bool intentServiceValidForCurrentMode(const mission_intent_service_t & intent_service) const;
+        bool intentServiceValidForMode(
+            const mission_intent_service_t & intent_service,
+            const std::string & active_mode_key
+        ) const;
         std::string activeModeKey() const;
         bool rebuildWithMissionSpecification(
             MissionSpecification::SharedPtr mission_specification,

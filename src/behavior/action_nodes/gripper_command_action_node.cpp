@@ -4,6 +4,9 @@
 
 #include <iii_drone_mission/behavior/action_nodes/gripper_command_action_node.hpp>
 
+#include <iii_drone_core/diagnostics/hil_trace.hpp>
+#include <iii_drone_mission/mission/mission_exit.hpp>
+
 using namespace iii_drone::behavior;
 using namespace BT;
 
@@ -19,7 +22,8 @@ GripperCommandActionNode::GripperCommandActionNode(
         name, 
         conf, 
         params
-),  node_ptr_(params.nh.lock()) { }
+),  node_ptr_(params.nh.lock()),
+    service_endpoint_(params.default_port_value) { }
 
 PortsList GripperCommandActionNode::providedPorts() {
 
@@ -30,7 +34,28 @@ PortsList GripperCommandActionNode::providedPorts() {
 
 }
 
+BT::NodeStatus GripperCommandActionNode::tick() {
+    const bool dispatching = status() == BT::NodeStatus::IDLE;
+    return iii_drone::mission::guardMissionDispatch(
+        dispatching,
+        [this]() { return RosServiceNode<iii_drone_interfaces::srv::GripperCommand>::tick(); },
+        [this]() {
+            RCLCPP_INFO(
+                node_ptr_->get_logger(),
+                "GripperCommandActionNode::tick(): %s: Mission Exit, not sending gripper command",
+                name().c_str()
+            );
+            return BT::NodeStatus::FAILURE;
+        }
+    );
+}
+
 bool GripperCommandActionNode::setRequest(Request::SharedPtr & request) {
+
+    auto event = iii_drone::diagnostics::HilTrace::event("bt_service_request_attempt");
+    event.text("node", name());
+    event.text("endpoint", service_endpoint_);
+    event.commit();
 
     RCLCPP_DEBUG(
         node_ptr_->get_logger(),
@@ -73,6 +98,16 @@ bool GripperCommandActionNode::setRequest(Request::SharedPtr & request) {
 }
 
 NodeStatus GripperCommandActionNode::onResponseReceived(const Response::SharedPtr & response) {
+
+    const bool success = response->gripper_command_response ==
+        iii_drone_interfaces::srv::GripperCommand::Response::GRIPPER_COMMAND_RESPONSE_SUCCESS;
+    auto event = iii_drone::diagnostics::HilTrace::event("bt_service_response");
+    event.text("node", name());
+    event.text("endpoint", service_endpoint_);
+    event.boolean("success", success);
+    event.text("bt_status", success ? "SUCCESS" : "FAILURE");
+    event.number("response_code", response->gripper_command_response);
+    event.commit();
 
     switch (response->gripper_command_response) {
 

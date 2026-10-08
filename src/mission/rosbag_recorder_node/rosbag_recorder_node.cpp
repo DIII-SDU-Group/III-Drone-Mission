@@ -3,6 +3,8 @@
 /*****************************************************************************/
 
 #include <iii_drone_mission/mission/rosbag_recorder_node/rosbag_recorder_node.hpp>
+#include <iii_drone_mission/mission/rosbag_recorder_node/rosbag_qos_overrides.hpp>
+#include <iii_drone_mission/mission/rosbag_recorder_node/rosbag_retention.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -10,6 +12,7 @@
 #include <cctype>
 #include <ctime>
 #include <fcntl.h>
+#include <fstream>
 #include <iomanip>
 #include <sstream>
 #include <sys/types.h>
@@ -17,6 +20,7 @@
 #include <thread>
 #include <unistd.h>
 #include <vector>
+#include <iii_drone_core/utils/multi_threaded_executor.hpp>
 
 using namespace iii_drone::mission::rosbag_recorder_node;
 
@@ -60,6 +64,7 @@ RosbagRecorderNode::RosbagRecorderNode(
     declare_parameter<std::string>("artifact_root", "/tmp/iii_drone/rosbags");
     declare_parameter<std::string>("log_root", "/tmp/iii_drone/rosbag_recorder/logs");
     declare_parameter<double>("default_stop_timeout_sec", 10.0);
+    declare_parameter<int64_t>("retention_max_bytes", 10'000'000'000LL);
 
     RCLCPP_INFO(get_logger(), "RosbagRecorderNode::RosbagRecorderNode()");
 }
@@ -83,6 +88,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Rosbag
     artifact_root_ = get_parameter("artifact_root").as_string();
     log_root_ = get_parameter("log_root").as_string();
     default_stop_timeout_sec_ = get_parameter("default_stop_timeout_sec").as_double();
+    retention_max_bytes_ = static_cast<std::uint64_t>(
+        std::max<int64_t>(0, get_parameter("retention_max_bytes").as_int()));
 
     try {
         std::filesystem::create_directories(artifact_root_);
@@ -95,6 +102,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Rosbag
         );
         return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::FAILURE;
     }
+
+    applyRetention("configure");
 
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
@@ -240,6 +249,22 @@ void RosbagRecorderNode::startRecordingCallback(
     if (request->include_hidden_topics) {
         args.push_back("--include-hidden-topics");
     }
+    const auto qos_overrides = px4InputQosOverridesYaml(
+        std::vector<std::string>(request->topics.begin(), request->topics.end()),
+        request->all_topics);
+    if (!qos_overrides.empty()) {
+        const auto overrides_path = log_dir / "qos_overrides.yaml";
+        std::ofstream overrides(overrides_path);
+        overrides << qos_overrides;
+        if (overrides.good()) {
+            args.push_back("--qos-profile-overrides-path");
+            args.push_back(overrides_path.string());
+        } else {
+            RCLCPP_WARN(get_logger(),
+                "Could not write rosbag QoS overrides to %s; PX4 input topics may miss publishers",
+                overrides_path.c_str());
+        }
+    }
     args.push_back("-o");
     args.push_back(output_dir_.string());
 
@@ -317,6 +342,9 @@ void RosbagRecorderNode::stopRecordingCallback(
     response->success = stopRecording(timeout_sec, message, was_running);
     response->message = message;
     response->was_running = was_running;
+    if (was_running) {
+        applyRetention("recording stopped");
+    }
 }
 
 void RosbagRecorderNode::recordingStatusCallback(
@@ -386,6 +414,25 @@ bool RosbagRecorderNode::stopRecording(double timeout_sec, std::string & message
     return true;
 }
 
+void RosbagRecorderNode::applyRetention(const char * when) {
+    if (retention_max_bytes_ == 0) {
+        return;
+    }
+    const auto result = pruneRecordings(
+        artifact_root_, retention_max_bytes_,
+        isRecording() ? output_dir_ : std::filesystem::path{});
+    if (result.removed > 0) {
+        RCLCPP_INFO(
+            get_logger(),
+            "RosbagRecorderNode: removed %zu recording(s) (%.2f GB) beyond the newest %.2f GB (%s); %.2f GB kept",
+            result.removed,
+            static_cast<double>(result.removed_bytes) / 1e9,
+            static_cast<double>(retention_max_bytes_) / 1e9,
+            when,
+            static_cast<double>(result.kept_bytes) / 1e9);
+    }
+}
+
 void RosbagRecorderNode::clearRecordingState() {
     child_pid_ = -1;
     recording_id_.clear();
@@ -447,7 +494,7 @@ void RosbagRecorderNode::fillStatus(iii_drone_interfaces::srv::GetRosbagRecordin
 int main(int argc, char * argv[]) {
     rclcpp::init(argc, argv);
 
-    rclcpp::executors::MultiThreadedExecutor executor;
+    iii_drone::utils::MultiThreadedExecutor executor;
     auto node = std::make_shared<RosbagRecorderNode>();
 
     executor.add_node(node->get_node_base_interface());

@@ -82,7 +82,7 @@ namespace behavior {
             tf2_ros::Buffer::SharedPtr tf_buffer
         );
 
-        bool setGoal(Goal & goal) override;
+        bool setManeuverGoal(Goal & goal) override;
 
         static BT::PortsList providedPorts();
 
