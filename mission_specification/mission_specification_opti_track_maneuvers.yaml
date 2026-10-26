@@ -1,0 +1,14 @@
+# OptiTrack lab maneuver set (opti_track profile; no cable): stop-and-go and
+# blended boxes, yaw steps in place, a height step and a waypoint path, all
+# around the cage centre at 1.2 m, then /mission/mission_done_select_mode
+# (PX4 Hold). Geometry is set at the top of the tree.
+#
+# Precondition: the pilot hands over from a steady hover in the cage. Every
+# world-frame target lies at least 1.1 m above the ground.
+executor_owned_mode: "ot_maneuvers"
+
+entries:
+  - key: "ot_maneuvers"
+    mode_name: "OT Maneuvers"
+    behavior_tree_xml_file: "behavior_trees/opti_track_maneuvers_tree.xml"
+    allow_activate_when_disarmed: false

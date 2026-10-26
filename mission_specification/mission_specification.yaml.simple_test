@@ -3,5 +3,5 @@ executor_owned_mode: "reach_cable"
 entries:
   - key: "reach_cable"
     mode_name: "Reach Cable"
-    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/reach_cable_tree_simple.xml"
+    behavior_tree_xml_file: "behavior_trees/reach_cable_tree_simple.xml"
     allow_activate_when_disarmed: true

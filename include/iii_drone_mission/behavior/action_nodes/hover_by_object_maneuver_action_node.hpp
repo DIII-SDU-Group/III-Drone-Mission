@@ -54,7 +54,12 @@ namespace behavior {
             iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client
         );
 
-        bool setGoal(Goal & goal) override;
+        bool setManeuverGoal(Goal & goal) override;
+
+    protected:
+        bool shouldCompleteSuccessfulNoReferenceGoal() const override;
+
+    public:
 
         // BT::NodeStatus onResultReceived(const WrappedResult & wr) override final { return BT::NodeStatus::SUCCESS; }
         // BT::NodeStatus onFailure(BT::ActionNodeErrorCode error) override final { return BT::NodeStatus::FAILURE; }

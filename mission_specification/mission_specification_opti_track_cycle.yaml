@@ -1,0 +1,34 @@
+# OptiTrack lab flight cycle (opti_track profile; no cable): take off unless
+# airborne, hover at the cage centre until the operator's Proceed intent,
+# shuttle across the cage, then land.
+#
+# Without Proceed within 60 s the takeoff mode sets opti_track.cycle_land_now
+# and the shuttle mode is skipped. The executor arms a disarmed vehicle when
+# OT Takeoff is selected. Without a global position PX4 takes off to its
+# default takeoff altitude (MIS_TAKEOFF_ALT) instead of the requested 1.2 m.
+executor_owned_mode: "ot_cycle_takeoff"
+
+intent_services:
+  - service_name: "/mission/opti_track/proceed"
+    flag_name: "opti_track.proceed"
+    type: "bool"
+    valid_modes:
+      - "ot_cycle_takeoff"
+
+entries:
+  - key: "ot_cycle_takeoff"
+    mode_name: "OT Takeoff"
+    behavior_tree_xml_file: "behavior_trees/opti_track_cycle_takeoff_tree.xml"
+    allow_activate_when_disarmed: true
+    next_mode: "ot_cycle_shuttle"
+
+  - key: "ot_cycle_shuttle"
+    mode_name: "OT Shuttle"
+    behavior_tree_xml_file: "behavior_trees/opti_track_cycle_shuttle_tree.xml"
+    allow_activate_when_disarmed: false
+    next_mode: "ot_cycle_land"
+
+  - key: "ot_cycle_land"
+    mode_name: "OT Land"
+    behavior_tree_xml_file: "behavior_trees/opti_track_cycle_land_tree.xml"
+    allow_activate_when_disarmed: false

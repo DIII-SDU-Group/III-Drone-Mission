@@ -3,6 +3,7 @@
 /*****************************************************************************/
 
 #include <iii_drone_mission/behavior/action_nodes/powerline_waypoint_provider_action_node.hpp>
+#include <iii_drone_mission/behavior/action_nodes/partition_point_queue_action_node.hpp>
 #include <iii_drone_mission/behavior/powerline_geometry.hpp>
 
 #include <algorithm>
@@ -27,15 +28,13 @@ PowerlineWaypointProviderActionNode::PowerlineWaypointProviderActionNode(
     const NodeConfiguration & conf,
     tf2_ros::Buffer::SharedPtr tf_buffer,
     rclcpp::Node * node,
-    Configuration::SharedPtr params
-) : SyncActionNode(name, conf), tf_buffer_(tf_buffer), node_(node), configuration_(params) {
-    combined_drone_awareness_sub_ = node_->create_subscription<iii_drone_interfaces::msg::CombinedDroneAwareness>(
-        "/control/maneuver_controller/combined_drone_awareness",
-        rclcpp::QoS(1),
-        [this](const iii_drone_interfaces::msg::CombinedDroneAwareness::SharedPtr msg) {
-            latest_ground_altitude_estimate_.store(msg->ground_altitude_estimate);
-        }
-    );
+    Configuration::SharedPtr params,
+    std::shared_ptr<CombinedDroneAwarenessCache> combined_drone_awareness
+) : SyncActionNode(name, conf),
+    tf_buffer_(tf_buffer),
+    node_(node),
+    configuration_(params),
+    combined_drone_awareness_(std::move(combined_drone_awareness)) {
 }
 
 PortsList PowerlineWaypointProviderActionNode::providedPorts() {
@@ -46,7 +45,10 @@ PortsList PowerlineWaypointProviderActionNode::providedPorts() {
         InputPort<State>("start_state"),
         OutputPort<SharedQueue<point_t>>("waypoints_depart"),
         OutputPort<SharedQueue<point_t>>("waypoints_return"),
+        OutputPort<int>("depart_outside_boundary_index"),
+        OutputPort<int>("return_outside_boundary_index"),
         OutputPort<float>("waypoint_target_yaw"),
+        OutputPort<float>("cable_facing_yaw"),
         OutputPort<int>("powerline_overview_required_line_id")
     };
 
@@ -73,7 +75,10 @@ double PowerlineWaypointProviderActionNode::minimumWaypointZ() const {
     ).as_double();
     const double mission_waypoint_margin = 0.5;
     const double fallback_minimum_z = minimum_target_altitude + mission_waypoint_margin;
-    const double ground_altitude_estimate = latest_ground_altitude_estimate_.load();
+    const auto awareness = combined_drone_awareness_->latest();
+    const double ground_altitude_estimate = awareness
+        ? awareness->message.ground_altitude_estimate
+        : std::numeric_limits<double>::quiet_NaN();
     if (!std::isfinite(ground_altitude_estimate)) {
         RCLCPP_WARN(
             node_->get_logger(),
@@ -468,7 +473,6 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
         "PowerlineWaypointProviderActionNode::tick(): Finding the start state location."
     );
     point_t start_state_position = start_state.position();
-    double waypoint_target_yaw = start_state.yaw();
     const std::string drone_frame_id = configuration_->GetParameter("/tf/drone_frame_id").as_string();
     try {
         const auto world_T_drone_msg = tf_buffer_->lookupTransform(
@@ -488,13 +492,6 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
             start_state_position[2]
         );
         start_state_position = tf_start_state_position;
-        waypoint_target_yaw = quatToEul(quaternionFromTransformMsg(world_T_drone_msg.transform))[2];
-        RCLCPP_DEBUG(
-            node_->get_logger(),
-            "PowerlineWaypointProviderActionNode::tick(): Using TF waypoint yaw %.6f instead of odometry state yaw %.6f",
-            waypoint_target_yaw,
-            start_state.yaw()
-        );
     } catch (tf2::TransformException & ex) {
         RCLCPP_WARN(
             node_->get_logger(),
@@ -546,6 +543,7 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
         "PowerlineWaypointProviderActionNode::tick(): Creating waypoints."
     );
     auto shared_queue = std::make_shared<std::deque<point_t>>();
+    int outside_boundary_index = -1;
     auto make_depart_queue = [&shared_queue]() {
         auto depart_queue = std::make_shared<std::deque<point_t>>();
         if (shared_queue->size() > 1) {
@@ -642,6 +640,18 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
     const bool start_state_is_inside_corridor = corridor_classification.inside_corridor;
     const bool start_state_is_below_top_conductor = start_state_position[2] < highest_z;
     point_t under_cable_target_line_point = positive_direction_is_higher ? positive_direction_furthest_point : negative_direction_furthest_point;
+    const auto waypoint_target_yaw_result = pl_geom::ComputeCableFacingYaw(
+        powerline_normal_no_z,
+        positive_direction_is_higher
+    );
+    if (!waypoint_target_yaw_result) {
+        RCLCPP_WARN(
+            node_->get_logger(),
+            "PowerlineWaypointProviderActionNode::tick(): Could not compute a cable-facing yaw from the cross-corridor axis"
+        );
+        return NodeStatus::FAILURE;
+    }
+    const double waypoint_target_yaw = *waypoint_target_yaw_result;
     bool force_above_corridor_route = false;
 
     if (pylon_a && pylon_b) {
@@ -684,7 +694,11 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
         );
         return NodeStatus::FAILURE;
     }
-    setOutput("waypoint_target_yaw", static_cast<float>(waypoint_target_yaw));
+    // Preserve the vehicle heading during transit. A large yaw step on the
+    // first blended waypoint can prevent the maneuver handoff from producing
+    // references. Rotate toward the cable only at the final sensing position.
+    setOutput("waypoint_target_yaw", static_cast<float>(start_state.yaw()));
+    setOutput("cable_facing_yaw", static_cast<float>(waypoint_target_yaw));
     setOutput("powerline_overview_required_line_id", powerline_overview_required_line_id);
     RCLCPP_INFO(
         node_->get_logger(),
@@ -695,20 +709,25 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
         under_cable_target_line_point[2],
         waypoint_target_yaw
     );
+    const auto clearance_point = [&](const point_t & outer, bool positive) {
+        return pl_geom::OutsideCorridorClearancePoint(
+            outer, middle_line_point, powerline_normal_no_z, positive,
+            configuration_->GetParameter("/behavior/inside_powerline_xy_distance_threshold_m").as_double(),
+            configuration_->GetParameter("/control/maneuver_controller/reached_position_euclidean_distance_threshold").as_double(),
+            configuration_->GetParameter("/behavior/horizontal_clearance_m").as_double()
+        );
+    };
+    const auto positive_clearance = clearance_point(positive_direction_furthest_point, true);
+    const auto negative_clearance = clearance_point(negative_direction_furthest_point, false);
+    if (!positive_clearance || !negative_clearance) {
+        RCLCPP_ERROR(node_->get_logger(), "Cannot construct finite outside-corridor clearance points");
+        return NodeStatus::FAILURE;
+    }
     auto append_under_outer_cable_waypoints = [&]() {
-        point_t waypoint = outer_cable_under_waypoint();
-
-        vector_t waypoint_displacement = configuration_->GetParameter("/behavior/horizontal_clearance_m").as_double() * powerline_normal / powerline_normal.norm();
-        waypoint_displacement[2] = 0;
-        waypoint_displacement *= positive_direction_is_higher ? 1 : -1;
-        waypoint += waypoint_displacement;
-
+        point_t waypoint = positive_direction_is_higher ? *positive_clearance : *negative_clearance;
+        waypoint[2] = outer_cable_under_waypoint()[2];
         shared_queue->push_back(waypoint);
-
-        point_t final_waypoint = outer_cable_under_waypoint();
-        final_waypoint[2] = waypoint[2];
-
-        shared_queue->push_back(final_waypoint);
+        shared_queue->push_back(outer_cable_under_waypoint());
     };
 
     if (force_above_corridor_route) {
@@ -720,7 +739,7 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
     if (start_state_is_inside_corridor && start_state_is_below_top_conductor && !force_above_corridor_route) {
         RCLCPP_INFO(
             node_->get_logger(),
-            "PowerlineWaypointProviderActionNode::tick(): Using direct inside-corridor under-cable approach; lateral_distance=%.3f threshold=%.3f start_z=%.3f highest_z=%.3f start_positive=%s start_negative=%s",
+            "PowerlineWaypointProviderActionNode::tick(): Evaluating inside-corridor under-cable approach; lateral_distance=%.3f threshold=%.3f start_z=%.3f highest_z=%.3f start_positive=%s start_negative=%s",
             distance_to_middle_line_point,
             configuration_->GetParameter("/behavior/inside_powerline_xy_distance_threshold_m").as_double(),
             start_state_position[2],
@@ -741,44 +760,79 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
             );
             entry_under_waypoint[2] = minimum_direct_waypoint_z;
         }
-        point_t middle_under_waypoint = align_waypoint_to_start_span(middle_line_point);
-        middle_under_waypoint[2] = entry_under_waypoint[2];
-
         setOutput("powerline_overview_required_line_id", powerline_overview_required_line_id);
+        const auto inside_route = pl_geom::BuildInsideCorridorReturnRoute(
+            start_state_position,
+            align_waypoint_to_start_span(middle_line_point),
+            entry_under_waypoint,
+            positive_direction_furthest_point,
+            negative_direction_furthest_point,
+            powerline_normal_no_z,
+            positive_direction_is_higher,
+            configuration_->GetParameter("/behavior/inside_powerline_xy_distance_threshold_m").as_double(),
+            configuration_->GetParameter("/control/maneuver_controller/reached_position_euclidean_distance_threshold").as_double(),
+            configuration_->GetParameter("/behavior/horizontal_clearance_m").as_double()
+        );
+        if (inside_route.kind != pl_geom::InsideCorridorRouteKind::top_clearance) {
+            RCLCPP_INFO(
+                node_->get_logger(),
+                "PowerlineWaypointProviderActionNode::tick(): Inside-corridor return route kind=%d retains entry-side overview line id %d and start span station",
+                static_cast<int>(inside_route.kind),
+                powerline_overview_required_line_id
+            );
+            shared_queue->insert(
+                shared_queue->end(),
+                std::next(inside_route.waypoints.begin()),
+                inside_route.waypoints.end()
+            );
+
+            WaypointRouteBoundaryIndices boundary_indices;
+            if (inside_route.outside_boundary_index >= 0) {
+                const auto shared_boundary_index = static_cast<std::size_t>(inside_route.outside_boundary_index);
+                const double threshold = configuration_->GetParameter(
+                    "/behavior/inside_powerline_xy_distance_threshold_m"
+                ).as_double();
+                const double tolerance = configuration_->GetParameter(
+                    "/control/maneuver_controller/reached_position_euclidean_distance_threshold"
+                ).as_double();
+                const auto boundary_classification = pl_geom::ClassifyCorridor(
+                    shared_queue->at(shared_boundary_index),
+                    middle_line_point,
+                    powerline_normal_no_z,
+                    positive_direction_furthest_point,
+                    negative_direction_furthest_point,
+                    threshold
+                );
+                boundary_indices = ComputeOutsideBoundaryIndices(
+                    shared_queue->size(),
+                    shared_boundary_index,
+                    IsOutsideCorridorBeyondCompletionTolerance(
+                        boundary_classification.lateral_distance_to_middle,
+                        threshold,
+                        tolerance
+                    )
+                );
+            }
+
+            auto shared_queue_depart = make_depart_queue();
+            enforce_minimum_waypoint_altitude("depart", shared_queue_depart);
+            setOutput("waypoints_depart", shared_queue_depart);
+
+            auto shared_queue_return = std::make_shared<std::deque<point_t>>(
+                inside_route.return_waypoints.begin(), inside_route.return_waypoints.end()
+            );
+            enforce_minimum_waypoint_altitude("return", shared_queue_return);
+            setOutput("waypoints_return", shared_queue_return);
+            setOutput("depart_outside_boundary_index", boundary_indices.departure);
+            setOutput("return_outside_boundary_index", boundary_indices.return_route);
+            log_waypoints("depart", shared_queue_depart);
+            log_waypoints("return", shared_queue_return);
+            return NodeStatus::SUCCESS;
+        }
         RCLCPP_INFO(
             node_->get_logger(),
-            "PowerlineWaypointProviderActionNode::tick(): Inside-corridor waypoint plan keeps entry-side overview line id: %d and preserves start span station; middle_waypoint=[%.3f, %.3f, %.3f] entry_under_waypoint=[%.3f, %.3f, %.3f]",
-            powerline_overview_required_line_id,
-            middle_under_waypoint[0],
-            middle_under_waypoint[1],
-            middle_under_waypoint[2],
-            entry_under_waypoint[0],
-            entry_under_waypoint[1],
-            entry_under_waypoint[2]
+            "PowerlineWaypointProviderActionNode::tick(): Start is exterior to the selected entry side; using top/side route to approach around both outer conductors"
         );
-
-        shared_queue->push_back(middle_under_waypoint);
-        shared_queue->push_back(entry_under_waypoint);
-
-        auto shared_queue_depart = make_depart_queue();
-        enforce_minimum_waypoint_altitude("depart", shared_queue_depart);
-        setOutput("waypoints_depart", shared_queue_depart);
-
-        // Reverse the waypoints for the return path as new shared queue, without modifying the original shared queue.
-        std::shared_ptr<std::deque<point_t>> shared_queue_return = std::make_shared<std::deque<point_t>>(shared_queue->rbegin(), shared_queue->rend());
-        enforce_minimum_waypoint_altitude("return", shared_queue_return);
-
-        setOutput("waypoints_return", shared_queue_return);
-        log_waypoints("depart", shared_queue_depart);
-        log_waypoints("return", shared_queue_return);
-
-        RCLCPP_INFO(
-            node_->get_logger(),
-            "PowerlineWaypointProviderActionNode::tick(): Finished computing waypoints"
-        );
-
-        return NodeStatus::SUCCESS;
-
     } else if (start_state_is_inside_corridor) {
         RCLCPP_INFO(
             node_->get_logger(),
@@ -790,35 +844,10 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
         );
     }
 
-    point_t negative_top_waypoint = negative_direction_furthest_point;
-    negative_top_waypoint[2] = highest_z;
-    negative_top_waypoint[2] += configuration_->GetParameter("/behavior/top_clearance_m").as_double();
-    vector_t waypoint_displacement = configuration_->GetParameter("/behavior/horizontal_clearance_m").as_double() * powerline_normal / powerline_normal.norm();
-    waypoint_displacement[2] = 0;
-    waypoint_displacement *= -1;
-    negative_top_waypoint += waypoint_displacement;
-
-    // RLCPP_INFO(
-    //     node_->get_logger(),
-    //     "PowerlineWaypointProviderActionNode::tick(): negative_top_waypoint: [%f,%f,%f]",
-    //     negative_top_waypoint[0],
-    //     negative_top_waypoint[1],
-    //     negative_top_waypoint[2]
-    // );
-
-    point_t positive_top_waypoint = positive_direction_furthest_point;
-    positive_top_waypoint[2] = highest_z;
-    positive_top_waypoint[2] += configuration_->GetParameter("/behavior/top_clearance_m").as_double();
-    waypoint_displacement *= -1;
-    positive_top_waypoint += waypoint_displacement;
-
-    // RLCPP_INFO(
-    //     node_->get_logger(),
-    //     "PowerlineWaypointProviderActionNode::tick(): negative_top_waypoint: [%f,%f,%f]",
-    //     negative_top_waypoint[0],
-    //     negative_top_waypoint[1],
-    //     negative_top_waypoint[2]
-    // );
+    point_t negative_top_waypoint = *negative_clearance;
+    negative_top_waypoint[2] = highest_z + configuration_->GetParameter("/behavior/top_clearance_m").as_double();
+    point_t positive_top_waypoint = *positive_clearance;
+    positive_top_waypoint[2] = negative_top_waypoint[2];
 
     if (positive_direction_is_higher) {
         if (start_state_is_on_negative_side) {
@@ -848,7 +877,43 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
         }
     }
 
+    // The first appended point is the horizontal clearance waypoint. Keep its
+    // position explicit in both output routes; BT consumers must not infer it
+    // from queue length because optional top/escape points change the prefix.
+    outside_boundary_index = static_cast<int>(shared_queue->size());
     append_under_outer_cable_waypoints();
+
+    const double inside_corridor_threshold_m = configuration_->GetParameter(
+        "/behavior/inside_powerline_xy_distance_threshold_m"
+    ).as_double();
+    const double completion_tolerance_m = configuration_->GetParameter(
+        "/control/maneuver_controller/reached_position_euclidean_distance_threshold"
+    ).as_double();
+    const auto boundary_classification = pl_geom::ClassifyCorridor(
+        shared_queue->at(static_cast<std::size_t>(outside_boundary_index)),
+        middle_line_point,
+        powerline_normal_no_z,
+        positive_direction_furthest_point,
+        negative_direction_furthest_point,
+        inside_corridor_threshold_m
+    );
+    const auto boundary_indices = ComputeOutsideBoundaryIndices(
+        shared_queue->size(),
+        static_cast<std::size_t>(outside_boundary_index),
+        IsOutsideCorridorBeyondCompletionTolerance(
+            boundary_classification.lateral_distance_to_middle,
+            inside_corridor_threshold_m,
+            completion_tolerance_m
+        )
+    );
+    if (boundary_indices.departure < 0) {
+        RCLCPP_WARN(
+            node_->get_logger(),
+            "PowerlineWaypointProviderActionNode::tick(): Clearance candidate is not a valid outside corridor boundary (lateral distance=%.3f m, threshold=%.3f m); retaining individual FlyToPosition waypoints",
+            boundary_classification.lateral_distance_to_middle,
+            inside_corridor_threshold_m
+        );
+    }
 
     auto shared_queue_depart = make_depart_queue();
     enforce_minimum_waypoint_altitude("depart", shared_queue_depart);
@@ -859,6 +924,8 @@ NodeStatus PowerlineWaypointProviderActionNode::tick() {
     enforce_minimum_waypoint_altitude("return", shared_queue_return);
 
     setOutput("waypoints_return", shared_queue_return);
+    setOutput("depart_outside_boundary_index", boundary_indices.departure);
+    setOutput("return_outside_boundary_index", boundary_indices.return_route);
 
     RCLCPP_INFO(
         node_->get_logger(),

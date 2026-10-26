@@ -48,11 +48,11 @@ PortsList FlyToPositionManeuverActionNode::providedPorts() {
 
 }
 
-bool FlyToPositionManeuverActionNode::setGoal(Goal & goal) {
+bool FlyToPositionManeuverActionNode::setManeuverGoal(Goal & goal) {
 
     RCLCPP_INFO(
         node_ptr_->get_logger(),
-        "FlyToPositionManeuverActionNode::setGoal()"
+        "FlyToPositionManeuverActionNode::setManeuverGoal()"
     );
     
     point_t position;
@@ -83,7 +83,19 @@ bool FlyToPositionManeuverActionNode::shouldStopManeuverOnSuccessfulResult(
         );
     }
 
-    return !current_goal_blend_to_next_;
+    if (!current_goal_blend_to_next_) {
+        const auto retention = retainCompletedTerminalHoldForCurrentGoal(500);
+        if (retention == ManeuverReferenceClient::TerminalHoldRetention::Failed) {
+            markSuccessfulResultOwnershipFailed();
+            RCLCPP_ERROR(node_ptr_->get_logger(),
+                "FlyToPosition terminal hold ownership could not be verified");
+        }
+        // A successful stopped FTP must never replace the Core command with
+        // nominal result metadata, even if retention proof fails and the
+        // reference watchdog must take the explicit failure path.
+        return retention == ManeuverReferenceClient::TerminalHoldRetention::NoOffer;
+    }
+    return false;
 
 }
 

@@ -34,7 +34,7 @@ PortsList HoverManeuverActionNode::providedPorts() {
 
 }
 
-bool HoverManeuverActionNode::setGoal(Goal & goal) {
+bool HoverManeuverActionNode::setManeuverGoal(Goal & goal) {
     
     getInput("duration_s", goal.duration_s);
     getInput("sustain_duration_s", goal.sustain_duration_s);
@@ -46,7 +46,7 @@ bool HoverManeuverActionNode::setGoal(Goal & goal) {
     if (goal.sustain_action && stop_maneuver_after_timeout_ms > 0) {
         RCLCPP_ERROR(
             node_ptr_->get_logger(),
-            "HoverManeuverActionNode::setGoal(): %s: Stop maneuver after timeout can not be positive when sustaining the action",
+            "HoverManeuverActionNode::setManeuverGoal(): %s: Stop maneuver after timeout can not be positive when sustaining the action",
             name_.c_str()
         );
 
@@ -56,7 +56,7 @@ bool HoverManeuverActionNode::setGoal(Goal & goal) {
     if (stop_maneuver_after_timeout_ms > (goal.duration_s - goal.sustain_duration_s) * 1000) {
         RCLCPP_ERROR(
             node_ptr_->get_logger(),
-            "HoverManeuverActionNode::setGoal(): %s: Stop maneuver after timeout is greater than the time left after stopping sustaining the action",
+            "HoverManeuverActionNode::setManeuverGoal(): %s: Stop maneuver after timeout is greater than the time left after stopping sustaining the action",
             name_.c_str()
         );
 
@@ -65,7 +65,7 @@ bool HoverManeuverActionNode::setGoal(Goal & goal) {
 
     RCLCPP_INFO(
         node_ptr_->get_logger(),
-        "HoverManeuverActionNode::setGoal(): %s: Setting goal: duration_s = %f, sustain_duration_s = %f, sustain_action = %d",
+        "HoverManeuverActionNode::setManeuverGoal(): %s: Setting goal: duration_s = %f, sustain_duration_s = %f, sustain_action = %d",
         name_.c_str(),
         goal.duration_s,
         goal.sustain_duration_s,
@@ -74,4 +74,18 @@ bool HoverManeuverActionNode::setGoal(Goal & goal) {
 
     return goal.duration_s > 0;
 
+}
+
+bool HoverManeuverActionNode::shouldStopManeuverOnSuccessfulResult(
+    const typename BT::RosActionNode<iii_drone_interfaces::action::Hover>::WrappedResult &
+) const {
+    // A same-target Hover may still own a live correction. Its ordinary
+    // delayed owned stop would otherwise erase that correction after 29.9 s.
+    const auto retention = retainCompletedTerminalHoldForCurrentGoal(150);
+    if (retention == ManeuverReferenceClient::TerminalHoldRetention::Failed) {
+        markSuccessfulResultOwnershipFailed();
+        RCLCPP_ERROR(node_ptr_->get_logger(),
+            "Hover terminal hold ownership could not be verified");
+    }
+    return retention == ManeuverReferenceClient::TerminalHoldRetention::NoOffer;
 }

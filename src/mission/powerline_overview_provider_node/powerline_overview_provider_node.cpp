@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <limits>
 #include <optional>
+#include <iii_drone_core/utils/multi_threaded_executor.hpp>
 
 using namespace iii_drone::mission::powerline_overview_provider_node;
 using namespace iii_drone::adapters;
@@ -181,7 +182,7 @@ PowerlineOverviewProviderNode::PowerlineOverviewProviderNode(
                 status_msg.data = "No powerline stored";
             }
 
-            stored_powerline_status_pub_->publish(status_msg);
+            if (stored_powerline_status_pub_->is_activated()) stored_powerline_status_pub_->publish(status_msg);
             iii_drone_interfaces::msg::PowerlineOverviewStatus overview_status;
             overview_status.stamp = status_msg.stamp;
             overview_status.valid = has_stored_powerline_;
@@ -197,15 +198,29 @@ PowerlineOverviewProviderNode::PowerlineOverviewProviderNode(
                     ? "GNSS powerline data cannot be reprojected into the active world frame"
                     : "no powerline overview is stored";
             }
-            overview_status_pub_->publish(overview_status);
+            if (overview_status_pub_->is_activated()) overview_status_pub_->publish(overview_status);
 
         }
     );
 
 }
 
+void PowerlineOverviewProviderNode::stopSensorIngress()
+{
+    if (!sensor_executor_) {
+        return;
+    }
+    sensor_executor_->cancel();
+    if (sensor_thread_.joinable()) {
+        sensor_thread_.join();
+    }
+    sensor_executor_->remove_callback_group(sensor_callback_group_);
+    sensor_executor_.reset();
+}
+
 PowerlineOverviewProviderNode::~PowerlineOverviewProviderNode()
 {
+    stopSensorIngress();
 
 }
 
@@ -245,8 +260,9 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Powerl
         return ret;
     }
 
-    tf_buffer_.reset();
+    // The listener's spin thread writes into the buffer: stop it first.
     tf_listener_.reset();
+    tf_buffer_.reset();
 
     return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
@@ -270,8 +286,10 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Powerl
         cb_group_1_
     );
 
+    sensor_callback_group_ = create_callback_group(
+        rclcpp::CallbackGroupType::MutuallyExclusive, false);
     auto sub_options = rclcpp::SubscriptionOptions();
-    sub_options.callback_group = cb_group_1_;
+    sub_options.callback_group = sensor_callback_group_;
 
     powerline_sub_ = create_subscription<iii_drone_interfaces::msg::Powerline>(
         "/perception/pl_mapper/powerline",
@@ -292,6 +310,9 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Powerl
         },
         sub_options
     );
+    sensor_executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+    sensor_executor_->add_callback_group(sensor_callback_group_, get_node_base_interface());
+    sensor_thread_ = std::thread([executor = sensor_executor_]() { executor->spin(); });
 
     update_powerline_overview_srv_ = create_service<iii_drone_interfaces::srv::UpdatePowerlineOverview>(
         "update_powerline_overview",
@@ -362,6 +383,7 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Powerl
     }
 
     pl_mapper_command_client_.reset();
+    stopSensorIngress();
     powerline_sub_.reset();
     vehicle_global_position_sub_.reset();
     update_powerline_overview_srv_.reset();
@@ -597,7 +619,7 @@ void PowerlineOverviewProviderNode::getPowerlineOverviewCallback(
 {
     (void)request_header;
     (void)request;
-    RCLCPP_INFO(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback()");
+    RCLCPP_DEBUG(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback()");
 
     const bool had_gnss_on_disk = has_persisted_gnss_powerline_ || std::filesystem::exists(gnss_persistence_path_);
 
@@ -606,7 +628,12 @@ void PowerlineOverviewProviderNode::getPowerlineOverviewCallback(
     }
 
     if (!has_stored_powerline_) {
-        RCLCPP_WARN(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback() - No stored powerline available");
+        RCLCPP_WARN_THROTTLE(
+            get_logger(),
+            *get_clock(),
+            10000,
+            "PowerlineOverviewProviderNode::getPowerlineOverviewCallback() - No stored powerline available"
+        );
         response->success = false;
         response->overview_in_frame = false;
         response->overview_gnss_only = had_gnss_on_disk;
@@ -622,7 +649,7 @@ void PowerlineOverviewProviderNode::getPowerlineOverviewCallback(
     response->overview_gnss_only = false;
     response->overview_source = overview_source_;
 
-    RCLCPP_INFO(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback() - Stored powerline sent");
+    RCLCPP_DEBUG(get_logger(), "PowerlineOverviewProviderNode::getPowerlineOverviewCallback() - Stored powerline sent");
 
 }
 
@@ -633,7 +660,8 @@ bool PowerlineOverviewProviderNode::persistStoredPowerlineOverview(
     const auto reference = iii_drone::mission::overview_gnss::makeReference(
         latest_global_position_.Load(),
         tf_buffer_,
-        get_logger()
+        get_logger(),
+        get_clock()
     );
     if (!reference.has_value()) {
         return false;
@@ -665,7 +693,8 @@ bool PowerlineOverviewProviderNode::loadPersistedPowerlineOverviewToMemory()
     const auto reference = iii_drone::mission::overview_gnss::makeReference(
         latest_global_position_.Load(),
         tf_buffer_,
-        get_logger()
+        get_logger(),
+        get_clock()
     );
     if (!reference.has_value()) {
         return false;
@@ -708,7 +737,7 @@ int main(int argc, char * argv[])
 {
     rclcpp::init(argc, argv);
 
-    rclcpp::executors::MultiThreadedExecutor executor;
+    iii_drone::utils::MultiThreadedExecutor executor;
 
     auto node = std::make_shared<PowerlineOverviewProviderNode>();
 

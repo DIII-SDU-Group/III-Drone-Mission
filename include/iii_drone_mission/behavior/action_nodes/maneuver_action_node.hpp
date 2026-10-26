@@ -8,6 +8,7 @@
 // Std:
 
 #include <string>
+#include <optional>
 
 /*****************************************************************************/
 // BT.CPP:
@@ -58,6 +59,13 @@ namespace behavior {
          */
         void onGoalAccepted() override final;
 
+        BT::NodeStatus tick() override;
+
+        /**
+         * @brief Builds and stamps a native request identity before dispatch.
+         */
+        bool setGoal(typename ActionT::Goal & goal) override final;
+
         /**
          * @brief On result received callback. Returns the node status based on the result code.
          * Calls the StopManeuver() method with the maneuver reference client and sets the maneuver running flag to false
@@ -68,6 +76,11 @@ namespace behavior {
          * @return The node status.
          */
         virtual BT::NodeStatus onResultReceived(const typename BT::RosActionNode<ActionT>::WrappedResult & wr) override final;
+
+        BT::NodeStatus onFailure(
+            BT::ActionNodeErrorCode error,
+            const std::optional<typename BT::RosActionNode<ActionT>::WrappedResult> & result
+        ) override final;
 
         /**
          * @brief On failure callback. Logs the error message and returns the node status.
@@ -111,6 +124,15 @@ namespace behavior {
          */
         iii_drone::utils::Atomic<bool> maneuver_running_ = false;
 
+        // Set while a non-attached goal has authorized one Core successor but
+        // has not yet received its goal-acceptance callback.
+        bool goal_handoff_pending_ = false;
+        mutable bool successful_result_ownership_failed_ = false;
+
+        // Generated once per successful goal build, before ROS dispatch.
+        // The client retains the identity after a matching stream commits.
+        std::string pending_request_identity_;
+
         /**
          * @brief Sets the maneuver running flag to true and calls the StartManeuver() method with the maneuver reference client
          * if the maneuver is not already running.
@@ -118,6 +140,8 @@ namespace behavior {
          * @return bool True if the maneuver is started.
          */
         bool setManeuverRunning();
+
+        std::string makeRequestIdentity() const;
 
         /**
          * @brief Sets the maneuver running flag to false and calls the StopManeuver() method with the maneuver reference client
@@ -164,6 +188,12 @@ namespace behavior {
         std::function<iii_drone::control::Reference(const typename BT::RosActionNode<ActionT>::WrappedResult &)> get_final_reference_callback_ = nullptr;
 
     protected:
+        void markSuccessfulResultOwnershipFailed() const;
+        void clearLocalGoalBookkeeping();
+        bool hasCurrentGoalIdentity() const { return !pending_request_identity_.empty(); }
+        bool reportTerminalRetentionFailureForCurrentGoal();
+        iii_drone::control::maneuver::ManeuverReferenceClient::TerminalHoldRetention
+        retainCompletedTerminalHoldForCurrentGoal(int timeout_ms) const;
         /**
          * @brief Method to set the get_final_reference_callback_.
          * 
@@ -182,6 +212,16 @@ namespace behavior {
             const typename BT::RosActionNode<ActionT>::WrappedResult & wr
         ) const;
 
+        /** Opt in to request-bound completion for a successful empty result. */
+        virtual bool shouldCompleteSuccessfulNoReferenceGoal() const;
+        bool completeSuccessfulOwnedNoReferenceGoal();
+
+        /**
+         * @brief Build the concrete maneuver payload before the base stamps its
+         * native request identity. Returning false prevents ROS dispatch.
+         */
+        virtual bool setManeuverGoal(typename ActionT::Goal & goal) = 0;
+
         /**
          * @brief Whether this goal may attach to an already-active maneuver reference stream.
          *
@@ -195,6 +235,8 @@ namespace behavior {
          * @brief The name of the maneuver action node.
          */
         const std::string name_;
+
+        const std::string action_endpoint_;
 
         /**
          * @brief Node pointer.

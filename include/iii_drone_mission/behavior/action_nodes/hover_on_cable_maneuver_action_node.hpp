@@ -60,7 +60,7 @@ namespace behavior {
             iii_drone::configuration::Configuration::SharedPtr configuration
         );
 
-        bool setGoal(Goal & goal) override;
+        bool setManeuverGoal(Goal & goal) override;
 
         static BT::PortsList providedPorts();
 

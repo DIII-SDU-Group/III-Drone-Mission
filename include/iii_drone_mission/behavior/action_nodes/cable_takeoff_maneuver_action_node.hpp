@@ -60,9 +60,27 @@ namespace behavior {
             iii_drone::configuration::Configuration::SharedPtr configuration
         );
 
-        bool setGoal(Goal & goal) override;
+        bool setManeuverGoal(Goal & goal) override;
 
         static BT::PortsList providedPorts();
+
+    protected:
+        /**
+         * Cable takeoff is the continuous successor to the sustained upward
+         * reference used to unload the gripper before release.  Preserve the
+         * live reference stream so the first takeoff generation is checked
+         * against that commanded motion instead of restarting from a
+         * momentary on-cable odometry sample.
+         */
+
+        /**
+         * A takeoff that settled through Core terminal correction leaves that
+         * command source retained after its result, as FlyToPosition does.
+         * Keep consuming it until the successor claims it.
+         */
+        bool shouldStopManeuverOnSuccessfulResult(
+            const typename BT::RosActionNode<iii_drone_interfaces::action::CableTakeoff>::WrappedResult & wr
+        ) const override;
 
     private:
         /**

@@ -25,7 +25,8 @@ VerifyDisarmedConditionNode::VerifyDisarmedConditionNode(
 NodeStatus VerifyDisarmedConditionNode::onTick(const std::shared_ptr<px4_msgs::msg::VehicleStatus> & last_msg) {
 
     if (!last_msg) {
-        RCLCPP_WARN(
+        // Expected on the first tick of a fresh subscription; the tree retries.
+        RCLCPP_DEBUG(
             node_ptr_->get_logger(),
             "VerifyDisarmedConditionNode::onTick(): No vehicle status message received"
         );

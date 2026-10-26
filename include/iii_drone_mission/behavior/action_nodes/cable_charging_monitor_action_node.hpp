@@ -8,7 +8,6 @@
 // Std:
 
 #include <memory>
-#include <mutex>
 
 /*****************************************************************************/
 // ROS2:
@@ -24,6 +23,11 @@
 // III-Drone-Interfaces:
 
 #include <iii_drone_interfaces/msg/charger_status.hpp>
+
+/*****************************************************************************/
+// III-Drone-Mission:
+
+#include <iii_drone_mission/behavior/latest_message_subscription.hpp>
 
 /*****************************************************************************/
 // BT.CPP:
@@ -58,11 +62,7 @@ namespace behavior {
         std::shared_ptr<rclcpp::Node> node_;
         iii_drone::configuration::Configuration::SharedPtr configuration_;
         BT::Blackboard::Ptr global_blackboard_;
-        rclcpp::Subscription<iii_drone_interfaces::msg::ChargerStatus>::SharedPtr charger_status_sub_;
-
-        mutable std::mutex mutex_;
-        bool has_status_ = false;
-        uint8_t latest_charger_status_ = iii_drone_interfaces::msg::ChargerStatus::CHARGER_STATUS_DISABLED;
+        LatestMessageSubscription<iii_drone_interfaces::msg::ChargerStatus> charger_status_;
         rclcpp::Time start_time_;
 
         double parameterOr(const std::string & name, double fallback) const;

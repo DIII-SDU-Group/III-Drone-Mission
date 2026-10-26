@@ -1,0 +1,16 @@
+# OptiTrack lab flight basics (opti_track profile; no cable): hold the
+# takeover position, climb 0.3 m, return, then end in
+# /mission/mission_done_select_mode (PX4 Hold).
+#
+# Precondition: the pilot hands over from a steady hover at least 1.1 m above
+# the ground. FlyToPosition rejects targets below
+# /control/maneuver_controller/minimum_target_altitude (1.0 m in the real
+# parameter set), and no target of this mission lies below the takeover
+# altitude.
+executor_owned_mode: "ot_hover"
+
+entries:
+  - key: "ot_hover"
+    mode_name: "OT Hover"
+    behavior_tree_xml_file: "behavior_trees/opti_track_hover_tree.xml"
+    allow_activate_when_disarmed: false

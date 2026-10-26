@@ -103,6 +103,13 @@ namespace powerline_overview_provider_node {
 
         rclcpp::Subscription<iii_drone_interfaces::msg::Powerline>::SharedPtr powerline_sub_;
         rclcpp::Subscription<px4_msgs::msg::VehicleGlobalPosition>::SharedPtr vehicle_global_position_sub_;
+        // The live powerline (40 Hz) and PX4 global position (100 Hz) only
+        // store their latest value: they run on their own single-threaded
+        // executor instead of waking the node's executor for every message.
+        rclcpp::CallbackGroup::SharedPtr sensor_callback_group_;
+        std::shared_ptr<rclcpp::executors::SingleThreadedExecutor> sensor_executor_;
+        std::thread sensor_thread_;
+        void stopSensorIngress();
 
         utils::Atomic<iii_drone_interfaces::msg::Powerline> latest_powerline_;
         utils::Atomic<iii_drone_interfaces::msg::Powerline> stored_powerline_;

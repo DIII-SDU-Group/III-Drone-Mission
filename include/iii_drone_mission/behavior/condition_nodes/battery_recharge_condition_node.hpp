@@ -7,8 +7,9 @@
 /*****************************************************************************/
 // Std:
 
+#include <chrono>
 #include <memory>
-#include <mutex>
+#include <cstdint>
 
 /*****************************************************************************/
 // ROS2:
@@ -20,6 +21,11 @@
 // III-Drone-Configuration:
 
 #include <iii_drone_configuration/configuration.hpp>
+
+/*****************************************************************************/
+// III-Drone-Mission:
+
+#include <iii_drone_mission/behavior/latest_message_subscription.hpp>
 
 /*****************************************************************************/
 // BT.CPP:
@@ -49,15 +55,29 @@ namespace behavior {
     private:
         std::shared_ptr<rclcpp::Node> node_;
         iii_drone::configuration::Configuration::SharedPtr configuration_;
-        rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr battery_voltage_sub_;
+        LatestMessageSubscription<std_msgs::msg::Float32> battery_voltage_;
 
-        mutable std::mutex mutex_;
-        bool has_voltage_ = false;
-        float latest_voltage_ = 0.0f;
-        rclcpp::Time latest_voltage_receive_time_;
+        // Tick-thread state only.
+        uint64_t last_voltage_sequence_ = 0;
         rclcpp::Time low_voltage_since_;
         rclcpp::Time last_stale_retry_time_;
         unsigned int stale_failure_count_ = 0;
+
+        // The configured values, read at most once a second: the reactive
+        // inspection tree evaluates this condition on every tick, and six
+        // configuration lookups per tick were most of its cost. Tuning still
+        // takes effect within a second.
+        struct ConfiguredSettings {
+            bool bypass = false;
+            double threshold_v = 14.0;
+            double debounce_s = 2.0;
+            double timeout_s = 2.0;
+            int retry_count = 3;
+            double retry_interval_s = 0.2;
+        };
+        ConfiguredSettings configured_;
+        std::chrono::steady_clock::time_point configured_read_at_{};
+        const ConfiguredSettings & configuredSettings();
 
         double parameterOr(const std::string & name, double fallback) const;
         int parameterOr(const std::string & name, int fallback) const;
