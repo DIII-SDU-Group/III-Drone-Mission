@@ -251,77 +251,10 @@ ament_target_dependencies(iii_behavior_node_contract_exporter ${dependencies})
 
 include("${PROJECT_SOURCE_DIR}/cmake/IIIRegisterMission.cmake")
 
-iii_register_mission(
-  ID inspection-production
-  SPECIFICATION mission_specification/mission_specification.yaml
-  CLASSIFICATION production
-  PROFILES real sim hil
-  DEFAULT_FOR real sim hil
-)
-iii_register_mission(
-  ID reach-charge-leave-experimental
-  SPECIFICATION mission_specification/mission_specification_reach_charge_leave.yaml
-  CLASSIFICATION experimental
-  PROFILES real sim hil
-)
-iii_register_mission(
-  ID ftp-blend-loop-test
-  SPECIFICATION mission_specification/mission_specification_ftp_blend_loop.yaml
-  CLASSIFICATION test
-  PROFILES sim
-)
-iii_register_mission(
-  ID ftp-legacy
-  SPECIFICATION mission_specification/mission_specification.yaml.ftp_test
-  CLASSIFICATION legacy
-  STATUS deprecated
-  PROFILES sim
-)
-# OptiTrack lab missions: flight basics without cable, gripper or perception.
-# Registered for sim and hil too so they can be qualified there. Missions
-# registered for opti_track may use only the opti_track behavior-node
-# allowlist (profile_restrictions.cpp); the catalog build enforces it.
-# opti-track-hover is production because a commissioned onboard profile needs
-# exactly one default in the qualified and field-candidate catalogs, which
-# carry no test entries (and no experimental entry unless explicitly
-# included), so a test mission cannot be its default.
-iii_register_mission(
-  ID opti-track-hover
-  SPECIFICATION mission_specification/mission_specification_opti_track_hover.yaml
-  CLASSIFICATION production
-  PROFILES opti_track sim hil
-  DEFAULT_FOR opti_track
-)
-iii_register_mission(
-  ID opti-track-maneuvers
-  SPECIFICATION mission_specification/mission_specification_opti_track_maneuvers.yaml
-  CLASSIFICATION experimental
-  PROFILES opti_track sim hil
-)
-iii_register_mission(
-  ID opti-track-cycle
-  SPECIFICATION mission_specification/mission_specification_opti_track_cycle.yaml
-  CLASSIFICATION experimental
-  PROFILES opti_track sim hil
-)
-iii_register_mission(
-  ID opti-track-mode-loop
-  SPECIFICATION mission_specification/mission_specification_opti_track_mode_loop.yaml
-  CLASSIFICATION experimental
-  PROFILES opti_track sim hil
-)
-iii_register_mission(
-  ID reach-cable-simple-test
-  SPECIFICATION mission_specification/mission_specification.yaml.simple_test
-  CLASSIFICATION test
-  PROFILES sim
-)
-iii_register_mission(
-  ID up-down-test
-  SPECIFICATION mission_specification/mission_specification.yaml.up_down
-  CLASSIFICATION test
-  PROFILES sim
-)
+# Missions are registered in config/mission_registrations.json, which
+# iii deploy missions also reads to install missions on the Pi without a
+# build. Editing it reconfigures the package.
+iii_register_missions_from_json("${PROJECT_SOURCE_DIR}/config/mission_registrations.json")
 
 set(III_MISSION_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/mission_catalog")
 set(III_MISSION_REGISTRATIONS "${III_MISSION_GENERATED_DIR}/registrations.tsv")
@@ -435,6 +368,13 @@ install(DIRECTORY "${III_MISSION_GENERATED_DIR}/field-candidates/"
 install(FILES
   "${PROJECT_SOURCE_DIR}/config/mission_runtime_contract.json"
   "${PROJECT_SOURCE_DIR}/cmake/IIIRegisterMission.cmake"
+  DESTINATION "share/${PROJECT_NAME}"
+)
+# iii deploy missions regenerates the catalog off the Pi against the node
+# contract of the binary installed there, so the contract ships with it.
+install(FILES
+  "${III_BEHAVIOR_NODE_CONTRACT}"
+  "${PROJECT_SOURCE_DIR}/config/mission_registrations.json"
   DESTINATION "share/${PROJECT_NAME}"
 )
 

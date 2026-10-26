@@ -163,6 +163,60 @@ def test_cmake_registration_contract_is_stable_and_sorted(tmp_path: Path):
     assert lines[1].startswith("z-mission\t")
 
 
+def test_json_registrations_register_through_the_same_validation(tmp_path: Path):
+    registrations = tmp_path / "registrations.json"
+    registrations.write_text(
+        json.dumps(
+            {
+                "schema": "iii.mission-registrations/v1",
+                "missions": [
+                    {"id": "z-mission", "specification": "mission.yaml", "classification": "test",
+                     "profiles": ["sim"]},
+                    {"id": "a-mission", "specification": "CMakeLists.txt", "classification": "production",
+                     "status": "active", "profiles": ["sim", "real"], "default_for": ["sim", "real"]},
+                ],
+            }
+        )
+    )
+    process, build = _configure_registration_project(
+        tmp_path, f'iii_register_missions_from_json("{registrations}")'
+    )
+    assert process.returncode == 0, process.stdout
+    lines = (build / "registrations.tsv").read_text().splitlines()
+    assert lines[0].startswith("a-mission\t")
+    assert lines[0].endswith("\tproduction\tactive\treal,sim\treal,sim")
+    assert lines[1].startswith("z-mission\t") and lines[1].endswith("\ttest\tactive\tsim\t")
+
+
+@pytest.mark.parametrize(
+    ("missions", "message"),
+    [
+        ([{"id": "bad-profile", "specification": "mission.yaml", "classification": "production",
+           "profiles": ["moon"]}], "unknown profile moon"),
+        ([{"id": "no-profiles", "specification": "mission.yaml", "classification": "production"}],
+         "has no profiles"),
+        ([], "declares no missions"),
+    ],
+)
+def test_json_registrations_fail_closed(tmp_path: Path, missions: list, message: str):
+    registrations = tmp_path / "registrations.json"
+    registrations.write_text(json.dumps({"schema": "iii.mission-registrations/v1", "missions": missions}))
+    process, _build = _configure_registration_project(
+        tmp_path, f'iii_register_missions_from_json("{registrations}")'
+    )
+    assert process.returncode != 0
+    assert message in process.stdout
+
+
+def test_the_package_registers_its_missions_from_the_registrations_file():
+    package = Path(__file__).resolve().parents[1]
+    document = json.loads((package / "config/mission_registrations.json").read_text())
+    assert document["schema"] == "iii.mission-registrations/v1"
+    assert "iii_register_mission(" not in (package / "CMakeLists.txt").read_text()
+    for mission in document["missions"]:
+        assert (package / mission["specification"]).is_file(), mission["id"]
+
+
 @pytest.mark.parametrize(
     ("declarations", "message"),
     [
