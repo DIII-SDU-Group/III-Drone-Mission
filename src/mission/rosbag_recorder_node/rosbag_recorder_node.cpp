@@ -26,6 +26,21 @@ using namespace iii_drone::mission::rosbag_recorder_node;
 
 namespace {
 
+std::vector<std::string> splitCommaList(const std::string & value) {
+    std::vector<std::string> items;
+    std::stringstream stream(value);
+    std::string item;
+    while (std::getline(stream, item, ',')) {
+        const auto first = item.find_first_not_of(" \t");
+        if (first == std::string::npos) {
+            continue;
+        }
+        const auto last = item.find_last_not_of(" \t");
+        items.push_back(item.substr(first, last - first + 1));
+    }
+    return items;
+}
+
 std::string nowString() {
     const auto now = std::chrono::system_clock::now();
     const auto time = std::chrono::system_clock::to_time_t(now);
@@ -61,10 +76,16 @@ RosbagRecorderNode::RosbagRecorderNode(
     std::string node_namespace,
     const rclcpp::NodeOptions & options
 ) : rclcpp_lifecycle::LifecycleNode(node_name, node_namespace, options) {
-    declare_parameter<std::string>("artifact_root", "/tmp/iii_drone/rosbags");
+    declare_parameter<std::string>("artifact_root", "/home/iii/ws/runtime_logs/rosbags");
     declare_parameter<std::string>("log_root", "/tmp/iii_drone/rosbag_recorder/logs");
     declare_parameter<double>("default_stop_timeout_sec", 10.0);
     declare_parameter<int64_t>("retention_max_bytes", 10'000'000'000LL);
+    // Every recording leaves image streams out (user decision 2026-11-24:
+    // record every other topic for the soak analysis; images are too large).
+    declare_parameter<std::string>(
+        "exclude_topic_types", "sensor_msgs/msg/Image,sensor_msgs/msg/CompressedImage");
+    declare_parameter<std::string>(
+        "exclude_regex", "(/compressed|/compressedDepth|/theora|/zstd)$");
 
     RCLCPP_INFO(get_logger(), "RosbagRecorderNode::RosbagRecorderNode()");
 }
@@ -90,6 +111,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Rosbag
     default_stop_timeout_sec_ = get_parameter("default_stop_timeout_sec").as_double();
     retention_max_bytes_ = static_cast<std::uint64_t>(
         std::max<int64_t>(0, get_parameter("retention_max_bytes").as_int()));
+    exclude_topic_types_ = splitCommaList(get_parameter("exclude_topic_types").as_string());
+    exclude_regex_ = get_parameter("exclude_regex").as_string();
 
     try {
         std::filesystem::create_directories(artifact_root_);
@@ -240,11 +263,19 @@ void RosbagRecorderNode::startRecordingCallback(
 
     std::vector<std::string> args = {"ros2", "bag", "record"};
     if (request->all_topics) {
-        args.push_back("--all");
+        args.push_back("--all-topics");
     } else {
         for (const auto & topic : request->topics) {
             args.push_back(topic);
         }
+    }
+    if (!exclude_topic_types_.empty()) {
+        args.push_back("--exclude-topic-types");
+        args.insert(args.end(), exclude_topic_types_.begin(), exclude_topic_types_.end());
+    }
+    if (!exclude_regex_.empty()) {
+        args.push_back("--exclude-regex");
+        args.push_back(exclude_regex_);
     }
     if (request->include_hidden_topics) {
         args.push_back("--include-hidden-topics");
