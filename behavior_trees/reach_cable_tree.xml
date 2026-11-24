@@ -4,7 +4,7 @@
             ID="RosbagRecordingScope"
             name="reach_cable_rosbag_recording_scope"
             all_topics="true"
-            include_hidden_topics="false"
+            include_hidden_topics="true"
             owner="reach_cable"
             stop_timeout_sec="10.0"
         >
