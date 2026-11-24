@@ -86,6 +86,11 @@ RosbagRecorderNode::RosbagRecorderNode(
         "exclude_topic_types", "sensor_msgs/msg/Image,sensor_msgs/msg/CompressedImage");
     declare_parameter<std::string>(
         "exclude_regex", "(/compressed|/compressedDepth|/theora|/zstd)$");
+    // MCAP chunk compression and hourly files: an all-topics soak recording
+    // was 2.2 GB/h uncompressed (zstd shrank it about 5x), and closed hourly
+    // files are complete even if the recorder dies.
+    declare_parameter<std::string>("storage_preset_profile", "zstd_fast");
+    declare_parameter<int64_t>("max_bag_duration_s", 3600);
 
     RCLCPP_INFO(get_logger(), "RosbagRecorderNode::RosbagRecorderNode()");
 }
@@ -113,6 +118,8 @@ rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn Rosbag
         std::max<int64_t>(0, get_parameter("retention_max_bytes").as_int()));
     exclude_topic_types_ = splitCommaList(get_parameter("exclude_topic_types").as_string());
     exclude_regex_ = get_parameter("exclude_regex").as_string();
+    storage_preset_profile_ = get_parameter("storage_preset_profile").as_string();
+    max_bag_duration_s_ = std::max<int64_t>(0, get_parameter("max_bag_duration_s").as_int());
 
     try {
         std::filesystem::create_directories(artifact_root_);
@@ -276,6 +283,14 @@ void RosbagRecorderNode::startRecordingCallback(
     if (!exclude_regex_.empty()) {
         args.push_back("--exclude-regex");
         args.push_back(exclude_regex_);
+    }
+    if (!storage_preset_profile_.empty() && storage_preset_profile_ != "none") {
+        args.push_back("--storage-preset-profile");
+        args.push_back(storage_preset_profile_);
+    }
+    if (max_bag_duration_s_ > 0) {
+        args.push_back("--max-bag-duration");
+        args.push_back(std::to_string(max_bag_duration_s_));
     }
     if (request->include_hidden_topics) {
         args.push_back("--include-hidden-topics");

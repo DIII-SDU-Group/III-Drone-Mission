@@ -82,6 +82,9 @@ namespace rosbag_recorder_node {
         // Left out of every recording: topic types and a topic regex.
         std::vector<std::string> exclude_topic_types_;
         std::string exclude_regex_;
+        // MCAP storage preset (compression) and file split interval (0: one file).
+        std::string storage_preset_profile_;
+        int64_t max_bag_duration_s_ = 0;
 
         pid_t child_pid_ = -1;
         std::string recording_id_;
