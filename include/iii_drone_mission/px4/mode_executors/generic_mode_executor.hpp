@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 /*****************************************************************************/
 // Includes
 /*****************************************************************************/
@@ -204,6 +206,11 @@ namespace px4 {
          * from scheduling a mode until PX4 runs it.
          */
         HandoffFailsafeDeferral handoff_failsafe_deferral_;
+        // A deferral release was sent and PX4 has not yet reported the
+        // deferral disabled. The release is a single message to PX4, which
+        // the link can lose (HIL soak run 39 lost a deferral request); it is
+        // sent again while PX4's status still shows the deferral.
+        std::atomic<bool> failsafe_release_unconfirmed_{false};
         rclcpp::Subscription<px4_msgs::msg::VehicleStatus>::SharedPtr handoff_vehicle_status_sub_;
 
         void deferFailsafesForHandoff(uint8_t target_nav_state, const char * handoff);

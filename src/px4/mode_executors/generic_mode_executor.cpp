@@ -303,6 +303,7 @@ void GenericModeExecutor::onDeactivate(DeactivateReason reason) {
     handoff_failsafe_deferral_.Abandon();
     try {
         deferFailsafesSync(false, 0);
+        failsafe_release_unconfirmed_ = true;
     } catch (const std::exception & exception) {
         RCLCPP_WARN(
             node_.get_logger(),
@@ -1076,17 +1077,34 @@ void GenericModeExecutor::manualControlSetpointCallback(const px4_msgs::msg::Man
 void GenericModeExecutor::deferFailsafesForHandoff(uint8_t target_nav_state, const char * handoff) {
 
     handoff_failsafe_deferral_.Begin(target_nav_state);
+    failsafe_release_unconfirmed_ = false;
 
-    bool failsafe_defer_enabled = false;
-    try {
-        failsafe_defer_enabled = deferFailsafesSync(true, HandoffFailsafeDeferral::kTimeoutS);
-    } catch (const std::exception & exception) {
-        RCLCPP_WARN(
+    // Each attempt sends one request and waits up to 1 s for PX4 to confirm;
+    // a lost request is sent again instead of handing off without deferral.
+    const int confirmed_attempt = HandoffFailsafeDeferral::ConfirmWithRetries(
+        HandoffFailsafeDeferral::kConfirmAttempts,
+        [this, handoff]() {
+            try {
+                return deferFailsafesSync(true, HandoffFailsafeDeferral::kTimeoutS);
+            } catch (const std::exception & exception) {
+                RCLCPP_WARN(
+                    node_.get_logger(),
+                    "GenericModeExecutor::deferFailsafesForHandoff(): Failed while confirming PX4 failsafe deferral "
+                    "for the %s: %s. Continuing because aborting here makes the external mode unresponsive.",
+                    handoff,
+                    exception.what()
+                );
+                return false;
+            }
+        });
+    const bool failsafe_defer_enabled = confirmed_attempt > 0;
+    if (confirmed_attempt > 1) {
+        RCLCPP_INFO(
             node_.get_logger(),
-            "GenericModeExecutor::deferFailsafesForHandoff(): Failed while confirming PX4 failsafe deferral "
-            "for the %s: %s. Continuing because aborting here makes the external mode unresponsive.",
+            "GenericModeExecutor::deferFailsafesForHandoff(): PX4 confirmed the failsafe deferral for the %s "
+            "on request %d.",
             handoff,
-            exception.what()
+            confirmed_attempt
         );
     }
     if (failsafe_defer_enabled) {
@@ -1116,6 +1134,7 @@ void GenericModeExecutor::releaseHandoffFailsafeDeferral(const char * reason) {
     }
     try {
         deferFailsafesSync(false, 0);
+        failsafe_release_unconfirmed_ = true;
     } catch (const std::exception & exception) {
         RCLCPP_WARN(
             node_.get_logger(),
@@ -1136,6 +1155,29 @@ void GenericModeExecutor::releaseHandoffFailsafeDeferral(const char * reason) {
 void GenericModeExecutor::onHandoffVehicleStatus(const px4_msgs::msg::VehicleStatus::SharedPtr msg) {
 
     if (!handoff_failsafe_deferral_.pending()) {
+        if (!failsafe_release_unconfirmed_) {
+            return;
+        }
+        if (msg->failsafe_defer_state == px4_msgs::msg::VehicleStatus::FAILSAFE_DEFER_STATE_DISABLED) {
+            failsafe_release_unconfirmed_ = false;
+            return;
+        }
+        try {
+            deferFailsafesSync(false, 0);
+        } catch (const std::exception & exception) {
+            RCLCPP_WARN(
+                node_.get_logger(),
+                "GenericModeExecutor::onHandoffVehicleStatus(): Failed while sending the PX4 failsafe deferral "
+                "release again: %s",
+                exception.what()
+            );
+            return;
+        }
+        RCLCPP_INFO(
+            node_.get_logger(),
+            "GenericModeExecutor::onHandoffVehicleStatus(): PX4 still defers failsafes after the release; "
+            "sent the release again."
+        );
         return;
     }
     // A mission mode runs once px4_ros2 has activated it (not while the
@@ -1152,6 +1194,7 @@ void GenericModeExecutor::onHandoffVehicleStatus(const px4_msgs::msg::VehicleSta
     }
     try {
         deferFailsafesSync(false, 0);
+        failsafe_release_unconfirmed_ = true;
     } catch (const std::exception & exception) {
         RCLCPP_WARN(
             node_.get_logger(),

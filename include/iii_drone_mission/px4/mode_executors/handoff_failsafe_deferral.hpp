@@ -19,6 +19,23 @@ public:
     /// Seconds PX4 may defer each failsafe while a handoff is pending.
     static constexpr int kTimeoutS = 5;
 
+    /// Deferral requests sent per handoff until PX4 confirms one. The request
+    /// is a single message to PX4; HIL soak run 39 lost one on the Pi-PX4
+    /// link (PX4 never logged it), and nothing sent it again.
+    static constexpr int kConfirmAttempts = 3;
+
+    /// Calls request_and_confirm (one request, true when PX4 confirms) up to
+    /// attempts times; returns the attempt that was confirmed, or 0.
+    template <typename RequestAndConfirm>
+    static int ConfirmWithRetries(int attempts, RequestAndConfirm && request_and_confirm) {
+        for (int attempt = 1; attempt <= attempts; ++attempt) {
+            if (request_and_confirm()) {
+                return attempt;
+            }
+        }
+        return 0;
+    }
+
     /// A handoff to the mode with this nav_state starts (or replaces the
     /// pending one); the executor enables the deferral.
     void Begin(uint8_t target_nav_state) {

@@ -69,3 +69,20 @@ TEST(HandoffFailsafeDeferral, AbandonReleasesOnlyAPendingHandoff) {
     EXPECT_FALSE(deferral.Abandon());
     EXPECT_FALSE(deferral.Reached(kMissionMode, true));
 }
+
+TEST(HandoffFailsafeDeferral, SendsTheRequestAgainUntilPx4ConfirmsIt) {
+    int requests = 0;
+    // The first request is lost; the second is confirmed.
+    const int confirmed = HandoffFailsafeDeferral::ConfirmWithRetries(
+        HandoffFailsafeDeferral::kConfirmAttempts, [&requests]() { return ++requests == 2; });
+    EXPECT_EQ(confirmed, 2);
+    EXPECT_EQ(requests, 2);
+}
+
+TEST(HandoffFailsafeDeferral, GivesUpAfterTheConfiguredRequests) {
+    int requests = 0;
+    const int confirmed = HandoffFailsafeDeferral::ConfirmWithRetries(
+        HandoffFailsafeDeferral::kConfirmAttempts, [&requests]() { ++requests; return false; });
+    EXPECT_EQ(confirmed, 0);
+    EXPECT_EQ(requests, HandoffFailsafeDeferral::kConfirmAttempts);
+}
