@@ -517,6 +517,9 @@ if(BUILD_TESTING)
   iii_drone_mission_add_isolated_gtest(iii_drone_wait_for_px4_airborne_test
     test/wait_for_px4_airborne_test.cpp
   )
+  iii_drone_mission_add_isolated_gtest(iii_drone_verify_gripper_closed_test
+    test/verify_gripper_closed_test.cpp
+  )
   iii_drone_mission_add_isolated_gtest(iii_drone_pending_activation_callback_test
     test/pending_activation_callback_test.cpp
   )
@@ -609,6 +612,11 @@ if(BUILD_TESTING)
     target_include_directories(iii_drone_wait_for_px4_airborne_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
     target_link_libraries(iii_drone_wait_for_px4_airborne_test iii_drone_mission_lib)
     ament_target_dependencies(iii_drone_wait_for_px4_airborne_test ${dependencies})
+  endif()
+  if(TARGET iii_drone_verify_gripper_closed_test)
+    target_include_directories(iii_drone_verify_gripper_closed_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})
+    target_link_libraries(iii_drone_verify_gripper_closed_test iii_drone_mission_lib)
+    ament_target_dependencies(iii_drone_verify_gripper_closed_test ${dependencies})
   endif()
   if(TARGET iii_drone_pending_activation_callback_test)
     target_include_directories(iii_drone_pending_activation_callback_test PRIVATE ${III_DRONE_MISSION_INCLUDE_DIRS})

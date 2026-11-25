@@ -9,6 +9,9 @@
 
 #include <rclcpp/rclcpp.hpp>
 
+#include <chrono>
+#include <optional>
+
 /*****************************************************************************/
 // III-Drone-Mission:
 
@@ -42,8 +45,17 @@ namespace behavior {
 
         BT::NodeStatus onTick(const std::shared_ptr<iii_drone_interfaces::msg::GripperStatus> & last_msg) override;
 
+        /**
+         * @brief How long the gripper status may be missing before it is
+         * reported: the first tick of a fresh subscription has no sample yet
+         * and the tree retries the check (2026-11-25 wind runs).
+         */
+        static constexpr std::chrono::milliseconds kMissingStatusWarnAfter{1000};
+
     private:
         rclcpp::Node::SharedPtr node_ptr_;
+
+        std::optional<std::chrono::steady_clock::time_point> missing_since_;
 
     };
 

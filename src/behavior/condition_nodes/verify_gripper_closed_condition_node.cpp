@@ -30,12 +30,28 @@ NodeStatus VerifyGripperClosedConditionNode::onTick(const std::shared_ptr<iii_dr
     );
 
     if (!last_msg) {
-        RCLCPP_WARN(
-            node_ptr_->get_logger(),
-            "VerifyGripperClosedConditionNode::onTick(): No gripper status message received"
-        );
+        // Expected on the first tick of a fresh subscription; the tree
+        // retries. A status missing for longer is reported.
+        const auto now = std::chrono::steady_clock::now();
+        if (!missing_since_) {
+            missing_since_ = now;
+        }
+        if (now - *missing_since_ >= kMissingStatusWarnAfter) {
+            RCLCPP_WARN(
+                node_ptr_->get_logger(),
+                "VerifyGripperClosedConditionNode::onTick(): No gripper status message received for %.1f s",
+                std::chrono::duration<double>(now - *missing_since_).count()
+            );
+        } else {
+            RCLCPP_DEBUG(
+                node_ptr_->get_logger(),
+                "VerifyGripperClosedConditionNode::onTick(): No gripper status message received"
+            );
+        }
         return NodeStatus::FAILURE;
     }
+
+    missing_since_.reset();
 
     if (last_msg->gripper_status == iii_drone_interfaces::msg::GripperStatus::GRIPPER_STATUS_CLOSED) {
         RCLCPP_INFO(
