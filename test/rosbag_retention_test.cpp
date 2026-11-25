@@ -54,12 +54,31 @@ TEST(RosbagRetention, NeverRemovesTheActiveRecording) {
     std::filesystem::remove_all(root);
     const auto active = makeRecording(root, "active", 5000, 100);
     makeRecording(root, "newer", 1000, 10);
+    makeRecording(root, "older", 1000, 50);
 
     const auto result = pruneRecordings(root, 2000, active);
 
     EXPECT_TRUE(std::filesystem::exists(active));
-    // The active recording already uses the cap, so the finished one goes.
-    EXPECT_FALSE(std::filesystem::exists(root / "newer"));
+    // The active recording already uses the cap: the newest finished one is
+    // still kept, the older one goes.
+    EXPECT_TRUE(std::filesystem::exists(root / "newer"));
+    EXPECT_FALSE(std::filesystem::exists(root / "older"));
+    EXPECT_EQ(result.removed, 1u);
+    std::filesystem::remove_all(root);
+}
+
+// HIL soak run 39: the stopped 13.5 GB recording, larger than the 10 GB cap,
+// was removed when it stopped. The newest finished recording always stays.
+TEST(RosbagRetention, KeepsTheNewestFinishedRecordingLargerThanTheCap) {
+    const auto root = std::filesystem::temp_directory_path() / "iii_rosbag_retention_newest_test";
+    std::filesystem::remove_all(root);
+    makeRecording(root, "just_stopped", 5000, 5);
+    makeRecording(root, "previous", 1000, 500);
+
+    const auto result = pruneRecordings(root, 2000);
+
+    EXPECT_TRUE(std::filesystem::exists(root / "just_stopped"));
+    EXPECT_FALSE(std::filesystem::exists(root / "previous"));
     EXPECT_EQ(result.removed, 1u);
     std::filesystem::remove_all(root);
 }

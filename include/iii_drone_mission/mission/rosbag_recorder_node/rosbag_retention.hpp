@@ -51,7 +51,8 @@ inline std::uint64_t directoryBytes(const std::filesystem::path & directory) {
  * removes the older ones (user decision 2026-10-05: keep the newest 10 GB;
  * every mission adds a recording and nothing removed them). Recordings are
  * ordered by their directory's modification time; once the newest ones fill
- * max_bytes, that recording and every older one are removed. Only
+ * max_bytes, that recording and every older one are removed; the newest
+ * finished recording is always kept. Only
  * directories that hold a metadata.yaml or bag files count as recordings;
  * other entries and `keep` (the active recording) are never touched.
  */
@@ -86,7 +87,16 @@ inline RetentionResult pruneRecordings(
         return a.modified > b.modified;
     });
     bool over = false;
-    for (const auto & recording : recordings) {
+    for (std::size_t i = 0; i < recordings.size(); ++i) {
+        const auto & recording = recordings[i];
+        // The newest finished recording is always kept, whatever its size:
+        // retention runs when a recording stops, and a soak recording larger
+        // than the cap was removed seconds after its run ended, before it was
+        // copied off the Pi (HIL soak run 39, 2026-11-25).
+        if (i == 0) {
+            result.kept_bytes += recording.bytes;
+            continue;
+        }
         if (!over && result.kept_bytes + recording.bytes <= max_bytes) {
             result.kept_bytes += recording.bytes;
             continue;
