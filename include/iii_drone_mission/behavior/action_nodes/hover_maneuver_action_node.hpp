@@ -51,9 +51,14 @@ namespace behavior {
             iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client
         );
 
-        bool setGoal(Goal & goal) override;
+        bool setManeuverGoal(Goal & goal) override;
 
         static BT::PortsList providedPorts();
+
+    protected:
+        bool shouldStopManeuverOnSuccessfulResult(
+            const typename BT::RosActionNode<iii_drone_interfaces::action::Hover>::WrappedResult & wr
+        ) const override;
 
     };
 

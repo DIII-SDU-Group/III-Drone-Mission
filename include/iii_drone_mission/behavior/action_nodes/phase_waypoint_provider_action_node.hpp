@@ -112,7 +112,8 @@ namespace behavior {
         double pylon_span_margin_m,
         double max_pylon_direction_mismatch_rad,
         const std::optional<CorridorInspectionResume> & resume = std::nullopt,
-        double resume_position_tolerance_m = 0.75
+        double resume_position_tolerance_m = 0.75,
+        std::string * failure_reason = nullptr
     );
 
     class PhaseWaypointProviderActionNode : public BT::SyncActionNode {

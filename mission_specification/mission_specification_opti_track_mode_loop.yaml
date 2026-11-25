@@ -1,0 +1,40 @@
+# OptiTrack lab mode-transition loop (opti_track profile; no cable): take off
+# unless airborne, then loop forever through four modes flying a rectangle in
+# the cage (stop-and-go and blended laps at 1.2 m and 1.6 m, heading fixed).
+# The pilot or the ground control ends the loop with a mode change.
+#
+# The executor arms a disarmed vehicle when OT Loop Takeoff is selected.
+# Without a global position PX4 takes off to its default takeoff altitude
+# (MIS_TAKEOFF_ALT) instead of the requested 1.2 m.
+executor_owned_mode: "otl_takeoff"
+
+entries:
+  - key: "otl_takeoff"
+    mode_name: "OT Loop Takeoff"
+    behavior_tree_xml_file: "behavior_trees/opti_track_mode_loop_takeoff_tree.xml"
+    allow_activate_when_disarmed: true
+    next_mode: "otl_lower_stop"
+
+  - key: "otl_lower_stop"
+    mode_name: "OT Lower Stop-and-Go"
+    behavior_tree_xml_file: "behavior_trees/opti_track_mode_loop_lower_stop_tree.xml"
+    allow_activate_when_disarmed: false
+    next_mode: "otl_upper_stop"
+
+  - key: "otl_upper_stop"
+    mode_name: "OT Upper Stop-and-Go"
+    behavior_tree_xml_file: "behavior_trees/opti_track_mode_loop_upper_stop_tree.xml"
+    allow_activate_when_disarmed: false
+    next_mode: "otl_lower_blend"
+
+  - key: "otl_lower_blend"
+    mode_name: "OT Lower Blended"
+    behavior_tree_xml_file: "behavior_trees/opti_track_mode_loop_lower_blend_tree.xml"
+    allow_activate_when_disarmed: false
+    next_mode: "otl_upper_blend"
+
+  - key: "otl_upper_blend"
+    mode_name: "OT Upper Blended"
+    behavior_tree_xml_file: "behavior_trees/opti_track_mode_loop_upper_blend_tree.xml"
+    allow_activate_when_disarmed: false
+    next_mode: "otl_lower_stop"

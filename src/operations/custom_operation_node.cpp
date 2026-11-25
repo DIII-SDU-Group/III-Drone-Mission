@@ -1,5 +1,7 @@
 #include <chrono>
+#include <cstdint>
 #include <atomic>
+#include <algorithm>
 #include <cmath>
 #include <exception>
 #include <functional>
@@ -20,6 +22,7 @@
 #include <iii_drone_core/adapters/px4/vehicle_odometry_adapter.hpp>
 #include <iii_drone_core/adapters/reference_adapter.hpp>
 #include <iii_drone_core/control/maneuver/maneuver_reference_client.hpp>
+#include <iii_drone_core/control/maneuver/maneuver_request_identity.hpp>
 #include <iii_drone_core/control/reference.hpp>
 #include <iii_drone_core/utils/history.hpp>
 #include <iii_drone_interfaces/action/cable_aware_fly_to_position.hpp>
@@ -37,7 +40,9 @@
 #include <iii_drone_interfaces/msg/target.hpp>
 #include <iii_drone_interfaces/srv/clear_maneuver_queue.hpp>
 #include <iii_drone_interfaces/srv/register_offboard_mode.hpp>
+#include <iii_drone_mission/mission/profile_restrictions.hpp>
 #include <iii_drone_mission/px4/setpoints/trajectory_setpoint.hpp>
+#include <iii_drone_mission/px4/stick_takeover.hpp>
 #include <px4_msgs/msg/manual_control_setpoint.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
 #include <px4_msgs/msg/vehicle_odometry.hpp>
@@ -45,6 +50,7 @@
 
 #include <px4_ros2/components/mode.hpp>
 #include <yaml-cpp/yaml.h>
+#include <iii_drone_core/utils/multi_threaded_executor.hpp>
 
 namespace {
 
@@ -53,10 +59,12 @@ constexpr auto kManeuverNamespace = "/control/maneuver_controller";
 constexpr auto kManualControlSetpointTopic = "/fmu/out/manual_control_setpoint";
 constexpr auto kVehicleCommandTopic = "/fmu/in/vehicle_command";
 constexpr auto kVehicleOdometryTopic = "/fmu/out/vehicle_odometry";
+constexpr auto kVehicleStatusTopic = "/fmu/out/vehicle_status_v1";
 using CustomOperation = iii_drone_interfaces::action::CustomOperation;
 using CustomOperationGoalHandle = rclcpp_action::ServerGoalHandle<CustomOperation>;
 using VehicleOdometryHistory = iii_drone::utils::History<iii_drone::adapters::px4::VehicleOdometryAdapter>;
 using ConfigurationEntry = iii_drone::configuration::configuration_entry_t;
+using ManeuverReferenceClient = iii_drone::control::maneuver::ManeuverReferenceClient;
 
 class OperationArgs {
 public:
@@ -259,6 +267,8 @@ std::string resultJson(const std::shared_ptr<ResultT> & result) {
     return out.str();
 }
 
+class CustomOperationModeTestAccess;
+
 class CustomOperationMode : public px4_ros2::ModeBase {
 public:
     explicit CustomOperationMode(rclcpp::Node & node)
@@ -275,12 +285,46 @@ public:
       vehicle_odometry_history_(std::make_shared<VehicleOdometryHistory>(2)) {
 
         configureReferenceClient();
+        configureRuntimeProfile();
 
+        // PX4 odometry (100 Hz) runs on its own single-threaded executor: in
+        // the node's default group every message woke the multi-threaded
+        // executor over a wait set of ~75 entities.
+        odometry_callback_group_ = node.create_callback_group(
+            rclcpp::CallbackGroupType::MutuallyExclusive, false);
+        rclcpp::SubscriptionOptions odometry_options;
+        odometry_options.callback_group = odometry_callback_group_;
         vehicle_odometry_sub_ = node.create_subscription<px4_msgs::msg::VehicleOdometry>(
             kVehicleOdometryTopic,
             rclcpp::SensorDataQoS(),
-            [this](const px4_msgs::msg::VehicleOdometry::SharedPtr msg) {
-                vehicle_odometry_history_->Store(iii_drone::adapters::px4::VehicleOdometryAdapter(*msg));
+            [history = vehicle_odometry_history_](const px4_msgs::msg::VehicleOdometry::SharedPtr msg) {
+                history->Store(iii_drone::adapters::px4::VehicleOdometryAdapter(*msg));
+            },
+            odometry_options
+        );
+        odometry_executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+        odometry_executor_->add_callback_group(
+            odometry_callback_group_, node.get_node_base_interface());
+        odometry_thread_ = std::thread([executor = odometry_executor_]() {
+            executor->spin();
+        });
+
+        // A HIL SITL instance intentionally has its own PX4 system ID.  Keep
+        // commands bound to the identity observed on DDS instead of assuming
+        // the physical-aircraft default (1).
+        vehicle_status_sub_ = node.create_subscription<px4_msgs::msg::VehicleStatus>(
+            kVehicleStatusTopic,
+            rclcpp::SensorDataQoS(),
+            [this](const px4_msgs::msg::VehicleStatus::SharedPtr msg) {
+                if (msg->system_id != 0) {
+                    vehicle_system_id_.store(msg->system_id);
+                }
+                if (msg->component_id != 0) {
+                    vehicle_component_id_.store(msg->component_id);
+                }
+                if (msg->timestamp != 0) {
+                    vehicle_timestamp_.store(msg->timestamp);
+                }
             }
         );
 
@@ -311,6 +355,12 @@ public:
         );
 
         operation_callback_group_ = node.create_callback_group(rclcpp::CallbackGroupType::Reentrant, false);
+        // The run_operation server handles its goal, cancel and result requests
+        // one at a time. rclcpp_action (Jazzy) sends the goal response before it
+        // registers the goal, so a result request handled concurrently in that
+        // window is answered STATUS_UNKNOWN and the client sees its accepted goal
+        // finish (HIL soak run 21: the ingress "failed" 5 ms after acceptance).
+        operation_server_callback_group_ = node.create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
         fly_to_position_client_ = createManeuverClient<iii_drone_interfaces::action::FlyToPosition>("fly_to_position");
         follow_waypoint_path_client_ = createManeuverClient<iii_drone_interfaces::action::FollowWaypointPath>("follow_waypoint_path");
@@ -326,10 +376,10 @@ public:
             &node_,
             std::string(kOperationNamespace) + "/run_operation",
             [this](
-                const rclcpp_action::GoalUUID &,
+                const rclcpp_action::GoalUUID & goal_uuid,
                 std::shared_ptr<const CustomOperation::Goal> goal
             ) {
-                return handleOperationGoal(goal);
+                return handleOperationGoal(goal_uuid, goal);
             },
             [this](const std::shared_ptr<CustomOperationGoalHandle> goal_handle) {
                 return handleOperationCancel(goal_handle);
@@ -338,31 +388,38 @@ public:
                 handleOperationAccepted(goal_handle);
             },
             rcl_action_server_get_default_options(),
-            operation_callback_group_
+            operation_server_callback_group_
         );
     }
 
     void onActivate() override {
         RCLCPP_INFO(node_.get_logger(), "CustomOperationMode::onActivate(): Activating.");
-        active_.store(false);
+        {
+            std::lock_guard<std::mutex> lock(operation_mutex_);
+            active_.store(false);
+        }
         manual_position_control_triggered_.store(false);
-        runShutdownStep("cancel stale forwarded goal", [this]() { cancelForwardedGoal(); });
-        runShutdownStep("finish stale operation as canceled", [this]() { finishOperationAsCanceled(); });
-        runShutdownStep("clear maneuver queue", [this]() { clearManeuverQueue("custom operation activated"); });
-        runShutdownStep("set hover reference", [this]() { maneuver_reference_client_->SetReferenceModeHover(true); });
-        active_.store(true);
+        stick_takeover_detector_.Rebaseline();
+        runShutdownStep("retire stale operation", [this]() {
+            abortCurrentOperation("CustomOperation mode activated while a prior operation was still owned");
+        });
+        maneuver_reference_client_->SetReferenceModeHover(true);
+        {
+            std::lock_guard<std::mutex> lock(operation_mutex_);
+            active_.store(true);
+        }
     }
 
     void onDeactivate() override {
         RCLCPP_INFO(node_.get_logger(), "CustomOperationMode::onDeactivate(): Deactivating.");
-        active_.store(false);
-        runShutdownStep("cancel forwarded goal", [this]() { cancelForwardedGoal(); });
-        runShutdownStep("clear maneuver queue", [this]() { clearManeuverQueue("custom operation deactivated"); });
-        runShutdownStep("finish operation as canceled", [this]() { finishOperationAsCanceled(); });
-        runShutdownStep("stop maneuver reference client", [this]() { stopManeuverReferenceClient(); });
-        runShutdownStep("reset maneuver reference client", [this]() {
-            maneuver_reference_client_->SetReferenceModeHover(true);
+        {
+            std::lock_guard<std::mutex> lock(operation_mutex_);
+            active_.store(false);
+        }
+        runShutdownStep("retire active operation", [this]() {
+            abortCurrentOperation("CustomOperation mode deactivated");
         });
+        maneuver_reference_client_->SetReferenceModeHover(true);
     }
 
     void updateSetpoint(float dt) override {
@@ -370,16 +427,16 @@ public:
             return;
         }
 
+        ForwardedOperationContextPtr failing_context;
+        {
+            std::lock_guard<std::mutex> lock(operation_mutex_);
+            failing_context = operation_context_;
+        }
+
         const auto reference = maneuver_reference_client_->GetReference(
             dt,
-            [this]() {
-                RCLCPP_ERROR(
-                    node_.get_logger(),
-                    "CustomOperationMode::updateSetpoint(): Maneuver reference unavailable; cancelling active operation and hovering."
-                );
-                cancelForwardedGoal();
-                finishOperationAsCanceled();
-                maneuver_reference_client_->SetReferenceModeHover(true);
+            [this, failing_context]() {
+                failManeuverReference(failing_context);
             }
         );
         trajectory_setpoint_->update(reference);
@@ -392,7 +449,11 @@ public:
 
     bool ensureRegisteredAsOffboardMode() {
         if (!register_offboard_mode_client_->service_is_ready()) {
-            return maneuver_registered_as_offboard_;
+            // Registration lives in maneuver-controller memory. A cached true
+            // value is stale when that service disappears (for example after
+            // a controller restart), so never dispatch on it.
+            maneuver_registered_as_offboard_ = false;
+            return false;
         }
 
         // Maneuver-controller registration is held in controller memory. Refresh it
@@ -416,12 +477,12 @@ public:
 
     bool operationActive() const {
         std::lock_guard<std::mutex> lock(operation_mutex_);
-        return operation_active_;
+        return operation_context_ != nullptr;
     }
 
     std::string activeOperation() const {
         std::lock_guard<std::mutex> lock(operation_mutex_);
-        return active_operation_;
+        return operation_context_ ? operation_context_->operation : "";
     }
 
     std::string lastRejectionReason() const {
@@ -433,15 +494,28 @@ public:
         return operation_callback_group_;
     }
 
+    ~CustomOperationMode() override {
+        if (odometry_executor_) {
+            odometry_executor_->cancel();
+            if (odometry_thread_.joinable()) odometry_thread_.join();
+            odometry_executor_->remove_callback_group(odometry_callback_group_);
+        }
+    }
+
 private:
     rclcpp::Node & node_;
     std::shared_ptr<iii_drone::px4::TrajectorySetpoint> trajectory_setpoint_;
     std::shared_ptr<VehicleOdometryHistory> vehicle_odometry_history_;
+    rclcpp::CallbackGroup::SharedPtr odometry_callback_group_;
     rclcpp::Subscription<px4_msgs::msg::VehicleOdometry>::SharedPtr vehicle_odometry_sub_;
+    std::shared_ptr<rclcpp::executors::SingleThreadedExecutor> odometry_executor_;
+    std::thread odometry_thread_;
+    rclcpp::Subscription<px4_msgs::msg::VehicleStatus>::SharedPtr vehicle_status_sub_;
     rclcpp::Subscription<px4_msgs::msg::ManualControlSetpoint>::SharedPtr manual_control_setpoint_sub_;
     rclcpp::Publisher<px4_msgs::msg::VehicleCommand>::SharedPtr vehicle_command_pub_;
     rclcpp::CallbackGroup::SharedPtr get_reference_callback_group_;
     rclcpp::CallbackGroup::SharedPtr operation_callback_group_;
+    rclcpp::CallbackGroup::SharedPtr operation_server_callback_group_;
     std::shared_ptr<iii_drone::configuration::Configurator<rclcpp::Node>> configurator_;
     iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client_;
 
@@ -459,18 +533,73 @@ private:
     rclcpp_action::Client<iii_drone_interfaces::action::CableTakeoff>::SharedPtr cable_takeoff_client_;
 
     std::atomic_bool active_{false};
-    std::atomic_bool maneuver_reference_active_{false};
     std::atomic_bool manual_position_control_triggered_{false};
+    iii_drone::px4::StickTakeoverDetector stick_takeover_detector_;
+    std::atomic_uint8_t vehicle_system_id_{1};
+    std::atomic_uint8_t vehicle_component_id_{1};
+    std::atomic_uint64_t vehicle_timestamp_{0};
     bool maneuver_registered_as_offboard_{false};
+    std::string runtime_profile_;
+
+    enum class OperationPhase {
+        Reserved,
+        Forwarding,
+        CancellationRequested,
+        TerminalInProgress,
+        Retired,
+    };
+
+    struct ForwardedOperationContext {
+        rclcpp_action::GoalUUID goal_uuid{};
+        std::shared_ptr<CustomOperationGoalHandle> operation_goal;
+        std::string operation;
+        std::string request_identity;
+        OperationPhase phase{OperationPhase::Reserved};
+        bool cancel_requested{false};
+        bool handoff_begun{false};
+        bool forwarded_accepted{false};
+        std::function<void()> cancel_forwarded_goal;
+    };
+
+    using ForwardedOperationContextPtr = std::shared_ptr<ForwardedOperationContext>;
+
+    struct TerminalClaim {
+        ForwardedOperationContextPtr context;
+        std::shared_ptr<CustomOperationGoalHandle> operation_goal;
+        std::string request_identity;
+        bool handoff_begun = false;
+        bool cancel_requested = false;
+        std::function<void()> cancel_forwarded_goal;
+    };
+
+    struct ScopedClearRetry {
+        ForwardedOperationContextPtr context;
+        std::string reason;
+        std::string request_identity;
+        std::function<void()> completion;
+        bool in_flight{false};
+        uint64_t attempt_id{0};
+        int64_t request_id{0};
+        rclcpp::TimerBase::SharedPtr timer;
+        rclcpp::TimerBase::SharedPtr response_timer;
+    };
+
+    friend class CustomOperationModeTestAccess;
 
     mutable std::mutex operation_mutex_;
-    bool operation_active_{false};
-    bool cancel_requested_{false};
-    std::string active_operation_;
+    ForwardedOperationContextPtr operation_context_;
+    std::shared_ptr<ScopedClearRetry> scoped_clear_retry_;
     std::string last_rejection_reason_;
-    std::shared_ptr<CustomOperationGoalHandle> active_operation_goal_handle_;
-    std::function<void()> cancel_forwarded_goal_;
-    std::function<void()> cancel_operation_goal_;
+
+#ifdef III_DRONE_CUSTOM_OPERATION_TESTING
+    // The test only hook starts a competing terminal claimant while the
+    // preparation/send ownership transaction holds operation_mutex_. It
+    // verifies that the claimant cannot retire this context between Begin and
+    // async_send_goal(). It is never compiled into the production executable.
+    std::function<void()> test_after_handoff_prepare_hook_;
+    std::function<void()> test_before_goal_reservation_hook_;
+    std::function<void(const std::shared_ptr<CustomOperationGoalHandle> &)> test_before_accepted_bind_hook_;
+#endif
 
     void configureReferenceClient() {
         const auto bool_t = rclcpp::ParameterType::PARAMETER_BOOL;
@@ -485,6 +614,7 @@ private:
         configurator_->DeclareParameter("/mission/get_reference_timeout_ms", int_t);
         configurator_->DeclareParameter("/mission/reference_loss_timeout_ms", int_t);
         configurator_->DeclareParameter("/mission/reference_rebase_timeout_ms", int_t);
+        configurator_->DeclareParameter("/control/maneuver_controller/minimum_target_altitude", double_t);
         configurator_->DeclareParameter("/control/maneuver_controller/maneuver_execution_period_ms", int_t);
         configurator_->DeclareParameter("/control/maneuver_controller/reference_stream_timeout_ms", int_t);
         configurator_->DeclareParameter("/mission/reference_continuity_position_tolerance_m", double_t);
@@ -511,6 +641,7 @@ private:
             ConfigurationEntry("/mission/get_reference_timeout_ms", int_t),
             ConfigurationEntry("/mission/reference_loss_timeout_ms", int_t),
             ConfigurationEntry("/mission/reference_rebase_timeout_ms", int_t),
+            ConfigurationEntry("/control/maneuver_controller/minimum_target_altitude", double_t),
             ConfigurationEntry("/control/maneuver_controller/maneuver_execution_period_ms", int_t),
             ConfigurationEntry("/control/maneuver_controller/reference_stream_timeout_ms", int_t),
             ConfigurationEntry("/mission/reference_continuity_position_tolerance_m", double_t),
@@ -543,6 +674,23 @@ private:
         );
     }
 
+    void configureRuntimeProfile() {
+        using iii_drone::mission::kRuntimeProfileParameter;
+        if (!node_.has_parameter(kRuntimeProfileParameter)) {
+            node_.declare_parameter<std::string>(kRuntimeProfileParameter, "");
+        }
+        runtime_profile_ = iii_drone::mission::ResolveRuntimeProfile(
+            node_.get_parameter(kRuntimeProfileParameter).as_string()
+        );
+        if (iii_drone::mission::CustomOperationAllowlists().count(runtime_profile_) != 0) {
+            RCLCPP_INFO(
+                node_.get_logger(),
+                "CustomOperationMode::configureRuntimeProfile(): The %s profile restricts custom operations.",
+                runtime_profile_.c_str()
+            );
+        }
+    }
+
     template <typename ActionT>
     typename rclcpp_action::Client<ActionT>::SharedPtr createManeuverClient(const std::string & action_name) {
         return rclcpp_action::create_client<ActionT>(
@@ -553,16 +701,22 @@ private:
     }
 
     void manualControlSetpointCallback(const px4_msgs::msg::ManualControlSetpoint::SharedPtr msg) {
+        iii_drone::px4::StickTakeoverDetector::Sample sticks;
+        sticks.valid = msg->valid;
+        sticks.roll = msg->roll;
+        sticks.pitch = msg->pitch;
+        sticks.yaw = msg->yaw;
+        sticks.throttle = msg->throttle;
+
         if (!active_.load() || manual_position_control_triggered_.load()) {
+            stick_takeover_detector_.Observe(sticks);
             return;
         }
 
+        // A takeover is stick movement since activation, not a stick away
+        // from centre: PX4 reports throttle -1 with the stick at the bottom.
         const double threshold = configurator_->GetParameter("/mission/manual_stick_input_threshold").as_double();
-        const bool switch_to_position_control =
-            std::abs(msg->throttle) > threshold ||
-            std::abs(msg->yaw) > threshold ||
-            std::abs(msg->roll) > threshold ||
-            std::abs(msg->pitch) > threshold;
+        const bool switch_to_position_control = stick_takeover_detector_.ObserveActive(sticks, threshold);
 
         if (!switch_to_position_control) {
             return;
@@ -574,84 +728,159 @@ private:
             "CustomOperationMode::manualControlSetpointCallback(): Position control triggered by manual input; requesting POSCTL and cancelling active custom operation."
         );
 
-        runShutdownStep("cancel forwarded goal after manual input", [this]() { cancelForwardedGoal(); });
-        runShutdownStep("clear maneuver queue after manual input", [this]() { clearManeuverQueue("custom operation manual position control triggered"); });
-        runShutdownStep("finish operation as canceled after manual input", [this]() { finishOperationAsCanceled(); });
-        runShutdownStep("set hover reference while switching to position", [this]() { maneuver_reference_client_->SetReferenceModeHover(true); });
+        const bool retired = abortCurrentOperation("manual position control triggered");
+        if (!retired) {
+            maneuver_reference_client_->SetReferenceModeHover(true);
+        }
 
         publishSetNavStateCommand(px4_msgs::msg::VehicleStatus::NAVIGATION_STATE_POSCTL);
     }
 
     void publishSetNavStateCommand(uint8_t nav_state) {
         px4_msgs::msg::VehicleCommand command;
-        command.timestamp = static_cast<uint64_t>(node_.get_clock()->now().nanoseconds() / 1000);
+        // PX4 validates VehicleCommand timestamps in its boot-time domain.
+        // On split-host HIL the Pi's wall clock is deliberately independent of
+        // SITL, so use the latest DDS timestamp observed from PX4 itself.
+        const auto vehicle_timestamp = vehicle_timestamp_.load();
+        command.timestamp = vehicle_timestamp != 0
+            ? vehicle_timestamp
+            : static_cast<uint64_t>(node_.get_clock()->now().nanoseconds() / 1000);
         command.command = px4_msgs::msg::VehicleCommand::VEHICLE_CMD_SET_NAV_STATE;
         command.param1 = static_cast<float>(nav_state);
-        command.target_system = 1;
-        command.target_component = 1;
+        command.target_system = vehicle_system_id_.load();
+        command.target_component = vehicle_component_id_.load();
         command.source_system = 1;
         command.source_component = 1;
         command.from_external = true;
         vehicle_command_pub_->publish(command);
     }
 
-    rclcpp_action::GoalResponse handleOperationGoal(std::shared_ptr<const CustomOperation::Goal> goal) {
-        if (!active_.load()) {
-            const std::string reason = "CustomOperation mode is not active";
+    bool isSupportedOperation(const std::string & operation) const {
+        return operation == "fly_to_position" ||
+            operation == "follow_waypoint_path" ||
+            operation == "cable_aware_fly_to_position" ||
+            operation == "fly_to_object" ||
+            operation == "hover" ||
+            operation == "hover_by_object" ||
+            operation == "hover_on_cable" ||
+            operation == "cable_landing" ||
+            operation == "cable_takeoff";
+    }
+
+    rclcpp_action::GoalResponse handleOperationGoal(
+        const rclcpp_action::GoalUUID & goal_uuid,
+        std::shared_ptr<const CustomOperation::Goal> goal
+    ) {
+        if (!isSupportedOperation(goal->operation)) {
+            const std::string reason = "unsupported operation: " + goal->operation;
             {
                 std::lock_guard<std::mutex> lock(operation_mutex_);
                 last_rejection_reason_ = reason;
             }
-            RCLCPP_WARN(node_.get_logger(), "CustomOperationMode::handleOperationGoal(): Rejecting %s because %s.", goal->operation.c_str(), reason.c_str());
+            RCLCPP_WARN(node_.get_logger(), "CustomOperationMode::handleOperationGoal(): Rejecting %s because it is unsupported.", goal->operation.c_str());
+            return rclcpp_action::GoalResponse::REJECT;
+        }
+        if (!iii_drone::mission::CustomOperationAllowedInProfile(goal->operation, runtime_profile_)) {
+            const std::string reason = iii_drone::mission::NotAvailableInProfileMessage(
+                "custom operation " + goal->operation,
+                runtime_profile_
+            );
+            {
+                std::lock_guard<std::mutex> lock(operation_mutex_);
+                last_rejection_reason_ = reason;
+            }
+            RCLCPP_WARN(node_.get_logger(), "CustomOperationMode::handleOperationGoal(): Rejecting: %s.", reason.c_str());
+            return rclcpp_action::GoalResponse::REJECT;
+        }
+
+#ifdef III_DRONE_CUSTOM_OPERATION_TESTING
+        if (test_before_goal_reservation_hook_) {
+            test_before_goal_reservation_hook_();
+        }
+#endif
+        std::lock_guard<std::mutex> lock(operation_mutex_);
+        if (!active_.load()) {
+            last_rejection_reason_ = "CustomOperation mode is not active";
             return rclcpp_action::GoalResponse::REJECT;
         }
         if (manual_position_control_triggered_.load()) {
-            const std::string reason = "manual position control handoff is in progress";
-            {
-                std::lock_guard<std::mutex> lock(operation_mutex_);
-                last_rejection_reason_ = reason;
-            }
-            RCLCPP_WARN(node_.get_logger(), "CustomOperationMode::handleOperationGoal(): Rejecting %s because %s.", goal->operation.c_str(), reason.c_str());
+            last_rejection_reason_ = "manual position control handoff is in progress";
             return rclcpp_action::GoalResponse::REJECT;
         }
-
-        std::lock_guard<std::mutex> lock(operation_mutex_);
-        if (operation_active_) {
-            last_rejection_reason_ = "another custom operation is active";
-            RCLCPP_WARN(node_.get_logger(), "CustomOperationMode::handleOperationGoal(): Rejecting %s because an operation is active.", goal->operation.c_str());
+        if (operation_context_) {
+            last_rejection_reason_ = "another custom operation is active or completing cleanup";
+            RCLCPP_WARN(node_.get_logger(), "CustomOperationMode::handleOperationGoal(): Rejecting %s because an operation owns admission.", goal->operation.c_str());
             return rclcpp_action::GoalResponse::REJECT;
         }
+        auto context = std::make_shared<ForwardedOperationContext>();
+        context->goal_uuid = goal_uuid;
+        context->operation = goal->operation;
+        context->phase = OperationPhase::Reserved;
+        operation_context_ = std::move(context);
+        last_rejection_reason_.clear();
         return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
     }
 
-    rclcpp_action::CancelResponse handleOperationCancel(const std::shared_ptr<CustomOperationGoalHandle>) {
+    rclcpp_action::CancelResponse handleOperationCancel(
+        const std::shared_ptr<CustomOperationGoalHandle> goal_handle
+    ) {
+        std::function<void()> cancel_forwarded_goal;
+        {
+            std::lock_guard<std::mutex> lock(operation_mutex_);
+            if (
+                !operation_context_ ||
+                operation_context_->goal_uuid != goal_handle->get_goal_id() ||
+                operation_context_->phase == OperationPhase::TerminalInProgress ||
+                operation_context_->phase == OperationPhase::Retired
+            ) {
+                return rclcpp_action::CancelResponse::REJECT;
+            }
+            operation_context_->cancel_requested = true;
+            operation_context_->phase = OperationPhase::CancellationRequested;
+            cancel_forwarded_goal = operation_context_->cancel_forwarded_goal;
+        }
         RCLCPP_INFO(
             node_.get_logger(),
             "CustomOperationMode::handleOperationCancel(): Forwarding cancellation and retaining maneuver reference control until the maneuver stops."
         );
-        {
-            std::lock_guard<std::mutex> lock(operation_mutex_);
-            cancel_requested_ = true;
+        if (cancel_forwarded_goal) {
+            cancel_forwarded_goal();
         }
-        cancelForwardedGoal();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
     void handleOperationAccepted(const std::shared_ptr<CustomOperationGoalHandle> goal_handle) {
+#ifdef III_DRONE_CUSTOM_OPERATION_TESTING
+        if (test_before_accepted_bind_hook_) {
+            test_before_accepted_bind_hook_(goal_handle);
+        }
+#endif
+        ForwardedOperationContextPtr context;
+        bool cancel_late_acceptance = false;
         {
             std::lock_guard<std::mutex> lock(operation_mutex_);
-            operation_active_ = true;
-            cancel_requested_ = false;
-            active_operation_ = goal_handle->get_goal()->operation;
-            active_operation_goal_handle_ = goal_handle;
-            last_rejection_reason_.clear();
-            cancel_operation_goal_ = [this, goal_handle]() {
-                finishOperationGoalAsCancelledOrAborted(goal_handle, "operation cancelled");
-            };
+            if (
+                !operation_context_ ||
+                operation_context_->goal_uuid != goal_handle->get_goal_id() ||
+                operation_context_->phase == OperationPhase::TerminalInProgress ||
+                operation_context_->phase == OperationPhase::Retired
+            ) {
+                cancel_late_acceptance = true;
+            } else {
+                context = operation_context_;
+                context->operation_goal = goal_handle;
+                if (context->phase == OperationPhase::Reserved) {
+                    context->phase = OperationPhase::Forwarding;
+                }
+            }
+        }
+        if (cancel_late_acceptance) {
+            finishOperationGoalAsCancelledOrAborted(goal_handle, "operation retired before acceptance");
+            return;
         }
 
         const auto goal = goal_handle->get_goal();
-        const std::string & operation = goal->operation;
+        const std::string & operation = context->operation;
         RCLCPP_INFO(
             node_.get_logger(),
             "CustomOperationMode::handleOperationAccepted(): Dispatching operation '%s'.",
@@ -660,244 +889,327 @@ private:
         try {
             if (operation == "fly_to_position") {
                 dispatchTyped<iii_drone_interfaces::action::FlyToPosition>(
-                    goal_handle,
+                    context,
                     fly_to_position_client_,
                     makeFlyToPositionGoal(goal->arguments_json)
                 );
             } else if (operation == "follow_waypoint_path") {
                 dispatchTyped<iii_drone_interfaces::action::FollowWaypointPath>(
-                    goal_handle,
+                    context,
                     follow_waypoint_path_client_,
                     makeFollowWaypointPathGoal(goal->arguments_json)
                 );
             } else if (operation == "cable_aware_fly_to_position") {
                 dispatchTyped<iii_drone_interfaces::action::CableAwareFlyToPosition>(
-                    goal_handle,
+                    context,
                     cable_aware_fly_to_position_client_,
                     makeCableAwareFlyToPositionGoal(goal->arguments_json)
                 );
             } else if (operation == "fly_to_object") {
                 dispatchTyped<iii_drone_interfaces::action::FlyToObject>(
-                    goal_handle,
+                    context,
                     fly_to_object_client_,
                     makeFlyToObjectGoal(goal->arguments_json)
                 );
             } else if (operation == "hover") {
                 dispatchTyped<iii_drone_interfaces::action::Hover>(
-                    goal_handle,
+                    context,
                     hover_client_,
                     makeHoverGoal(goal->arguments_json)
                 );
             } else if (operation == "hover_by_object") {
                 dispatchTyped<iii_drone_interfaces::action::HoverByObject>(
-                    goal_handle,
+                    context,
                     hover_by_object_client_,
                     makeHoverByObjectGoal(goal->arguments_json)
                 );
             } else if (operation == "hover_on_cable") {
                 dispatchTyped<iii_drone_interfaces::action::HoverOnCable>(
-                    goal_handle,
+                    context,
                     hover_on_cable_client_,
                     makeHoverOnCableGoal(goal->arguments_json)
                 );
             } else if (operation == "cable_landing") {
                 dispatchTyped<iii_drone_interfaces::action::CableLanding>(
-                    goal_handle,
+                    context,
                     cable_landing_client_,
                     makeCableLandingGoal(goal->arguments_json)
                 );
             } else if (operation == "cable_takeoff") {
                 dispatchTyped<iii_drone_interfaces::action::CableTakeoff>(
-                    goal_handle,
+                    context,
                     cable_takeoff_client_,
                     makeCableTakeoffGoal(goal->arguments_json)
                 );
-            } else {
-                abortOperation(goal_handle, "unsupported operation: " + operation);
             }
         } catch (const std::exception & error) {
-            abortOperation(goal_handle, error.what());
+            abortOperation(context, error.what());
         }
+    }
+
+    bool contextOwnsOperation(const ForwardedOperationContextPtr & context) const {
+        std::lock_guard<std::mutex> lock(operation_mutex_);
+        return operation_context_ == context &&
+            context->phase != OperationPhase::TerminalInProgress &&
+            context->phase != OperationPhase::Retired;
     }
 
     template <typename ActionT>
     void dispatchTyped(
-        const std::shared_ptr<CustomOperationGoalHandle> operation_goal,
+        const ForwardedOperationContextPtr & context,
         typename rclcpp_action::Client<ActionT>::SharedPtr client,
         const typename ActionT::Goal & forwarded_goal
     ) {
-        const std::string operation_name = operation_goal->get_goal()->operation;
+        const std::string operation_name = context->operation;
+        if (!contextOwnsOperation(context)) {
+            return;
+        }
         if (!ensureRegisteredAsOffboardMode()) {
-            abortOperation(operation_goal, "failed to register CustomOperation as maneuver-controller offboard mode before dispatching: " + operation_name);
+            abortOperation(context, "failed to register CustomOperation as maneuver-controller offboard mode before dispatching: " + operation_name);
             return;
         }
-
         if (!client->wait_for_action_server(std::chrono::seconds(2))) {
-            abortOperation(operation_goal, "underlying maneuver action unavailable: " + operation_name);
+            abortOperation(context, "underlying maneuver action unavailable: " + operation_name);
             return;
         }
-
+        auto stamped_goal = forwarded_goal;
         auto goal_response_received = std::make_shared<std::atomic_bool>(false);
         auto goal_response_watchdog = std::make_shared<rclcpp::TimerBase::SharedPtr>();
         *goal_response_watchdog = node_.create_wall_timer(
             std::chrono::seconds(3),
-            [this, operation_goal, operation_name, goal_response_received, goal_response_watchdog]() {
+            [this, context, operation_name, goal_response_received, goal_response_watchdog]() {
                 if (goal_response_received->exchange(true)) {
                     return;
                 }
                 if (*goal_response_watchdog) {
                     (*goal_response_watchdog)->cancel();
                 }
-                if (!operationGoalStillActive(operation_goal)) {
-                    return;
-                }
-                abortOperation(
-                    operation_goal,
-                    "timed out waiting for underlying maneuver goal response: " + operation_name
-                );
+                handleGoalResponseTimeout(context, operation_name);
             },
             operation_callback_group_
         );
 
         typename rclcpp_action::Client<ActionT>::SendGoalOptions options;
         options.goal_response_callback =
-            [this, operation_goal, client, operation_name, goal_response_received, goal_response_watchdog](
+            [this, context, client, operation_name, goal_response_received, goal_response_watchdog](
                 typename rclcpp_action::ClientGoalHandle<ActionT>::SharedPtr forwarded_goal_handle
             ) {
-                try {
-                    goal_response_received->store(true);
-                    if (*goal_response_watchdog) {
-                        (*goal_response_watchdog)->cancel();
-                    }
-                    if (!operationGoalStillActive(operation_goal)) {
-                        RCLCPP_WARN(
-                            node_.get_logger(),
-                            "CustomOperationMode::dispatchTyped(): Ignoring late maneuver goal response for inactive operation '%s'.",
-                            operation_name.c_str()
+                goal_response_received->store(true);
+                if (*goal_response_watchdog) {
+                    (*goal_response_watchdog)->cancel();
+                }
+                std::function<void()> cancel_now;
+                bool owns_operation = false;
+                bool confirmed = false;
+                {
+                    std::lock_guard<std::mutex> lock(operation_mutex_);
+                    owns_operation = operation_context_ == context &&
+                        context->phase != OperationPhase::TerminalInProgress &&
+                        context->phase != OperationPhase::Retired && active_.load();
+                    if (owns_operation && forwarded_goal_handle) {
+                        // Confirm is a local reference-client transition. Fence it
+                        // with terminal claim so retired A cannot confirm after B
+                        // has gained admission.
+                        confirmed = maneuver_reference_client_->ConfirmManeuverGoalHandoff(
+                            context->request_identity
                         );
-                        if (forwarded_goal_handle) {
-                            try {
-                                client->async_cancel_goal(forwarded_goal_handle);
-                            } catch (const std::exception & error) {
-                                RCLCPP_WARN(
-                                    node_.get_logger(),
-                                    "CustomOperationMode::dispatchTyped(): Ignoring late cancel error for '%s': %s",
-                                    operation_name.c_str(),
-                                    error.what()
-                                );
+                        if (confirmed) {
+                            context->forwarded_accepted = true;
+                            context->cancel_forwarded_goal = [client, forwarded_goal_handle, operation_name]() {
+                                cancelForwardedHandle<ActionT>(client, forwarded_goal_handle, operation_name);
+                            };
+                            if (context->cancel_requested) {
+                                cancel_now = context->cancel_forwarded_goal;
                             }
                         }
-                        return;
                     }
-
-                    if (!forwarded_goal_handle) {
-                        abortOperation(operation_goal, "underlying maneuver goal rejected: " + operation_name);
-                        return;
-                    }
-
-                    RCLCPP_INFO(
-                        node_.get_logger(),
-                        "CustomOperationMode::dispatchTyped(): Underlying maneuver goal accepted for '%s'; starting ManeuverReferenceClient.",
-                        operation_name.c_str()
-                    );
-
-                    if (!maneuver_reference_client_->StartManeuver()) {
-                        client->async_cancel_goal(forwarded_goal_handle);
-                        abortOperation(operation_goal, "failed to start ManeuverReferenceClient for: " + operation_name);
-                        return;
-                    }
-                    maneuver_reference_active_.store(true);
-
-                    bool cancel_pending = false;
-                    {
-                        std::lock_guard<std::mutex> lock(operation_mutex_);
-                        cancel_forwarded_goal_ = [client, forwarded_goal_handle]() {
-                            try {
-                                client->async_cancel_goal(forwarded_goal_handle);
-                            } catch (const std::exception &) {
-                                // Goal cancellation is best-effort; terminal callbacks handle cleanup.
-                            }
-                        };
-                        cancel_pending = cancel_requested_;
-                    }
-                    if (cancel_pending) {
-                        try {
-                            client->async_cancel_goal(forwarded_goal_handle);
-                        } catch (const std::exception &) {
-                            // Goal cancellation is best-effort; terminal callbacks handle cleanup.
-                        }
-                    }
-                } catch (const std::exception & error) {
-                    if (forwarded_goal_handle) {
-                        try {
-                            client->async_cancel_goal(forwarded_goal_handle);
-                        } catch (const std::exception &) {
-                            // Best-effort cleanup only.
-                        }
-                    }
-                    abortOperation(operation_goal, std::string("exception while starting ManeuverReferenceClient for ") + operation_name + ": " + error.what());
+                }
+                if (!owns_operation) {
+                    cancelForwardedHandle<ActionT>(client, forwarded_goal_handle, operation_name);
                     return;
+                }
+                if (!forwarded_goal_handle) {
+                    abortOperation(context, "underlying maneuver goal rejected: " + operation_name);
+                    return;
+                }
+                if (!confirmed) {
+                    cancelForwardedHandle<ActionT>(client, forwarded_goal_handle, operation_name);
+                    abortOperation(context, "failed to confirm ManeuverReferenceClient handoff for: " + operation_name);
+                    return;
+                }
+                if (cancel_now) {
+                    cancel_now();
                 }
             };
         options.feedback_callback =
-            [operation_goal, operation_name](
+            [this, context, operation_name](
                 typename rclcpp_action::ClientGoalHandle<ActionT>::SharedPtr,
                 const std::shared_ptr<const typename ActionT::Feedback>
             ) {
-                auto feedback = std::make_shared<CustomOperation::Feedback>();
-                feedback->operation = operation_name;
-                feedback->state = "running";
-                feedback->feedback_json = "{}";
-                operation_goal->publish_feedback(feedback);
+                publishOperationFeedback(context, operation_name);
             };
         options.result_callback =
-            [this, operation_goal, operation_name](const typename rclcpp_action::ClientGoalHandle<ActionT>::WrappedResult & wrapped_result) {
-                handleForwardedResult<ActionT>(operation_goal, operation_name, wrapped_result);
+            [this, context, operation_name](const typename rclcpp_action::ClientGoalHandle<ActionT>::WrappedResult & wrapped_result) {
+                handleForwardedResult<ActionT>(context, operation_name, wrapped_result);
             };
 
-        client->async_send_goal(forwarded_goal, options);
+        bool sent = false;
+        std::string dispatch_error;
+        try {
+            // Begin and async_send_goal form one short ownership transaction.
+            // No wait occurs while operation_mutex_ is held. A terminal
+            // claimant therefore cannot retire this context after Begin and
+            // before the action request has been handed to ROS.
+            std::lock_guard<std::mutex> lock(operation_mutex_);
+            if (
+                operation_context_ != context || !active_.load() ||
+                context->phase == OperationPhase::TerminalInProgress ||
+                context->phase == OperationPhase::Retired
+            ) {
+                return;
+            }
+            context->request_identity = iii_drone::control::maneuver::nextProcessManeuverRequestIdentity();
+            stamped_goal.request_identity = context->request_identity;
+            if (!maneuver_reference_client_->BeginManeuverGoalHandoff(context->request_identity)) {
+                dispatch_error = "failed to authorize maneuver reference handoff before dispatching: " + operation_name;
+            } else {
+                context->handoff_begun = true;
+#ifdef III_DRONE_CUSTOM_OPERATION_TESTING
+                if (test_after_handoff_prepare_hook_) {
+                    test_after_handoff_prepare_hook_();
+                }
+#endif
+                client->async_send_goal(stamped_goal, options);
+                sent = true;
+            }
+        } catch (const std::exception & error) {
+            dispatch_error = std::string("exception while dispatching maneuver ") + operation_name + ": " + error.what();
+        }
+        if (!sent) {
+            abortOperation(
+                context,
+                dispatch_error.empty()
+                    ? "operation retired before underlying maneuver dispatch: " + operation_name
+                    : dispatch_error
+            );
+        }
+    }
+
+    template <typename ActionT>
+    static void cancelForwardedHandle(
+        const typename rclcpp_action::Client<ActionT>::SharedPtr & client,
+        const typename rclcpp_action::ClientGoalHandle<ActionT>::SharedPtr & goal_handle,
+        const std::string & operation_name
+    ) {
+        if (!goal_handle) {
+            return;
+        }
+        try {
+            client->async_cancel_goal(goal_handle);
+        } catch (const std::exception &) {
+            (void)operation_name;
+        }
+    }
+
+    void handleGoalResponseTimeout(
+        const ForwardedOperationContextPtr & context,
+        const std::string & operation_name
+    ) {
+        abortOperation(context, "timed out waiting for underlying maneuver goal response: " + operation_name);
+    }
+
+    bool publishOperationFeedback(
+        const ForwardedOperationContextPtr & context,
+        const std::string & operation_name
+    ) {
+        auto feedback = std::make_shared<CustomOperation::Feedback>();
+        feedback->operation = operation_name;
+        feedback->state = "running";
+        feedback->feedback_json = "{}";
+        // publish_feedback cannot call back into this server synchronously;
+        // the ownership fence excludes terminal claim and successor admission.
+        std::lock_guard<std::mutex> lock(operation_mutex_);
+        if (operation_context_ != context ||
+            context->phase == OperationPhase::TerminalInProgress ||
+            context->phase == OperationPhase::Retired || !context->operation_goal) {
+            return false;
+        }
+        context->operation_goal->publish_feedback(feedback);
+        return true;
     }
 
     template <typename ActionT>
     void handleForwardedResult(
-        const std::shared_ptr<CustomOperationGoalHandle> operation_goal,
+        const ForwardedOperationContextPtr & context,
         const std::string & operation_name,
         const typename rclcpp_action::ClientGoalHandle<ActionT>::WrappedResult & wrapped_result
     ) {
-        if (!operationGoalStillActive(operation_goal)) {
+        const auto claim = tryClaimTerminal(context);
+        if (!claim) {
             RCLCPP_WARN(
                 node_.get_logger(),
-                "CustomOperationMode::handleForwardedResult(): Ignoring late result for inactive operation '%s'.",
+                "CustomOperationMode::handleForwardedResult(): Ignoring late result for retired operation '%s'.",
                 operation_name.c_str()
             );
             return;
         }
-        const bool cancelled = wrapped_result.code == rclcpp_action::ResultCode::CANCELED || cancelRequested();
-        if (wrapped_result.code == rclcpp_action::ResultCode::SUCCEEDED && resultReference(wrapped_result.result)) {
-            maneuver_reference_client_->StopManeuver(*resultReference(wrapped_result.result));
+
+        const bool cancelled = wrapped_result.code == rclcpp_action::ResultCode::CANCELED || claim->cancel_requested;
+        const bool succeeded = wrapped_result.code == rclcpp_action::ResultCode::SUCCEEDED && resultSucceeded(wrapped_result.result);
+        const auto final_reference = resultReference(wrapped_result.result);
+        bool reference_retired = true;
+        if (succeeded && !cancelled && final_reference && claim->handoff_begun) {
+            if (operation_name == "cable_aware_fly_to_position" ||
+                operation_name == "fly_to_position") {
+                // The result target is nominal mission metadata. Core owns
+                // the live corrected command beyond action completion.
+                const auto retention = maneuver_reference_client_->RetainCompletedTerminalHold(
+                    claim->request_identity, 500);
+                if (retention == ManeuverReferenceClient::TerminalHoldRetention::Retained) {
+                    reference_retired = true;
+                } else if (retention == ManeuverReferenceClient::TerminalHoldRetention::NoOffer) {
+                    reference_retired = maneuver_reference_client_->CompleteManeuverGoalHandoff(
+                        claim->request_identity, *final_reference);
+                } else {
+                    reference_retired = false;
+                }
+            } else {
+                reference_retired = maneuver_reference_client_->CompleteManeuverGoalHandoff(
+                    claim->request_identity, *final_reference);
+            }
         } else {
-            stopManeuverReferenceClient();
-        }
-        if (wrapped_result.code != rclcpp_action::ResultCode::SUCCEEDED || !resultSucceeded(wrapped_result.result)) {
-            clearManeuverQueue("custom operation terminal failure/cancel");
+            reference_retired = retireHandoffAndStop(*claim);
         }
 
         auto result = std::make_shared<CustomOperation::Result>();
         result->operation = operation_name;
-        result->success = wrapped_result.code == rclcpp_action::ResultCode::SUCCEEDED && resultSucceeded(wrapped_result.result);
+        result->success = succeeded && !cancelled && reference_retired;
         result->result_json = resultJson(wrapped_result.result);
-        result->error = result->success ? "" : "underlying maneuver action failed";
-
-        if (cancelled) {
-            result->success = false;
-            result->error = "operation cancelled";
-            finishOperationGoalAsCancelledOrAborted(operation_goal, result);
-        } else if (result->success) {
-            operation_goal->succeed(result);
+        result->error = result->success ? "" :
+            (cancelled ? "operation cancelled" :
+            (succeeded && !reference_retired ? "maneuver reference ownership was lost" : "underlying maneuver action failed"));
+        auto complete = [this, claim = *claim, result, cancelled]() {
+            if (claim.operation_goal) {
+                if (cancelled) {
+                    finishOperationGoalAsCancelledOrAborted(claim.operation_goal, result);
+                } else if (result->success) {
+                    claim.operation_goal->succeed(result);
+                } else {
+                    claim.operation_goal->abort(result);
+                }
+            }
+            completeTerminal(claim.context);
+        };
+        if (result->success) {
+            complete();
         } else {
-            operation_goal->abort(result);
+            clearManeuverQueueThen(
+                "custom operation terminal failure/cancel",
+                claim->request_identity,
+                claim->context,
+                std::move(complete)
+            );
         }
-        clearOperation();
     }
 
     iii_drone_interfaces::action::FlyToPosition::Goal makeFlyToPositionGoal(const std::string & args) {
@@ -1008,21 +1320,93 @@ private:
         return goal;
     }
 
-    void abortOperation(const std::shared_ptr<CustomOperationGoalHandle> goal_handle, const std::string & error) {
+    std::optional<TerminalClaim> tryClaimTerminal(const ForwardedOperationContextPtr & context) {
+        std::lock_guard<std::mutex> lock(operation_mutex_);
+        if (
+            operation_context_ != context ||
+            context->phase == OperationPhase::TerminalInProgress ||
+            context->phase == OperationPhase::Retired
+        ) {
+            return std::nullopt;
+        }
+        context->phase = OperationPhase::TerminalInProgress;
+        return TerminalClaim{
+            context,
+            context->operation_goal,
+            context->request_identity,
+            context->handoff_begun,
+            context->cancel_requested,
+            context->cancel_forwarded_goal,
+        };
+    }
+
+    void completeTerminal(const ForwardedOperationContextPtr & context) {
+        std::lock_guard<std::mutex> lock(operation_mutex_);
+        if (operation_context_ == context && context->phase == OperationPhase::TerminalInProgress) {
+            context->phase = OperationPhase::Retired;
+            operation_context_.reset();
+        }
+    }
+
+    bool retireHandoffAndStop(const TerminalClaim & claim) {
+        // Only the request that completed Begin owns a reference transition.
+        // In particular, a failed Begin means another identity already owns
+        // the client; forcing hover here would let this failed operation stop
+        // that owner. A late terminal after its handoff was already retired
+        // must likewise not affect a successor.
+        if (!claim.handoff_begun) {
+            return true;
+        }
+        return maneuver_reference_client_->CancelManeuverGoalHandoff(claim.request_identity);
+    }
+
+    bool abortOperation(const ForwardedOperationContextPtr & context, const std::string & error) {
+        const auto claim = tryClaimTerminal(context);
+        if (!claim) {
+            return false;
+        }
         RCLCPP_ERROR(node_.get_logger(), "CustomOperationMode::abortOperation(): %s", error.c_str());
-        stopManeuverReferenceClient();
-        clearManeuverQueue("custom operation aborted");
+        if (claim->cancel_forwarded_goal) {
+            claim->cancel_forwarded_goal();
+        }
+        retireHandoffAndStop(*claim);
         auto result = std::make_shared<CustomOperation::Result>();
         result->success = false;
-        result->operation = goal_handle->get_goal()->operation;
+        result->operation = claim->context->operation;
         result->error = error;
         result->result_json = "{}";
-        finishOperationGoalAsCancelledOrAborted(goal_handle, result);
         {
             std::lock_guard<std::mutex> lock(operation_mutex_);
             last_rejection_reason_ = error;
         }
-        clearOperation();
+        clearManeuverQueueThen("custom operation aborted", claim->request_identity, claim->context, [this, claim = *claim, result]() {
+            if (claim.operation_goal) {
+                finishOperationGoalAsCancelledOrAborted(claim.operation_goal, result);
+            }
+            completeTerminal(claim.context);
+        });
+        return true;
+    }
+
+    bool abortCurrentOperation(const std::string & error) {
+        ForwardedOperationContextPtr context;
+        {
+            std::lock_guard<std::mutex> lock(operation_mutex_);
+            context = operation_context_;
+        }
+        return context && abortOperation(context, error);
+    }
+
+    void failManeuverReference(const ForwardedOperationContextPtr & context) {
+        RCLCPP_ERROR(
+            node_.get_logger(),
+            "CustomOperationMode::updateSetpoint(): Maneuver reference unavailable; cancelling the operation that owned the failing read."
+        );
+        if (context) {
+            abortOperation(context, "maneuver reference unavailable");
+        }
+        // GetReference owns the fallback hover and checks its captured Core
+        // ownership epoch after this callback returns.
     }
 
     void finishOperationGoalAsCancelledOrAborted(
@@ -1056,65 +1440,170 @@ private:
         }
     }
 
-    bool cancelRequested() {
-        std::lock_guard<std::mutex> lock(operation_mutex_);
-        return cancel_requested_;
-    }
-
-    bool operationGoalStillActive(const std::shared_ptr<CustomOperationGoalHandle> & goal_handle) {
-        std::lock_guard<std::mutex> lock(operation_mutex_);
-        return operation_active_ && active_operation_goal_handle_ == goal_handle;
-    }
-
-    void clearOperation() {
-        std::lock_guard<std::mutex> lock(operation_mutex_);
-        operation_active_ = false;
-        cancel_requested_ = false;
-        active_operation_.clear();
-        active_operation_goal_handle_.reset();
-        cancel_forwarded_goal_ = nullptr;
-        cancel_operation_goal_ = nullptr;
-    }
-
-    void finishOperationAsCanceled() {
-        std::function<void()> cancel_operation;
+    void clearManeuverQueueThen(
+        const std::string & reason,
+        const std::string & request_identity,
+        const ForwardedOperationContextPtr & context,
+        std::function<void()> completion
+    ) {
+        if (!iii_drone::control::maneuver::isValidManeuverRequestIdentity(request_identity)) {
+            RCLCPP_ERROR(node_.get_logger(), "CustomOperationMode::clearManeuverQueueThen(): Refusing an automatic clear without an owned request identity.");
+            completion();
+            return;
+        }
+        auto retry = std::make_shared<ScopedClearRetry>();
+        retry->context = context;
+        retry->reason = reason;
+        retry->request_identity = request_identity;
+        retry->completion = std::move(completion);
         {
             std::lock_guard<std::mutex> lock(operation_mutex_);
-            cancel_operation = cancel_operation_goal_;
+            if (operation_context_ != context || context->phase != OperationPhase::TerminalInProgress) {
+                return;
+            }
+            scoped_clear_retry_ = retry;
         }
-        if (cancel_operation) {
-            cancel_operation();
-        }
-        clearOperation();
+        attemptScopedClear(retry);
     }
 
-    void cancelForwardedGoal() {
-        std::function<void()> cancel_goal;
+    void scheduleScopedClearRetry(const std::shared_ptr<ScopedClearRetry> & retry) {
+        std::lock_guard<std::mutex> lock(operation_mutex_);
+        if (scoped_clear_retry_ != retry || retry->in_flight || retry->timer) {
+            return;
+        }
+        std::weak_ptr<ScopedClearRetry> weak_retry = retry;
+        retry->timer = node_.create_wall_timer(
+            std::chrono::milliseconds(100),
+            [this, weak_retry]() {
+                const auto retry = weak_retry.lock();
+                if (!retry) {
+                    return;
+                }
+                {
+                    std::lock_guard<std::mutex> lock(operation_mutex_);
+                    if (scoped_clear_retry_ != retry) {
+                        return;
+                    }
+                    retry->timer->cancel();
+                    retry->timer.reset();
+                }
+                attemptScopedClear(retry);
+            },
+            operation_callback_group_
+        );
+    }
+
+    void finishScopedClearAttempt(
+        const std::shared_ptr<ScopedClearRetry> & retry,
+        uint64_t attempt_id,
+        bool success
+    ) {
+        std::function<void()> completion;
         {
             std::lock_guard<std::mutex> lock(operation_mutex_);
-            cancel_goal = cancel_forwarded_goal_;
+            if (scoped_clear_retry_ != retry || retry->attempt_id != attempt_id ||
+                operation_context_ != retry->context ||
+                retry->context->phase != OperationPhase::TerminalInProgress) {
+                return;
+            }
+            retry->in_flight = false;
+            if (retry->response_timer) {
+                retry->response_timer->cancel();
+                retry->response_timer.reset();
+            }
+            retry->request_id = 0;
+            if (success) {
+                if (retry->timer) {
+                    retry->timer->cancel();
+                    retry->timer.reset();
+                }
+                completion = std::move(retry->completion);
+                scoped_clear_retry_.reset();
+            }
         }
-        if (cancel_goal) {
-            cancel_goal();
+        if (completion) {
+            completion();
+        } else if (!success) {
+            scheduleScopedClearRetry(retry);
         }
     }
 
-    void stopManeuverReferenceClient() {
-        if (maneuver_reference_active_.exchange(false)) {
-            maneuver_reference_client_->StopManeuver();
-        } else {
-            maneuver_reference_client_->SetReferenceModeHover(true);
+    void attemptScopedClear(const std::shared_ptr<ScopedClearRetry> & retry) {
+        uint64_t attempt_id;
+        {
+            std::lock_guard<std::mutex> lock(operation_mutex_);
+            if (scoped_clear_retry_ != retry || retry->in_flight ||
+                operation_context_ != retry->context ||
+                retry->context->phase != OperationPhase::TerminalInProgress) {
+                return;
+            }
+            retry->in_flight = true;
+            attempt_id = ++retry->attempt_id;
         }
-    }
-
-    void clearManeuverQueue(const std::string & reason) {
-        if (!clear_maneuver_queue_client_->wait_for_service(std::chrono::milliseconds(250))) {
-            RCLCPP_WARN(node_.get_logger(), "CustomOperationMode::clearManeuverQueue(): Service unavailable.");
+        if (!clear_maneuver_queue_client_->service_is_ready()) {
+            finishScopedClearAttempt(retry, attempt_id, false);
             return;
         }
         auto request = std::make_shared<iii_drone_interfaces::srv::ClearManeuverQueue::Request>();
-        request->reason = reason;
-        clear_maneuver_queue_client_->async_send_request(request);
+        request->reason = retry->reason;
+        request->request_identity = retry->request_identity;
+        std::optional<int64_t> sent_request_id;
+        try {
+            const auto sent = clear_maneuver_queue_client_->async_send_request(
+                request,
+                [this, retry, attempt_id](
+                    rclcpp::Client<iii_drone_interfaces::srv::ClearManeuverQueue>::SharedFuture future
+                ) {
+                    bool success = false;
+                    try {
+                        success = future.get()->success;
+                    } catch (const std::exception & error) {
+                        RCLCPP_WARN(node_.get_logger(), "CustomOperationMode::clearManeuverQueueThen(): Clear response failed: %s", error.what());
+                    }
+                    finishScopedClearAttempt(retry, attempt_id, success);
+                }
+            );
+            sent_request_id = sent.request_id;
+            {
+                std::lock_guard<std::mutex> lock(operation_mutex_);
+                if (scoped_clear_retry_ == retry && retry->in_flight && retry->attempt_id == attempt_id) {
+                    retry->request_id = sent.request_id;
+                    std::weak_ptr<ScopedClearRetry> weak_retry = retry;
+                    retry->response_timer = node_.create_wall_timer(
+                        std::chrono::seconds(1),
+                        [this, weak_retry, attempt_id]() {
+                            const auto retry = weak_retry.lock();
+                            if (!retry) {
+                                return;
+                            }
+                            int64_t request_id = 0;
+                            {
+                                std::lock_guard<std::mutex> lock(operation_mutex_);
+                                if (scoped_clear_retry_ != retry || !retry->in_flight ||
+                                    retry->attempt_id != attempt_id) {
+                                    return;
+                                }
+                                request_id = retry->request_id;
+                                retry->in_flight = false;
+                                ++retry->attempt_id;
+                                retry->response_timer->cancel();
+                                retry->response_timer.reset();
+                                retry->request_id = 0;
+                            }
+                            clear_maneuver_queue_client_->remove_pending_request(request_id);
+                            scheduleScopedClearRetry(retry);
+                        },
+                        operation_callback_group_
+                    );
+                }
+            }
+        } catch (const std::exception & error) {
+            RCLCPP_WARN(node_.get_logger(), "CustomOperationMode::clearManeuverQueueThen(): Unable to send scoped clear request: %s", error.what());
+            if (sent_request_id) {
+                clear_maneuver_queue_client_->remove_pending_request(*sent_request_id);
+            }
+            finishScopedClearAttempt(retry, attempt_id, false);
+        }
     }
 
     bool setRegisteredOffboardMode(bool deregister) {
@@ -1146,6 +1635,7 @@ private:
 
 }  // namespace
 
+#ifndef III_DRONE_CUSTOM_OPERATION_TESTING
 int main(int argc, char * argv[]) {
     rclcpp::init(argc, argv);
 
@@ -1187,7 +1677,7 @@ int main(int argc, char * argv[]) {
         return 1;
     }
 
-    rclcpp::executors::MultiThreadedExecutor executor;
+    iii_drone::utils::MultiThreadedExecutor executor;
     executor.add_node(node);
     executor.add_callback_group(
         mode->operationCallbackGroup(),
@@ -1277,3 +1767,4 @@ int main(int argc, char * argv[]) {
     rclcpp::shutdown();
     return 0;
 }
+#endif

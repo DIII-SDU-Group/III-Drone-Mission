@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 /*****************************************************************************/
 // ROS2:
@@ -74,6 +75,16 @@ namespace rosbag_recorder_node {
         std::filesystem::path artifact_root_;
         std::filesystem::path log_root_;
         double default_stop_timeout_sec_ = 10.0;
+        // Recordings beyond the newest retention_max_bytes are removed at
+        // configure and after each stopped recording (0 keeps everything).
+        std::uint64_t retention_max_bytes_ = 10'000'000'000ULL;
+        void applyRetention(const char * when);
+        // Left out of every recording: topic types and a topic regex.
+        std::vector<std::string> exclude_topic_types_;
+        std::string exclude_regex_;
+        // MCAP storage preset (compression) and file split interval (0: one file).
+        std::string storage_preset_profile_;
+        int64_t max_bag_duration_s_ = 0;
 
         pid_t child_pid_ = -1;
         std::string recording_id_;

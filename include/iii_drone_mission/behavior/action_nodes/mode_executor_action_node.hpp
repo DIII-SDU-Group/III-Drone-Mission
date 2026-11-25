@@ -9,6 +9,8 @@
 
 #include <rclcpp/rclcpp.hpp>
 
+#include <optional>
+
 /*****************************************************************************/
 // III-Drone-Mission:
 
@@ -51,10 +53,20 @@ namespace behavior {
 
         bool setGoal(Goal & goal) override;
 
+        BT::NodeStatus tick() override;
+
+        void onGoalAccepted() override;
+
         BT::NodeStatus onResultReceived(const WrappedResult & wr) override;
+
+        BT::NodeStatus onFailure(
+            BT::ActionNodeErrorCode error,
+            const std::optional<WrappedResult> & result
+        ) override;
 
     private:
         rclcpp::Node::SharedPtr node_ptr_;
+        std::string action_endpoint_;
 
     };
 

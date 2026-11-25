@@ -36,7 +36,20 @@ bool validGlobalPosition(const px4_msgs::msg::VehicleGlobalPosition & position);
 std::optional<WorldGnssReference> makeReference(
     const px4_msgs::msg::VehicleGlobalPosition & global_position,
     const tf2_ros::Buffer::SharedPtr & tf_buffer,
-    const rclcpp::Logger & logger
+    const rclcpp::Logger & logger,
+    const rclcpp::Clock::SharedPtr & clock
+);
+
+/**
+ * The same reference from the drone's world position given directly: the
+ * world->drone TF is PX4 odometry as x=north, y=-east, z=up
+ * (drone_frame_broadcaster), so a node with odometry needs no TF listener.
+ */
+std::optional<WorldGnssReference> makeReference(
+    const px4_msgs::msg::VehicleGlobalPosition & global_position,
+    const std::optional<iii_drone::types::point_t> & drone_world,
+    const rclcpp::Logger & logger,
+    const rclcpp::Clock::SharedPtr & clock
 );
 
 GnssPoint worldToGnss(

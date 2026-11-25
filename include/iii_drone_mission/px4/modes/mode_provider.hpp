@@ -60,7 +60,8 @@ namespace px4 {
             iii_drone::mission::MissionSpecification::SharedPtr mission_specification,
             rclcpp_lifecycle::LifecycleNode * node,
             iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client,
-            iii_drone::configuration::Configuration::SharedPtr parameters
+            iii_drone::configuration::Configuration::SharedPtr parameters,
+            uint64_t lifecycle_activation_generation
         );
 
         void Register();
@@ -68,6 +69,7 @@ namespace px4 {
         void Cleanup();
         void Stop();
         void ClearGlobalBlackboard(const std::string & reason);
+        void BeginModeActivation(const std::string & mode_key);
 
         iii_drone::px4::ManeuverMode::SharedPtr GetMode(const std::string& name) const;
 
@@ -75,6 +77,8 @@ namespace px4 {
         ModeProviderIterator end();
 
         rclcpp::Node::SharedPtr mode_node() const;
+
+        iii_drone::control::maneuver::ManeuverReferenceClient::SharedPtr maneuver_reference_client() const;
         std::vector<std::string> mode_keys() const;
         std::vector<std::string> registered_mode_keys() const;
         bool all_modes_registered() const;
@@ -93,10 +97,18 @@ namespace px4 {
         rclcpp_lifecycle::LifecycleNode * node_;
         rclcpp::Node::SharedPtr mode_node_;
 
+        rclcpp::CallbackGroup::SharedPtr diagnostic_independent_callback_group_;
+        rclcpp::TimerBase::SharedPtr diagnostic_default_probe_timer_;
+        rclcpp::TimerBase::SharedPtr diagnostic_independent_probe_timer_;
+
+        uint64_t lifecycle_activation_generation_;
+
         std::map<std::string, iii_drone::px4::ManeuverMode::SharedPtr> modes_;
 
         void initializeModes();
         void deinitializeModes();
+        void initializeDiagnosticProbes();
+        void deinitializeDiagnosticProbes();
 
     };
 

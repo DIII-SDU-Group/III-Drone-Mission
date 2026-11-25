@@ -20,21 +20,14 @@ ShouldRechargeBatteryLowConditionNode::ShouldRechargeBatteryLowConditionNode(
 ) : SyncActionNode(name, config),
     node_(node),
     configuration_(configuration),
-    latest_voltage_receive_time_(0, 0, node_->get_clock()->get_clock_type()),
+    battery_voltage_(
+        *node_,
+        "/payload/charger_gripper/battery_voltage",
+        rclcpp::QoS(rclcpp::KeepLast(1)).best_effort()
+    ),
     low_voltage_since_(0, 0, node_->get_clock()->get_clock_type()),
     last_stale_retry_time_(0, 0, node_->get_clock()->get_clock_type())
 {
-    battery_voltage_sub_ = node_->create_subscription<std_msgs::msg::Float32>(
-        "/payload/charger_gripper/battery_voltage",
-        rclcpp::QoS(rclcpp::KeepLast(1)).best_effort(),
-        [this](const std_msgs::msg::Float32::SharedPtr msg) {
-            std::lock_guard<std::mutex> lock(mutex_);
-            latest_voltage_ = msg->data;
-            latest_voltage_receive_time_ = node_->get_clock()->now();
-            has_voltage_ = true;
-            stale_failure_count_ = 0;
-        }
-    );
 }
 
 PortsList ShouldRechargeBatteryLowConditionNode::providedPorts() {
@@ -78,18 +71,35 @@ bool ShouldRechargeBatteryLowConditionNode::boolParameterOr(
     return fallback;
 }
 
+const ShouldRechargeBatteryLowConditionNode::ConfiguredSettings &
+ShouldRechargeBatteryLowConditionNode::configuredSettings() {
+    const auto now = std::chrono::steady_clock::now();
+    if (configured_read_at_ == std::chrono::steady_clock::time_point{} ||
+        now - configured_read_at_ >= std::chrono::seconds(1)) {
+        configured_.bypass = boolParameterOr("/mission/bypass_battery_checks", false);
+        configured_.threshold_v = parameterOr("/inspection_demo/battery_voltage_threshold_v", 14.0);
+        configured_.debounce_s = parameterOr("/inspection_demo/battery_voltage_debounce_s", 2.0);
+        configured_.timeout_s = parameterOr("/inspection_demo/battery_topic_timeout_s", 2.0);
+        configured_.retry_count = parameterOr("/inspection_demo/battery_check_retry_count", 3);
+        configured_.retry_interval_s = parameterOr("/inspection_demo/battery_check_retry_interval_s", 0.2);
+        configured_read_at_ = now;
+    }
+    return configured_;
+}
+
 NodeStatus ShouldRechargeBatteryLowConditionNode::tick() {
-    bool bypass = boolParameterOr("/mission/bypass_battery_checks", false);
+    const ConfiguredSettings & configured = configuredSettings();
+    bool bypass = configured.bypass;
     getInput("bypass_battery_checks", bypass);
     if (bypass) {
         return NodeStatus::FAILURE;
     }
 
-    double threshold_v = parameterOr("/inspection_demo/battery_voltage_threshold_v", 14.0);
-    double debounce_s = parameterOr("/inspection_demo/battery_voltage_debounce_s", 2.0);
-    double timeout_s = parameterOr("/inspection_demo/battery_topic_timeout_s", 2.0);
-    int retry_count = parameterOr("/inspection_demo/battery_check_retry_count", 3);
-    double retry_interval_s = parameterOr("/inspection_demo/battery_check_retry_interval_s", 0.2);
+    double threshold_v = configured.threshold_v;
+    double debounce_s = configured.debounce_s;
+    double timeout_s = configured.timeout_s;
+    int retry_count = configured.retry_count;
+    double retry_interval_s = configured.retry_interval_s;
 
     double input_double = -1.0;
     if (getInput("battery_voltage_threshold_v", input_double) && input_double >= 0.0) {
@@ -111,7 +121,11 @@ NodeStatus ShouldRechargeBatteryLowConditionNode::tick() {
 
     const rclcpp::Time now = node_->get_clock()->now();
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    const auto voltage = battery_voltage_.latest();
+    if (voltage && voltage->sequence != last_voltage_sequence_) {
+        last_voltage_sequence_ = voltage->sequence;
+        stale_failure_count_ = 0;
+    }
     auto should_count_stale_retry = [&]() {
         if (last_stale_retry_time_.nanoseconds() == 0 ||
             (now - last_stale_retry_time_).seconds() >= retry_interval_s)
@@ -122,7 +136,7 @@ NodeStatus ShouldRechargeBatteryLowConditionNode::tick() {
         return false;
     };
 
-    if (!has_voltage_) {
+    if (!voltage) {
         if (!should_count_stale_retry()) {
             return NodeStatus::FAILURE;
         }
@@ -138,7 +152,7 @@ NodeStatus ShouldRechargeBatteryLowConditionNode::tick() {
         return NodeStatus::FAILURE;
     }
 
-    const double age_s = (now - latest_voltage_receive_time_).seconds();
+    const double age_s = (now - voltage->receive_time).seconds();
     if (age_s > timeout_s) {
         if (!should_count_stale_retry()) {
             return NodeStatus::FAILURE;
@@ -159,7 +173,7 @@ NodeStatus ShouldRechargeBatteryLowConditionNode::tick() {
 
     stale_failure_count_ = 0;
     last_stale_retry_time_ = rclcpp::Time(0, 0, node_->get_clock()->get_clock_type());
-    if (latest_voltage_ >= threshold_v) {
+    if (voltage->message.data >= threshold_v) {
         low_voltage_since_ = rclcpp::Time(0, 0, node_->get_clock()->get_clock_type());
         return NodeStatus::FAILURE;
     }
@@ -174,10 +188,10 @@ NodeStatus ShouldRechargeBatteryLowConditionNode::tick() {
         return NodeStatus::FAILURE;
     }
 
-    RCLCPP_WARN(
+    RCLCPP_INFO(
         node_->get_logger(),
         "ShouldRechargeBatteryLowConditionNode::tick(): Battery low %.2f V below %.2f V for %.2f s",
-        latest_voltage_,
+        voltage->message.data,
         threshold_v,
         low_duration_s
     );

@@ -1,0 +1,124 @@
+{
+  "schema": "iii.mission-registrations/v1",
+  "note": "Mission catalog registrations, read by CMake (iii_register_missions_from_json) and by iii deploy missions. OptiTrack missions are registered for sim and hil too so they can be qualified there; missions registered for opti_track may use only the opti_track behavior-node allowlist (profile_restrictions.cpp). opti-track-hover is production because a commissioned onboard profile needs exactly one default in the qualified and field-candidate catalogs, which carry no test entries.",
+  "missions": [
+    {
+      "id": "inspection-production",
+      "specification": "mission_specification/mission_specification.yaml",
+      "classification": "production",
+      "status": "active",
+      "profiles": [
+        "real",
+        "sim",
+        "hil"
+      ],
+      "default_for": [
+        "real",
+        "sim",
+        "hil"
+      ]
+    },
+    {
+      "id": "reach-charge-leave-experimental",
+      "specification": "mission_specification/mission_specification_reach_charge_leave.yaml",
+      "classification": "experimental",
+      "status": "active",
+      "profiles": [
+        "real",
+        "sim",
+        "hil"
+      ],
+      "default_for": []
+    },
+    {
+      "id": "ftp-blend-loop-test",
+      "specification": "mission_specification/mission_specification_ftp_blend_loop.yaml",
+      "classification": "test",
+      "status": "active",
+      "profiles": [
+        "sim"
+      ],
+      "default_for": []
+    },
+    {
+      "id": "ftp-legacy",
+      "specification": "mission_specification/mission_specification.yaml.ftp_test",
+      "classification": "legacy",
+      "status": "deprecated",
+      "profiles": [
+        "sim"
+      ],
+      "default_for": []
+    },
+    {
+      "id": "opti-track-hover",
+      "specification": "mission_specification/mission_specification_opti_track_hover.yaml",
+      "classification": "production",
+      "status": "active",
+      "profiles": [
+        "opti_track",
+        "sim",
+        "hil"
+      ],
+      "default_for": [
+        "opti_track"
+      ]
+    },
+    {
+      "id": "opti-track-maneuvers",
+      "specification": "mission_specification/mission_specification_opti_track_maneuvers.yaml",
+      "classification": "experimental",
+      "status": "active",
+      "profiles": [
+        "opti_track",
+        "sim",
+        "hil"
+      ],
+      "default_for": []
+    },
+    {
+      "id": "opti-track-cycle",
+      "specification": "mission_specification/mission_specification_opti_track_cycle.yaml",
+      "classification": "experimental",
+      "status": "active",
+      "profiles": [
+        "opti_track",
+        "sim",
+        "hil"
+      ],
+      "default_for": []
+    },
+    {
+      "id": "opti-track-mode-loop",
+      "specification": "mission_specification/mission_specification_opti_track_mode_loop.yaml",
+      "classification": "experimental",
+      "status": "active",
+      "profiles": [
+        "opti_track",
+        "sim",
+        "hil"
+      ],
+      "default_for": []
+    },
+    {
+      "id": "reach-cable-simple-test",
+      "specification": "mission_specification/mission_specification.yaml.simple_test",
+      "classification": "test",
+      "status": "active",
+      "profiles": [
+        "sim"
+      ],
+      "default_for": []
+    },
+    {
+      "id": "up-down-test",
+      "specification": "mission_specification/mission_specification.yaml.up_down",
+      "classification": "test",
+      "status": "active",
+      "profiles": [
+        "sim"
+      ],
+      "default_for": []
+    }
+  ]
+}

@@ -13,17 +13,17 @@ intent_services:
 entries:
   - key: "reach_cable"
     mode_name: "Reach Cable"
-    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/reach_cable_tree.xml"
+    behavior_tree_xml_file: "behavior_trees/reach_cable_tree.xml"
     allow_activate_when_disarmed: true
     next_mode: "cable_charging"
 
   - key: "cable_charging"
     mode_name: "Cable Charging"
-    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/cable_charging_tree.xml"
+    behavior_tree_xml_file: "behavior_trees/cable_charging_tree.xml"
     allow_activate_when_disarmed: true
     next_mode: "leave_cable"
 
   - key: "leave_cable"
     mode_name: "Leave Cable"
-    behavior_tree_xml_file: "$BEHAVIOR_TREES_DIR/leave_cable_tree.xml"
+    behavior_tree_xml_file: "behavior_trees/leave_cable_tree.xml"
     allow_activate_when_disarmed: true

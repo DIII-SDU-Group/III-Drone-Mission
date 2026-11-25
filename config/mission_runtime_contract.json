@@ -1,0 +1,23 @@
+{
+  "schema": "iii.mission-runtime-contract/v1",
+  "catalog_schema": "iii.mission-catalog/v1",
+  "selection": {
+    "identity": "catalog-id",
+    "filesystem_paths_accepted": false,
+    "persistence": "runtime-session",
+    "cold_restart_restores_profile_default": true,
+    "replacement": "transactional-rebuild-with-rollback"
+  },
+  "profiles": {
+    "hil": {"commissioned": true, "onboard": true},
+    "opti_track": {"commissioned": true, "onboard": true},
+    "real": {"commissioned": true, "onboard": true},
+    "sim": {"commissioned": true, "onboard": false}
+  },
+  "classifications": {
+    "production": {"qualified": true, "field": true, "local": true},
+    "experimental": {"qualified": false, "field": "explicit", "local": true},
+    "test": {"qualified": false, "field": false, "local": true},
+    "legacy": {"qualified": false, "field": false, "local": true}
+  }
+}

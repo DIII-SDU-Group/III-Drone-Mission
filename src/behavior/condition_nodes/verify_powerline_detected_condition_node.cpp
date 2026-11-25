@@ -289,7 +289,8 @@ NodeStatus VerifyPowerlineDetectedConditionNode::verifyLineMatchesPowerlineOverv
         return NodeStatus::SUCCESS;
     }
 
-    RCLCPP_WARN(
+    // Per-attempt: every caller retries; exhausting the retry fails the mode.
+    RCLCPP_INFO(
         node_ptr_->get_logger(),
         "VerifyPowerlineDetectedConditionNode::verifyLineMatchesPowerlineOverview(): %s: Overview line id %d not matched; best detected line id %d distance %.3f m exceeds strict %.3f m and relaxed/unambiguous gate %.3f m with nearest_other_distance %.3f m and ambiguity_margin %.3f m",
         name().c_str(),

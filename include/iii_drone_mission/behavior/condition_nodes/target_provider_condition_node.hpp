@@ -24,6 +24,7 @@
 // III-Drone-Core:
 
 #include <iii_drone_core/utils/types.hpp>
+#include <iii_drone_core/utils/math.hpp>
 
 #include <iii_drone_core/adapters/single_line_adapter.hpp>
 

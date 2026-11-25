@@ -18,6 +18,11 @@
 #include <iii_drone_core/utils/math.hpp>
 
 /*****************************************************************************/
+// III-Drone-Mission:
+
+#include <iii_drone_mission/behavior/port_types.hpp>
+
+/*****************************************************************************/
 // BT.CPP:
 
 #include <behaviortree_ros2/bt_topic_pub_node.hpp>
